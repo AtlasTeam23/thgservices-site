@@ -310,11 +310,7 @@
           </div>
         </div>
 
-        <form class="contact-form" action="https://formsubmit.co/developer%40leadquik.com" method="POST">
-          <input type="hidden" name="_subject" value="thgservices.io contact form">
-          <input type="hidden" name="_template" value="table">
-          <input type="hidden" name="_captcha" value="true">
-          <input type="hidden" name="_next" value="https://thgservices.io/thanks.html">
+        <form class="contact-form" id="contactForm" action="mailto:developer@leadquik.com" method="POST" enctype="text/plain" novalidate>
           <input type="text" name="_honey" style="display:none" tabindex="-1" autocomplete="off">
           <div class="row-2">
             <div>
@@ -341,8 +337,39 @@
             <textarea id="cf-message" name="message" rows="5" required></textarea>
           </div>
           <button type="submit">Send message</button>
-          <p class="form-note">By sending this message, you agree to our <a href="/privacy.html">Privacy Policy</a> and <a href="/terms.html">Terms of Service</a>. We respond within 1–2 business days.</p>
+          <p class="form-note">Sending this opens your default email app with the message pre-filled to <a href="mailto:developer@leadquik.com">developer@leadquik.com</a>. By sending, you agree to our <a href="/privacy.html">Privacy Policy</a> and <a href="/terms.html">Terms of Service</a>. We respond within 1–2 business days.</p>
         </form>
+        <script>
+          (function () {
+            var form = document.getElementById('contactForm');
+            if (!form) return;
+            form.addEventListener('submit', function (e) {
+              e.preventDefault();
+              // honeypot
+              if (form.elements['_honey'] && form.elements['_honey'].value) return false;
+              var name = (form.elements['name'].value || '').trim();
+              var email = (form.elements['email'].value || '').trim();
+              var phone = (form.elements['phone'].value || '').trim();
+              var subject = (form.elements['subject'].value || '').trim();
+              var message = (form.elements['message'].value || '').trim();
+              if (!name || !email || !message) {
+                alert('Please fill in your name, email, and message.');
+                return false;
+              }
+              var subj = subject || 'thgservices.io contact form';
+              var body =
+                'From: ' + name + ' <' + email + '>\n' +
+                (phone ? 'Phone: ' + phone + '\n' : '') +
+                '\n' +
+                'Message:\n' + message + '\n\n' +
+                '---\nSent from the contact form at https://thgservices.io/';
+              var href = 'mailto:developer@leadquik.com?subject=' +
+                encodeURIComponent(subj) + '&body=' + encodeURIComponent(body);
+              window.location.href = href;
+              return false;
+            });
+          })();
+        </script>
       </div>
     </section>
   </main>
