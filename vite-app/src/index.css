@@ -1,0 +1,209 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 0%;
+    --foreground: 0 0% 100%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 3.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 3.9%;
+    --primary: 221 83% 53%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 240 4.8% 95.9%;
+    --secondary-foreground: 240 5.9% 10%;
+    --muted: 240 4.8% 95.9%;
+    --muted-foreground: 240 3.8% 46.1%;
+    --accent: 240 4.8% 95.9%;
+    --accent-foreground: 240 5.9% 10%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 5.9% 90%;
+    --input: 240 5.9% 90%;
+    --ring: 221 83% 53%;
+    --radius: 0.625rem;
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+
+    --black: #000000;
+    --white: #FFFFFF;
+    --deep-black: #060608;
+    --blue: #2563EB;
+    --dark-blue: #1E40AF;
+    --warm-amber: #F59E0B;
+    --text-black: #111827;
+    --text-grey: #6B7280;
+    --off-white: #F3F4F6;
+  }
+
+  html {
+    scroll-behavior: auto;
+  }
+
+  body {
+    background-color: #000000;
+    color: #FFFFFF;
+    font-family: 'Outfit', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
+  }
+}
+
+@layer components {
+  .font-display {
+    font-family: 'Outfit', sans-serif;
+    font-size: clamp(80px, 10vw, 160px);
+    font-weight: 700;
+    line-height: 0.92;
+    letter-spacing: -0.04em;
+    text-transform: uppercase;
+  }
+
+  .font-heading-xl {
+    font-family: 'Outfit', sans-serif;
+    font-size: clamp(52px, 7vw, 104px);
+    font-weight: 600;
+    line-height: 1.0;
+    letter-spacing: -0.03em;
+    text-transform: uppercase;
+  }
+
+  .font-heading-lg {
+    font-family: 'Outfit', sans-serif;
+    font-size: clamp(32px, 3.5vw, 48px);
+    font-weight: 600;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+  }
+
+  .font-heading-md {
+    font-family: 'Outfit', sans-serif;
+    font-size: clamp(24px, 2.5vw, 32px);
+    font-weight: 500;
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+  }
+
+  .font-body {
+    font-family: 'Source Serif 4', serif;
+    font-size: 18px;
+    font-weight: 400;
+    line-height: 1.65;
+    letter-spacing: 0.01em;
+  }
+
+  .font-body-lg {
+    font-family: 'Source Serif 4', serif;
+    font-size: 22px;
+    font-weight: 400;
+    line-height: 1.5;
+  }
+
+  .font-label {
+    font-family: 'Outfit', sans-serif;
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1.2;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .font-nav {
+    font-family: 'Outfit', sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.0;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .font-mono-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 1.4;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .font-caption {
+    font-family: 'Outfit', sans-serif;
+    font-size: 16px;
+    font-weight: 400;
+    line-height: 1.5;
+  }
+
+  .stat-number {
+    font-family: 'Outfit', sans-serif;
+    font-weight: 700;
+    font-size: clamp(52px, 8vw, 104px);
+    color: transparent;
+    background: conic-gradient(from 0deg, #2563EB 0%, transparent 0%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .stat-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #F59E0B;
+    margin-bottom: 12px;
+  }
+
+  .stat-label {
+    font-family: 'Outfit', sans-serif;
+    font-size: 14px;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #6B7280;
+  }
+
+  .scramble-word {
+    font-family: 'Outfit', sans-serif;
+    font-size: clamp(80px, 12vw, 160px);
+    font-weight: 700;
+    letter-spacing: -0.04em;
+    text-transform: uppercase;
+    color: #FFFFFF;
+    height: 1.1em;
+    line-height: 1.1;
+  }
+
+  .scramble-subtitle {
+    font-family: 'Outfit', sans-serif;
+    font-size: 16px;
+    font-weight: 400;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.5);
+    margin-top: 24px;
+    opacity: 0;
+  }
+
+  .arc-path {
+    fill: none;
+    stroke: #2563EB;
+    stroke-width: 3;
+    opacity: 0.6;
+    vector-effect: non-scaling-stroke;
+  }
+}
+
+@layer utilities {
+  .page-margin {
+    padding-left: clamp(24px, 5vw, 80px);
+    padding-right: clamp(24px, 5vw, 80px);
+  }
+}

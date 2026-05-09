@@ -1,0 +1,8 @@
+# Build artifacts (we deploy by copying dist/* to repo root)
+vite-app/node_modules/
+vite-app/dist/
+
+# OS / IDE
+.DS_Store
+.vscode/
+*.log
