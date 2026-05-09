@@ -48,10 +48,11 @@ export default function Navigation() {
           alignItems: 'center',
           justifyContent: 'space-between',
           padding: '0 clamp(20px, 5vw, 80px)',
-          transition: 'background-color 0.4s ease, backdrop-filter 0.4s ease',
-          backgroundColor: scrolled ? 'rgba(0, 0, 0, 0.85)' : 'transparent',
-          backdropFilter: scrolled ? 'blur(12px)' : 'none',
-          WebkitBackdropFilter: scrolled ? 'blur(12px)' : 'none',
+          transition: 'background-color 0.4s ease, backdrop-filter 0.4s ease, border-color 0.4s ease',
+          backgroundColor: 'rgba(10, 10, 15, 0.92)',
+          backdropFilter: 'blur(12px)',
+          WebkitBackdropFilter: 'blur(12px)',
+          borderBottom: scrolled ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(255,255,255,0.04)',
         }}
       >
         {/* Brand */}

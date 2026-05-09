@@ -191,6 +191,7 @@ export default function Hero() {
         @media (max-width: 768px) {
           .hero-section {
             align-items: flex-start !important;
+            min-height: auto !important;
           }
         }
         @media (prefers-reduced-motion: reduce) {
