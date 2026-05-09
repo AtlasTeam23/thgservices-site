@@ -165,15 +165,47 @@ export default function About() {
             >
               At a Glance
             </div>
-            {[
+            {([
               { k: 'Legal name', v: 'THG Services, LLC' },
               { k: 'Headquarters', v: '300 Colonial Center Pkwy, Suite 100N\nRoswell, GA 30076' },
               { k: 'D-U-N-S Number', v: '12-981-2006' },
-              { k: 'Flagship product', v: 'LeadQuik' },
+              {
+                k: 'Flagship product',
+                v: (
+                  <a
+                    href="https://leadquik.com"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ color: '#2563EB', textDecoration: 'none', fontWeight: 600 }}
+                  >
+                    LeadQuik →
+                  </a>
+                ),
+              },
               { k: 'In development', v: 'Atlas · CashPulse · Blaze' },
-              { k: 'Email', v: 'developer@leadquik.com' },
-              { k: 'Phone', v: '+1 (866) 519-7993' },
-            ].map((row, i, arr) => (
+              {
+                k: 'Email',
+                v: (
+                  <a
+                    href="mailto:developer@leadquik.com"
+                    style={{ color: '#111827', textDecoration: 'none' }}
+                  >
+                    developer@leadquik.com
+                  </a>
+                ),
+              },
+              {
+                k: 'Phone',
+                v: (
+                  <a
+                    href="tel:+18665197993"
+                    style={{ color: '#111827', textDecoration: 'none' }}
+                  >
+                    +1 (866) 519-7993
+                  </a>
+                ),
+              },
+            ] as { k: string; v: React.ReactNode }[]).map((row, i, arr) => (
               <div
                 key={row.k}
                 style={{
@@ -209,7 +241,7 @@ export default function About() {
                     lineHeight: 1.45,
                   }}
                 >
-                  {row.v}
+                  {row.v as React.ReactNode}
                 </div>
               </div>
             ))}

@@ -61,20 +61,18 @@
 @layer components {
   .font-display {
     font-family: 'Outfit', sans-serif;
-    font-size: clamp(80px, 10vw, 160px);
-    font-weight: 700;
-    line-height: 0.92;
-    letter-spacing: -0.04em;
-    text-transform: uppercase;
+    font-size: clamp(40px, 5.5vw, 80px);
+    font-weight: 600;
+    line-height: 1.05;
+    letter-spacing: -0.025em;
   }
 
   .font-heading-xl {
     font-family: 'Outfit', sans-serif;
-    font-size: clamp(52px, 7vw, 104px);
+    font-size: clamp(32px, 4vw, 56px);
     font-weight: 600;
-    line-height: 1.0;
-    letter-spacing: -0.03em;
-    text-transform: uppercase;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
   }
 
   .font-heading-lg {
@@ -172,9 +170,9 @@
 
   .scramble-word {
     font-family: 'Outfit', sans-serif;
-    font-size: clamp(80px, 12vw, 160px);
+    font-size: clamp(48px, 7vw, 96px);
     font-weight: 700;
-    letter-spacing: -0.04em;
+    letter-spacing: -0.025em;
     text-transform: uppercase;
     color: #FFFFFF;
     height: 1.1em;

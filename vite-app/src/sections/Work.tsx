@@ -6,62 +6,59 @@ gsap.registerPlugin(ScrollTrigger);
 
 type Product = {
   name: string;
-  category: 'Live' | 'In Development';
+  status: 'Live' | 'In development';
   tagline: string;
   description: string;
-  gradient: string;
+  href?: string;
+  accent: string;
 };
 
 const products: Product[] = [
   {
     name: 'LeadQuik',
-    category: 'Live',
-    tagline: 'Lead Response Platform',
+    status: 'Live',
+    tagline: 'Lead response platform',
     description:
       'The instant a new lead comes in, LeadQuik replies in seconds with AI-driven first-touch and human fallback so no opportunity goes cold. Used by businesses across services, professional, and retail categories.',
-    gradient:
-      'linear-gradient(135deg, rgba(37,99,235,0.20) 0%, rgba(37,99,235,0.05) 60%, rgba(0,0,0,0) 100%)',
+    href: 'https://leadquik.com',
+    accent: '#2563EB',
   },
   {
     name: 'Atlas',
-    category: 'In Development',
-    tagline: 'Field Operations & Customer Comms',
+    status: 'In development',
+    tagline: 'Field operations & customer comms',
     description:
       'Field operations and customer communication tools for service businesses. Currently in private testing with select customers.',
-    gradient:
-      'linear-gradient(135deg, rgba(245,158,11,0.20) 0%, rgba(245,158,11,0.05) 60%, rgba(0,0,0,0) 100%)',
+    accent: '#F59E0B',
   },
   {
     name: 'CashPulse',
-    category: 'In Development',
-    tagline: 'Cash Flow Visibility',
+    status: 'In development',
+    tagline: 'Cash flow visibility',
     description:
       'Cash flow visibility and financial tooling for owner-operators. Currently in private testing.',
-    gradient:
-      'linear-gradient(135deg, rgba(16,185,129,0.20) 0%, rgba(16,185,129,0.05) 60%, rgba(0,0,0,0) 100%)',
+    accent: '#10B981',
   },
   {
     name: 'Blaze',
-    category: 'In Development',
-    tagline: 'Marketing & Outreach Automation',
+    status: 'In development',
+    tagline: 'Marketing & outreach automation',
     description:
       'Marketing and outreach automation for small business teams. Currently in private testing.',
-    gradient:
-      'linear-gradient(135deg, rgba(239,68,68,0.20) 0%, rgba(239,68,68,0.05) 60%, rgba(0,0,0,0) 100%)',
+    accent: '#EF4444',
   },
 ];
 
 export default function Work() {
   const sectionRef = useRef<HTMLElement>(null);
-  const wrapperRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
-  const speedRef = useRef({ current: 0, target: 0 });
+  const gridRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const section = sectionRef.current;
-    const wrapper = wrapperRef.current;
     const header = headerRef.current;
-    if (!section || !wrapper || !header) return;
+    const grid = gridRef.current;
+    if (!section || !header || !grid) return;
 
     const headerSt = ScrollTrigger.create({
       trigger: section,
@@ -69,213 +66,258 @@ export default function Work() {
       onEnter: () => {
         gsap.fromTo(
           header,
-          { opacity: 0, y: 30 },
+          { opacity: 0, y: 24 },
           { opacity: 1, y: 0, duration: 0.7, ease: 'power3.out' }
         );
       },
       once: true,
     });
 
-    const getScrollWidth = () => wrapper.scrollWidth - window.innerWidth;
-
-    const tl = gsap.timeline({
-      scrollTrigger: {
-        trigger: section,
-        start: 'top top',
-        end: () => `+=${getScrollWidth() + window.innerHeight}`,
-        pin: true,
-        scrub: 1,
-        anticipatePin: 1,
-        invalidateOnRefresh: true,
+    const cards = grid.querySelectorAll<HTMLElement>('.product-card');
+    const cardsSt = ScrollTrigger.create({
+      trigger: grid,
+      start: 'top 85%',
+      onEnter: () => {
+        gsap.fromTo(
+          cards,
+          { opacity: 0, y: 24 },
+          {
+            opacity: 1,
+            y: 0,
+            duration: 0.65,
+            stagger: 0.08,
+            ease: 'power3.out',
+          }
+        );
       },
+      once: true,
     });
-
-    tl.fromTo(
-      wrapper,
-      { x: 0 },
-      {
-        x: () => -getScrollWidth(),
-        ease: 'none',
-        onUpdate: function () {
-          const progress = this.progress();
-          const targetX = -getScrollWidth() * progress;
-          speedRef.current.target = targetX - speedRef.current.current;
-          speedRef.current.current +=
-            (speedRef.current.target - speedRef.current.current) * 0.1;
-
-          const skewAmount = speedRef.current.current * 0.08;
-          const cards = wrapper.querySelectorAll<HTMLElement>('.work-card');
-          cards.forEach((card) => {
-            card.style.transform = `skewX(${Math.max(
-              -8,
-              Math.min(8, skewAmount)
-            )}deg)`;
-          });
-        },
-      }
-    );
 
     return () => {
       headerSt.kill();
-      tl.kill();
-      ScrollTrigger.getAll()
-        .filter((st) => st.trigger === section)
-        .forEach((st) => st.kill());
+      cardsSt.kill();
     };
   }, []);
+
+  const renderCard = (p: Product) => {
+    const isLink = !!p.href;
+    const Wrap: 'a' | 'div' = isLink ? 'a' : 'div';
+    const wrapProps: React.HTMLAttributes<HTMLElement> & {
+      href?: string;
+      target?: string;
+      rel?: string;
+    } = isLink
+      ? {
+          href: p.href!,
+          target: '_blank',
+          rel: 'noopener noreferrer',
+        }
+      : {};
+
+    return (
+      <Wrap
+        key={p.name}
+        className="product-card"
+        {...wrapProps}
+        style={{
+          opacity: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          padding: '32px',
+          borderRadius: '8px',
+          border: '1px solid rgba(255,255,255,0.08)',
+          background:
+            'linear-gradient(180deg, rgba(255,255,255,0.02) 0%, rgba(255,255,255,0) 100%)',
+          textDecoration: 'none',
+          color: 'inherit',
+          minHeight: '320px',
+          position: 'relative',
+          overflow: 'hidden',
+          transition:
+            'border-color 0.25s ease, transform 0.25s ease, background 0.25s ease',
+        }}
+        onMouseEnter={(e) => {
+          if (!isLink) return;
+          (e.currentTarget as HTMLElement).style.borderColor = p.accent;
+          (e.currentTarget as HTMLElement).style.transform = 'translateY(-4px)';
+        }}
+        onMouseLeave={(e) => {
+          if (!isLink) return;
+          (e.currentTarget as HTMLElement).style.borderColor =
+            'rgba(255,255,255,0.08)';
+          (e.currentTarget as HTMLElement).style.transform = 'translateY(0)';
+        }}
+      >
+        {/* Accent glow */}
+        <div
+          aria-hidden
+          style={{
+            position: 'absolute',
+            top: 0,
+            right: 0,
+            width: '180px',
+            height: '180px',
+            background: `radial-gradient(circle at top right, ${p.accent}24 0%, transparent 70%)`,
+            pointerEvents: 'none',
+          }}
+        />
+
+        {/* Status pill */}
+        <div
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '8px',
+            alignSelf: 'flex-start',
+            padding: '6px 12px',
+            border: '1px solid rgba(255,255,255,0.14)',
+            borderRadius: '999px',
+            fontFamily: "'JetBrains Mono', monospace",
+            fontSize: '11px',
+            letterSpacing: '0.1em',
+            textTransform: 'uppercase',
+            color: p.status === 'Live' ? p.accent : 'rgba(255,255,255,0.5)',
+            background: p.status === 'Live' ? `${p.accent}10` : 'transparent',
+            marginBottom: '20px',
+            position: 'relative',
+            zIndex: 1,
+          }}
+        >
+          <span
+            style={{
+              display: 'inline-block',
+              width: '6px',
+              height: '6px',
+              borderRadius: '999px',
+              background: p.status === 'Live' ? p.accent : 'rgba(255,255,255,0.4)',
+            }}
+          />
+          {p.status}
+        </div>
+
+        <div
+          style={{
+            fontFamily: "'JetBrains Mono', monospace",
+            fontSize: '11px',
+            letterSpacing: '0.12em',
+            textTransform: 'uppercase',
+            color: 'rgba(255,255,255,0.5)',
+            marginBottom: '8px',
+            position: 'relative',
+            zIndex: 1,
+          }}
+        >
+          {p.tagline}
+        </div>
+
+        <h3
+          style={{
+            fontFamily: "'Outfit', sans-serif",
+            fontSize: 'clamp(28px, 2.4vw, 36px)',
+            fontWeight: 600,
+            letterSpacing: '-0.02em',
+            color: '#FFFFFF',
+            margin: '0 0 16px',
+            position: 'relative',
+            zIndex: 1,
+          }}
+        >
+          {p.name}
+        </h3>
+
+        <p
+          style={{
+            fontFamily: "'Outfit', sans-serif",
+            fontSize: '15px',
+            lineHeight: 1.6,
+            color: 'rgba(255,255,255,0.65)',
+            margin: 0,
+            flexGrow: 1,
+            position: 'relative',
+            zIndex: 1,
+          }}
+        >
+          {p.description}
+        </p>
+
+        {isLink && (
+          <div
+            style={{
+              marginTop: '24px',
+              fontFamily: "'Outfit', sans-serif",
+              fontSize: '13px',
+              fontWeight: 600,
+              letterSpacing: '0.04em',
+              textTransform: 'uppercase',
+              color: p.accent,
+              position: 'relative',
+              zIndex: 1,
+            }}
+          >
+            Visit leadquik.com →
+          </div>
+        )}
+      </Wrap>
+    );
+  };
 
   return (
     <section
       id="products"
       ref={sectionRef}
       style={{
-        width: '100vw',
-        height: '100vh',
-        position: 'relative',
-        overflow: 'hidden',
-        backgroundColor: '#000000',
+        width: '100%',
+        backgroundColor: '#0A0A0F',
+        padding: 'clamp(80px, 10vw, 140px) clamp(24px, 5vw, 80px)',
       }}
     >
-      <div
-        ref={headerRef}
-        className="page-margin"
-        style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          paddingTop: '40px',
-          zIndex: 2,
-          opacity: 0,
-        }}
-      >
-        <span
-          className="font-mono-label"
-          style={{
-            color: 'rgba(255, 255, 255, 0.4)',
-            display: 'block',
-            marginBottom: '16px',
-          }}
-        >
-          Our Products
-        </span>
-        <h2
-          className="font-heading-xl"
-          style={{
-            color: '#FFFFFF',
-            maxWidth: '900px',
-          }}
-        >
-          Tools we build, operate, and support.
-        </h2>
-      </div>
-
-      <div
-        ref={wrapperRef}
-        style={{
-          display: 'flex',
-          gap: '2vw',
-          alignItems: 'center',
-          height: '100%',
-          paddingLeft: 'clamp(24px, 5vw, 80px)',
-          paddingRight: 'clamp(24px, 5vw, 80px)',
-          paddingTop: '120px',
-          willChange: 'transform',
-        }}
-      >
-        {products.map((product) => (
-          <div
-            key={product.name}
-            className="work-card"
+      <div style={{ maxWidth: '1280px', margin: '0 auto' }}>
+        <div ref={headerRef} style={{ opacity: 0, marginBottom: '48px' }}>
+          <span
+            className="font-mono-label"
             style={{
-              flexShrink: 0,
-              width: 'min(500px, 80vw)',
-              height: '65vh',
-              position: 'relative',
-              overflow: 'hidden',
-              borderRadius: 0,
-              cursor: 'default',
-              transition: 'transform 0.4s ease',
-              transformOrigin: 'center center',
-              border: '1px solid rgba(255,255,255,0.08)',
-              background: '#0A0A0F',
+              color: 'rgba(255,255,255,0.4)',
+              display: 'block',
+              marginBottom: '20px',
             }}
           >
-            <div
-              style={{
-                position: 'absolute',
-                inset: 0,
-                background: product.gradient,
-                pointerEvents: 'none',
-              }}
-            />
-            <div
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                right: 0,
-                padding: '32px',
-                zIndex: 1,
-              }}
-            >
-              <span
-                className="font-label"
-                style={{
-                  display: 'inline-block',
-                  padding: '6px 12px',
-                  border: '1px solid rgba(255,255,255,0.15)',
-                  borderRadius: '999px',
-                  color:
-                    product.category === 'Live'
-                      ? 'rgba(37,99,235,0.95)'
-                      : 'rgba(255,255,255,0.55)',
-                  fontSize: '11px',
-                  letterSpacing: '0.12em',
-                }}
-              >
-                {product.category}
-              </span>
-            </div>
-            <div
-              style={{
-                position: 'absolute',
-                bottom: 0,
-                left: 0,
-                right: 0,
-                padding: '32px',
-                zIndex: 1,
-              }}
-            >
-              <span
-                className="font-label"
-                style={{
-                  color: 'rgba(255, 255, 255, 0.55)',
-                  display: 'block',
-                  marginBottom: '8px',
-                }}
-              >
-                {product.tagline}
-              </span>
-              <h3
-                className="font-heading-lg"
-                style={{ color: '#FFFFFF', marginBottom: '16px' }}
-              >
-                {product.name}
-              </h3>
-              <p
-                className="font-body"
-                style={{
-                  color: 'rgba(255,255,255,0.7)',
-                  fontSize: '15px',
-                  lineHeight: 1.55,
-                }}
-              >
-                {product.description}
-              </p>
-            </div>
-          </div>
-        ))}
+            Products
+          </span>
+          <h2
+            className="font-heading-xl"
+            style={{
+              color: '#FFFFFF',
+              maxWidth: '760px',
+              margin: 0,
+            }}
+          >
+            Tools we build, operate, and support.
+          </h2>
+          <p
+            style={{
+              fontFamily: "'Outfit', sans-serif",
+              fontSize: '17px',
+              lineHeight: 1.55,
+              color: 'rgba(255,255,255,0.6)',
+              maxWidth: '600px',
+              margin: '20px 0 0',
+            }}
+          >
+            One product is live today. Three more are in private testing with
+            our customers.
+          </p>
+        </div>
+
+        <div
+          ref={gridRef}
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+            gap: '20px',
+          }}
+        >
+          {products.map(renderCard)}
+        </div>
       </div>
     </section>
   );
