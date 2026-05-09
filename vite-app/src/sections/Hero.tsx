@@ -1,3 +1,5 @@
+import GalaxyBackground from '../components/GalaxyBackground';
+
 export default function Hero() {
   return (
     <section
@@ -6,37 +8,23 @@ export default function Hero() {
         position: 'relative',
         width: '100%',
         minHeight: '100vh',
-        backgroundColor: '#0A0A0F',
+        backgroundColor: '#04050A',
         overflow: 'hidden',
         display: 'flex',
         alignItems: 'center',
       }}
     >
-      {/* Subtle radial gradient accent */}
+      {/* Animated galaxy starfield */}
+      <GalaxyBackground />
+
+      {/* Subtle vignette so headline keeps contrast in the brightest galaxy area */}
       <div
         aria-hidden
         style={{
           position: 'absolute',
           inset: 0,
           background:
-            'radial-gradient(ellipse 70% 60% at 80% 20%, rgba(37, 99, 235, 0.08) 0%, rgba(37, 99, 235, 0) 60%), radial-gradient(ellipse 50% 50% at 10% 100%, rgba(245, 158, 11, 0.04) 0%, rgba(245, 158, 11, 0) 60%)',
-          pointerEvents: 'none',
-        }}
-      />
-
-      {/* Faint dot grid */}
-      <div
-        aria-hidden
-        style={{
-          position: 'absolute',
-          inset: 0,
-          backgroundImage:
-            'radial-gradient(rgba(255,255,255,0.04) 1px, transparent 1px)',
-          backgroundSize: '32px 32px',
-          maskImage:
-            'radial-gradient(ellipse 80% 80% at 50% 50%, #000 35%, transparent 80%)',
-          WebkitMaskImage:
-            'radial-gradient(ellipse 80% 80% at 50% 50%, #000 35%, transparent 80%)',
+            'linear-gradient(90deg, rgba(4,5,10,0.6) 0%, rgba(4,5,10,0.15) 45%, rgba(4,5,10,0) 100%), linear-gradient(180deg, rgba(4,5,10,0.4) 0%, rgba(4,5,10,0) 30%, rgba(4,5,10,0) 70%, rgba(4,5,10,0.6) 100%)',
           pointerEvents: 'none',
         }}
       />
