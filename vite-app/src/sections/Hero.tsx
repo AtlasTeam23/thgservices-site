@@ -39,7 +39,7 @@ export default function Hero() {
           width: '100%',
           maxWidth: '1280px',
           margin: '0 auto',
-          padding: 'clamp(104px, 18vw, 160px) clamp(24px, 5vw, 80px) clamp(64px, 12vw, 96px)',
+          padding: 'clamp(96px, 14vw, 120px) clamp(24px, 5vw, 80px) clamp(64px, 12vw, 96px)',
         }}
       >
         <span
