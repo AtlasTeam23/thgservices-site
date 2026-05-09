@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
+import Logo from '../components/Logo';
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -76,14 +77,16 @@ export default function Footer() {
         >
           {/* Brand */}
           <div className="footer-col" style={{ opacity: 0 }}>
+            <div style={{ marginBottom: '14px' }}>
+              <Logo size={28} />
+            </div>
             <div
               style={{
                 fontFamily: "'Outfit', sans-serif",
-                fontSize: '18px',
-                fontWeight: 700,
-                letterSpacing: '0.08em',
-                color: '#FFFFFF',
-                textTransform: 'uppercase',
+                fontSize: '13px',
+                fontWeight: 500,
+                color: 'rgba(255, 255, 255, 0.55)',
+                letterSpacing: '0.02em',
                 marginBottom: '8px',
               }}
             >

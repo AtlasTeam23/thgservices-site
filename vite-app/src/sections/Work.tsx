@@ -29,7 +29,7 @@ const products: Product[] = [
     tagline: 'Field operations & customer comms',
     description:
       'Field operations and customer communication tools for service businesses. Currently in private testing with select customers.',
-    accent: '#F59E0B',
+    accent: '#F97316',
   },
   {
     name: 'CashPulse',

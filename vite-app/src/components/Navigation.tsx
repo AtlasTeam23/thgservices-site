@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import Logo from './Logo';
 
 const navLinks = [
   { label: 'Why', href: '#why' },
@@ -52,24 +53,14 @@ export default function Navigation() {
         }}
       >
         {/* Brand */}
-        <a
+        <Logo
+          size={32}
           href="#"
           onClick={(e) => {
             e.preventDefault();
             window.scrollTo({ top: 0, behavior: 'smooth' });
           }}
-          style={{
-            fontFamily: "'Outfit', sans-serif",
-            fontSize: '18px',
-            fontWeight: 700,
-            letterSpacing: '0.08em',
-            color: '#FFFFFF',
-            textTransform: 'uppercase' as const,
-            textDecoration: 'none',
-          }}
-        >
-          THG Services
-        </a>
+        />
 
         {/* Center links - desktop */}
         <div

@@ -38,7 +38,7 @@
     --deep-black: #060608;
     --blue: #2563EB;
     --dark-blue: #1E40AF;
-    --warm-amber: #F59E0B;
+    --warm-amber: #F97316;
     --text-black: #111827;
     --text-grey: #6B7280;
     --off-white: #F3F4F6;
@@ -155,7 +155,7 @@
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background: #F59E0B;
+    background: #F97316;
     margin-bottom: 12px;
   }
 
