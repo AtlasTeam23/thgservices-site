@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import Logo from './Logo';
+import { useIsMobile } from '../hooks/use-mobile';
 
 const navLinks = [
   { label: 'Why', href: '#why' },
@@ -13,6 +14,7 @@ export default function Navigation() {
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const navRef = useRef<HTMLElement>(null);
+  const isMobile = useIsMobile();
 
   useEffect(() => {
     const onScroll = () => {
@@ -45,7 +47,7 @@ export default function Navigation() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: '0 clamp(24px, 5vw, 80px)',
+          padding: '0 clamp(20px, 5vw, 80px)',
           transition: 'background-color 0.4s ease, backdrop-filter 0.4s ease',
           backgroundColor: scrolled ? 'rgba(0, 0, 0, 0.85)' : 'transparent',
           backdropFilter: scrolled ? 'blur(12px)' : 'none',
@@ -54,7 +56,7 @@ export default function Navigation() {
       >
         {/* Brand */}
         <Logo
-          size={32}
+          size={isMobile ? 28 : 32}
           href="#"
           onClick={(e) => {
             e.preventDefault();
@@ -62,91 +64,96 @@ export default function Navigation() {
           }}
         />
 
-        {/* Center links - desktop */}
-        <div
-          style={{
-            display: 'flex',
-            gap: '40px',
-            alignItems: 'center',
-          }}
-          className="hidden md:flex"
-        >
-          {navLinks.map((link) => (
-            <a
-              key={link.label}
-              href={link.href}
-              onClick={(e) => handleNavClick(e, link.href)}
-              className="font-nav"
+        {isMobile ? (
+          /* Mobile hamburger */
+          <button
+            onClick={() => setMenuOpen(!menuOpen)}
+            style={{
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              padding: '8px',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'center',
+              alignItems: 'center',
+            }}
+            aria-label="Toggle menu"
+          >
+            <div style={{ width: 24, height: 2, background: '#fff', marginBottom: 6, transition: 'transform 0.3s', transform: menuOpen ? 'rotate(45deg) translate(4px, 4px)' : 'none' }} />
+            <div style={{ width: 24, height: 2, background: '#fff', marginBottom: 6, opacity: menuOpen ? 0 : 1, transition: 'opacity 0.3s' }} />
+            <div style={{ width: 24, height: 2, background: '#fff', transition: 'transform 0.3s', transform: menuOpen ? 'rotate(-45deg) translate(4px, -4px)' : 'none' }} />
+          </button>
+        ) : (
+          <>
+            {/* Center links - desktop */}
+            <div
               style={{
-                color: '#FFFFFF',
-                opacity: 0.7,
-                textDecoration: 'none',
-                transition: 'opacity 0.3s ease',
-              }}
-              onMouseEnter={(e) => {
-                (e.target as HTMLElement).style.opacity = '1';
-              }}
-              onMouseLeave={(e) => {
-                (e.target as HTMLElement).style.opacity = '0.7';
+                display: 'flex',
+                gap: '40px',
+                alignItems: 'center',
               }}
             >
-              {link.label}
+              {navLinks.map((link) => (
+                <a
+                  key={link.label}
+                  href={link.href}
+                  onClick={(e) => handleNavClick(e, link.href)}
+                  className="font-nav"
+                  style={{
+                    color: '#FFFFFF',
+                    opacity: 0.7,
+                    textDecoration: 'none',
+                    transition: 'opacity 0.3s ease',
+                  }}
+                  onMouseEnter={(e) => {
+                    (e.target as HTMLElement).style.opacity = '1';
+                  }}
+                  onMouseLeave={(e) => {
+                    (e.target as HTMLElement).style.opacity = '0.7';
+                  }}
+                >
+                  {link.label}
+                </a>
+              ))}
+            </div>
+
+            {/* CTA - desktop */}
+            <a
+              href="#contact"
+              onClick={(e) => handleNavClick(e, '#contact')}
+              style={{
+                height: '40px',
+                borderRadius: '20px',
+                padding: '0 24px',
+                backgroundColor: '#2563EB',
+                color: '#FFFFFF',
+                fontFamily: "'Outfit', sans-serif",
+                fontSize: '14px',
+                fontWeight: 600,
+                letterSpacing: '0.04em',
+                textTransform: 'uppercase' as const,
+                textDecoration: 'none',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'background-color 0.3s ease',
+              }}
+              onMouseEnter={(e) => {
+                (e.target as HTMLElement).style.backgroundColor = '#1E40AF';
+              }}
+              onMouseLeave={(e) => {
+                (e.target as HTMLElement).style.backgroundColor = '#2563EB';
+              }}
+            >
+              Contact Us
             </a>
-          ))}
-        </div>
-
-        {/* CTA - desktop */}
-        <a
-          href="#contact"
-          onClick={(e) => handleNavClick(e, '#contact')}
-          className="hidden md:inline-flex"
-          style={{
-            height: '40px',
-            borderRadius: '20px',
-            padding: '0 24px',
-            backgroundColor: '#2563EB',
-            color: '#FFFFFF',
-            fontFamily: "'Outfit', sans-serif",
-            fontSize: '14px',
-            fontWeight: 600,
-            letterSpacing: '0.04em',
-            textTransform: 'uppercase' as const,
-            textDecoration: 'none',
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            transition: 'background-color 0.3s ease',
-          }}
-          onMouseEnter={(e) => {
-            (e.target as HTMLElement).style.backgroundColor = '#1E40AF';
-          }}
-          onMouseLeave={(e) => {
-            (e.target as HTMLElement).style.backgroundColor = '#2563EB';
-          }}
-        >
-          Contact Us
-        </a>
-
-        {/* Mobile hamburger */}
-        <button
-          className="md:hidden"
-          onClick={() => setMenuOpen(!menuOpen)}
-          style={{
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-            padding: '8px',
-          }}
-          aria-label="Toggle menu"
-        >
-          <div style={{ width: 24, height: 2, background: '#fff', marginBottom: 6, transition: 'transform 0.3s', transform: menuOpen ? 'rotate(45deg) translate(4px, 4px)' : 'none' }} />
-          <div style={{ width: 24, height: 2, background: '#fff', marginBottom: 6, opacity: menuOpen ? 0 : 1, transition: 'opacity 0.3s' }} />
-          <div style={{ width: 24, height: 2, background: '#fff', transition: 'transform 0.3s', transform: menuOpen ? 'rotate(-45deg) translate(4px, -4px)' : 'none' }} />
-        </button>
+          </>
+        )}
       </nav>
 
       {/* Mobile overlay */}
-      {menuOpen && (
+      {isMobile && menuOpen && (
         <div
           style={{
             position: 'fixed',
