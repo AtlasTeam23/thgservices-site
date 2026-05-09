@@ -56,7 +56,7 @@ export default function Navigation() {
       >
         {/* Brand */}
         <Logo
-          size={isMobile ? 28 : 32}
+          size={isMobile ? 36 : 32}
           href="#"
           onClick={(e) => {
             e.preventDefault();

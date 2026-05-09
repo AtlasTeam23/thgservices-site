@@ -4,6 +4,7 @@ export default function Hero() {
   return (
     <section
       id="hero"
+      className="hero-section"
       style={{
         position: 'relative',
         width: '100%',
@@ -38,7 +39,7 @@ export default function Hero() {
           width: '100%',
           maxWidth: '1280px',
           margin: '0 auto',
-          padding: '120px clamp(24px, 5vw, 80px) 96px',
+          padding: 'clamp(104px, 18vw, 160px) clamp(24px, 5vw, 80px) clamp(64px, 12vw, 96px)',
         }}
       >
         <span
@@ -186,6 +187,11 @@ export default function Hero() {
         @keyframes heroPulse {
           0%, 100% { opacity: 0.25; transform: translateY(0); }
           50% { opacity: 0.55; transform: translateY(4px); }
+        }
+        @media (max-width: 768px) {
+          .hero-section {
+            align-items: flex-start !important;
+          }
         }
         @media (prefers-reduced-motion: reduce) {
           @keyframes heroPulse {
