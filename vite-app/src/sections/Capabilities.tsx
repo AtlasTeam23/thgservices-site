@@ -14,31 +14,31 @@ type Capability = {
 const capabilities: Capability[] = [
   {
     number: '01',
-    word: 'Respond',
-    subtitle: 'Inbound lead response',
+    word: 'Speed',
+    subtitle: 'Reply in seconds',
     description:
-      'AI-driven first touch in seconds, with human fallback so no opportunity goes cold.',
+      'AI-driven first touch combined with human fallback — so no inbound lead waits long enough to go cold.',
   },
   {
     number: '02',
-    word: 'Connect',
-    subtitle: 'Multi-channel comms',
+    word: 'Channels',
+    subtitle: 'One unified inbox',
     description:
-      'SMS, email, and voice in one place — orchestrated so customers always get a reply.',
+      'SMS, email, and voice handled in one place. Customers don’t care which channel they use, and your team shouldn’t either.',
   },
   {
     number: '03',
-    word: 'Operate',
-    subtitle: 'Workflows that fit',
+    word: 'Workflow',
+    subtitle: 'Fits how teams work',
     description:
-      'Tools shaped around how small and mid-sized teams actually work day-to-day.',
+      'Tooling designed around the way small and mid-sized teams actually run — no 18-month implementation, no consultants required.',
   },
   {
     number: '04',
-    word: 'Report',
-    subtitle: 'Visibility on what matters',
+    word: 'Visibility',
+    subtitle: 'Metrics that move revenue',
     description:
-      'Clear metrics on response time, conversion, and revenue — without spreadsheet gymnastics.',
+      'Response time, conversion, pipeline. Clean dashboards focused on what closes deals — not vanity numbers.',
   },
 ];
 
@@ -105,11 +105,11 @@ export default function Capabilities() {
           className="font-heading-xl"
           style={{
             color: '#FFFFFF',
-            maxWidth: '720px',
+            maxWidth: '760px',
             margin: 0,
           }}
         >
-          What our software does for the businesses that use it.
+          Four principles run through every product we ship.
         </h2>
 
         <div

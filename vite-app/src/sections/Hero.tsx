@@ -68,7 +68,7 @@ export default function Hero() {
           className="font-display"
           style={{
             color: '#FFFFFF',
-            maxWidth: '880px',
+            maxWidth: '900px',
             margin: 0,
           }}
         >
@@ -79,14 +79,16 @@ export default function Hero() {
           className="font-body-lg"
           style={{
             color: 'rgba(255, 255, 255, 0.65)',
-            maxWidth: '600px',
+            maxWidth: '640px',
             marginTop: '28px',
             fontSize: 'clamp(17px, 1.5vw, 20px)',
             lineHeight: 1.55,
           }}
         >
-          We design, build, and operate products that help small and mid-sized
-          businesses respond faster, communicate better, and run smoother.
+          We build and operate products that help small and mid-sized
+          businesses respond to inbound leads in seconds, unify their
+          customer communications, and run their day-to-day operations.
+          One product is live. Three more are in private testing.
         </p>
 
         <div

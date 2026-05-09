@@ -81,7 +81,7 @@ export default function About() {
               maxWidth: '720px',
             }}
           >
-            Software built by people who use it.
+            Software built by an operator who needed it.
           </h2>
           <p
             className="font-body-lg"
@@ -92,9 +92,9 @@ export default function About() {
             }}
           >
             THG Services, LLC is a software company headquartered in Roswell,
-            Georgia. We design, build, and support our own products — handling
-            everything from concept and engineering through customer onboarding
-            and long-term support.
+            Georgia. We design, build, and support our own products —
+            handling everything from concept and engineering through customer
+            onboarding and long-term support.
           </p>
           <p
             className="font-body-lg"
@@ -104,8 +104,19 @@ export default function About() {
               marginTop: '20px',
             }}
           >
-            We work directly with the businesses that use our software, and we
-            ship product based on what they actually need.
+            Our flagship product,{' '}
+            <a
+              href="https://leadquik.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: '#2563EB', textDecoration: 'none', fontWeight: 600 }}
+            >
+              LeadQuik
+            </a>
+            , was built by an operator who got tired of leaking inbound leads
+            to slow follow-up. We work directly with the businesses that use
+            our software, and we ship product based on what they actually
+            need — not what looks good in a roadmap deck.
           </p>
           <a
             href="#contact"

@@ -291,20 +291,21 @@ export default function Work() {
               margin: 0,
             }}
           >
-            Tools we build, operate, and support.
+            One product live. Three in private testing.
           </h2>
           <p
             style={{
               fontFamily: "'Outfit', sans-serif",
               fontSize: '17px',
-              lineHeight: 1.55,
-              color: 'rgba(255,255,255,0.6)',
-              maxWidth: '600px',
+              lineHeight: 1.6,
+              color: 'rgba(255,255,255,0.65)',
+              maxWidth: '640px',
               margin: '20px 0 0',
             }}
           >
-            One product is live today. Three more are in private testing with
-            our customers.
+            We build, operate, and support every product on the THG Services
+            line. We don’t white-label other people’s software, and we don’t
+            ship anything we wouldn’t use ourselves.
           </p>
         </div>
 

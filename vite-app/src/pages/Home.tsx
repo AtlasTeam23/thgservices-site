@@ -1,6 +1,7 @@
 import { useLenis } from '../hooks/useLenis';
 import Navigation from '../components/Navigation';
 import Hero from '../sections/Hero';
+import Problem from '../sections/Problem';
 import Work from '../sections/Work';
 import Capabilities from '../sections/Capabilities';
 import About from '../sections/About';
@@ -15,6 +16,7 @@ export default function Home() {
       <Navigation />
       <main>
         <Hero />
+        <Problem />
         <Work />
         <Capabilities />
         <About />
