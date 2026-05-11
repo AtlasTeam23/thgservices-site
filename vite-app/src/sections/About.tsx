@@ -193,6 +193,19 @@ export default function About() {
                   </a>
                 ),
               },
+              {
+                k: 'Beta',
+                v: (
+                  <a
+                    href="https://bellabeast.com"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ color: '#009C3B', textDecoration: 'none', fontWeight: 600 }}
+                  >
+                    Bella Beast →
+                  </a>
+                ),
+              },
               { k: 'In development', v: 'Atlas · CashPulse · Blaze' },
               {
                 k: 'Email',

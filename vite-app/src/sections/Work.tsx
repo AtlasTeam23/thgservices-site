@@ -6,7 +6,7 @@ gsap.registerPlugin(ScrollTrigger);
 
 type Product = {
   name: string;
-  status: 'Live' | 'In development';
+  status: 'Live' | 'In development' | 'Beta';
   tagline: string;
   description: string;
   href?: string;
@@ -46,6 +46,15 @@ const products: Product[] = [
     description:
       'Marketing and outreach automation for small business teams. Currently in private testing.',
     accent: '#EF4444',
+  },
+  {
+    name: 'Bella Beast',
+    status: 'Beta',
+    tagline: 'Fitness coaching with Coach Adriana',
+    description:
+      'Train hard. Eat right. Be the beast. A coaching brand and app from Coach Adriana for clients who want a real plan, not a generic one. Currently in beta.',
+    href: 'https://bellabeast.com',
+    accent: '#009C3B',
   },
 ];
 
@@ -176,8 +185,14 @@ export default function Work() {
             fontSize: '11px',
             letterSpacing: '0.1em',
             textTransform: 'uppercase',
-            color: p.status === 'Live' ? p.accent : 'rgba(255,255,255,0.5)',
-            background: p.status === 'Live' ? `${p.accent}10` : 'transparent',
+            color:
+              p.status === 'Live' || p.status === 'Beta'
+                ? p.accent
+                : 'rgba(255,255,255,0.5)',
+            background:
+              p.status === 'Live' || p.status === 'Beta'
+                ? `${p.accent}10`
+                : 'transparent',
             marginBottom: '20px',
             position: 'relative',
             zIndex: 1,
@@ -189,7 +204,10 @@ export default function Work() {
               width: '6px',
               height: '6px',
               borderRadius: '999px',
-              background: p.status === 'Live' ? p.accent : 'rgba(255,255,255,0.4)',
+              background:
+                p.status === 'Live' || p.status === 'Beta'
+                  ? p.accent
+                  : 'rgba(255,255,255,0.4)',
             }}
           />
           {p.status}
@@ -254,7 +272,7 @@ export default function Work() {
               zIndex: 1,
             }}
           >
-            Visit leadquik.com →
+            Visit {p.href!.replace(/^https?:\/\//, '').replace(/\/$/, '')} →
           </div>
         )}
       </Wrap>
@@ -291,7 +309,7 @@ export default function Work() {
               margin: 0,
             }}
           >
-            One product live. Three in private testing.
+            One product live. One in beta. Three in private testing.
           </h2>
           <p
             style={{
