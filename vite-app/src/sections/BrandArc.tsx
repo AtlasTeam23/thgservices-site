@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
+import ContactForm from '../components/ContactForm';
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -147,75 +148,7 @@ export default function BrandArc() {
           building — we’d like to hear from you.
         </p>
 
-        <div
-          style={{
-            display: 'flex',
-            gap: '12px',
-            marginTop: '36px',
-            flexWrap: 'wrap',
-            justifyContent: 'center',
-          }}
-        >
-          <a
-            href="mailto:developer@leadquik.com?subject=Inquiry%20from%20thgservices.io"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              height: '48px',
-              padding: '0 28px',
-              borderRadius: '24px',
-              backgroundColor: '#2563EB',
-              color: '#FFFFFF',
-              fontFamily: "'Outfit', sans-serif",
-              fontSize: '14px',
-              fontWeight: 600,
-              letterSpacing: '0.04em',
-              textTransform: 'uppercase',
-              textDecoration: 'none',
-              transition: 'background-color 0.2s ease',
-            }}
-            onMouseEnter={(e) => {
-              (e.currentTarget as HTMLElement).style.backgroundColor = '#1E40AF';
-            }}
-            onMouseLeave={(e) => {
-              (e.currentTarget as HTMLElement).style.backgroundColor = '#2563EB';
-            }}
-          >
-            Email developer@leadquik.com
-          </a>
-          <a
-            href="tel:+18665197993"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              height: '48px',
-              padding: '0 28px',
-              borderRadius: '24px',
-              backgroundColor: 'transparent',
-              color: '#FFFFFF',
-              border: '1px solid rgba(255,255,255,0.18)',
-              fontFamily: "'Outfit', sans-serif",
-              fontSize: '14px',
-              fontWeight: 600,
-              letterSpacing: '0.04em',
-              textTransform: 'uppercase',
-              textDecoration: 'none',
-              transition: 'border-color 0.2s ease, background-color 0.2s ease',
-            }}
-            onMouseEnter={(e) => {
-              (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.45)';
-              (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(255,255,255,0.04)';
-            }}
-            onMouseLeave={(e) => {
-              (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.18)';
-              (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent';
-            }}
-          >
-            Call +1 (866) 519-7993
-          </a>
-        </div>
+        <ContactForm />
 
         <div
           style={{
