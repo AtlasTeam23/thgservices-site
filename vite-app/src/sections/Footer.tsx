@@ -175,33 +175,6 @@ export default function Footer() {
             </a>
           </div>
 
-          {/* Contact */}
-          <div className="footer-col" style={{ opacity: 0 }}>
-            <div
-              className="font-label"
-              style={{
-                color: 'rgba(255, 255, 255, 0.4)',
-                marginBottom: '20px',
-              }}
-            >
-              Contact
-            </div>
-            <a href="mailto:developer@leadquik.com" style={linkBase}
-              onMouseEnter={(e) => { (e.target as HTMLElement).style.opacity = '1'; }}
-              onMouseLeave={(e) => { (e.target as HTMLElement).style.opacity = '0.7'; }}>
-              developer@leadquik.com
-            </a>
-            <a href="tel:+18665197993" style={linkBase}
-              onMouseEnter={(e) => { (e.target as HTMLElement).style.opacity = '1'; }}
-              onMouseLeave={(e) => { (e.target as HTMLElement).style.opacity = '0.7'; }}>
-              +1 (866) 519-7993
-            </a>
-            <a href="https://leadquik.com" style={linkBase}
-              onMouseEnter={(e) => { (e.target as HTMLElement).style.opacity = '1'; }}
-              onMouseLeave={(e) => { (e.target as HTMLElement).style.opacity = '0.7'; }}>
-              leadquik.com →
-            </a>
-          </div>
         </div>
 
         {/* Bottom row */}
