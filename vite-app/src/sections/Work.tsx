@@ -63,6 +63,7 @@ const products: Product[] = [
     tagline: 'Photo & image restoration',
     description:
       'Bring old photos back to life. Memory Lane uses AI to restore faded, damaged, and low-resolution images so the memories stay as sharp as the moment.',
+    href: 'https://memorylanephoto.app',
     accent: '#D97706',
   },
   {

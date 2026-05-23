@@ -206,7 +206,14 @@ export default function About() {
                       Bella Beast →
                     </a>
                     {' · '}
-                    <span style={{ color: '#D97706', fontWeight: 600 }}>Memory Lane</span>
+                    <a
+                      href="https://memorylanephoto.app"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ color: '#D97706', textDecoration: 'none', fontWeight: 600 }}
+                    >
+                      Memory Lane →
+                    </a>
                   </>
                 ),
               },
