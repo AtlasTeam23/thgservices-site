@@ -8,11 +8,11 @@ export default function Hero() {
       style={{
         position: 'relative',
         width: '100%',
-        minHeight: '100vh',
+        minHeight: 'min(86vh, 760px)',
         backgroundColor: '#04050A',
         overflow: 'hidden',
         display: 'flex',
-        alignItems: 'center',
+        alignItems: 'flex-start',
       }}
     >
       {/* Animated galaxy starfield */}
@@ -39,7 +39,7 @@ export default function Hero() {
           width: '100%',
           maxWidth: '1280px',
           margin: '0 auto',
-          padding: 'clamp(96px, 14vw, 120px) clamp(24px, 5vw, 80px) clamp(64px, 12vw, 96px)',
+          padding: 'clamp(96px, 14vw, 120px) clamp(24px, 5vw, 80px) clamp(48px, 8vw, 64px)',
         }}
       >
         <span
