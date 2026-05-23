@@ -1,4 +1,4 @@
-import HeroBackground from '../components/HeroBackground';
+import GalaxyBackground from '../components/GalaxyBackground';
 
 export default function Hero() {
   return (
@@ -15,8 +15,8 @@ export default function Hero() {
         alignItems: 'center',
       }}
     >
-      {/* Hero video background (falls back to animated starfield) */}
-      <HeroBackground />
+      {/* Animated galaxy starfield */}
+      <GalaxyBackground />
 
       {/* Subtle vignette so headline keeps contrast in the brightest galaxy area */}
       <div
