@@ -6,10 +6,11 @@ gsap.registerPlugin(ScrollTrigger);
 
 type Product = {
   name: string;
-  status: 'Live' | 'In development' | 'Beta';
+  status: 'Live' | 'In development' | 'Beta' | 'Available';
   tagline: string;
   description: string;
   href?: string;
+  cta?: { label: string; href: string };
   accent: string;
 };
 
@@ -56,7 +57,18 @@ const products: Product[] = [
     href: 'https://bellabeast.com',
     accent: '#009C3B',
   },
+  {
+    name: 'Your App',
+    status: 'Available',
+    tagline: 'Build with our team',
+    description:
+      'Contact us to discuss making your own app for your business. We have teams ready to help build your project.',
+    cta: { label: 'Start a Conversation', href: '#contact' },
+    accent: '#8B5CF6',
+  },
 ];
+
+const accentStatuses: Product['status'][] = ['Live', 'Beta', 'Available'];
 
 export default function Work() {
   const sectionRef = useRef<HTMLElement>(null);
@@ -185,14 +197,12 @@ export default function Work() {
             fontSize: '11px',
             letterSpacing: '0.1em',
             textTransform: 'uppercase',
-            color:
-              p.status === 'Live' || p.status === 'Beta'
-                ? p.accent
-                : 'rgba(255,255,255,0.5)',
-            background:
-              p.status === 'Live' || p.status === 'Beta'
-                ? `${p.accent}10`
-                : 'transparent',
+            color: accentStatuses.includes(p.status)
+              ? p.accent
+              : 'rgba(255,255,255,0.5)',
+            background: accentStatuses.includes(p.status)
+              ? `${p.accent}10`
+              : 'transparent',
             marginBottom: '20px',
             position: 'relative',
             zIndex: 1,
@@ -204,10 +214,9 @@ export default function Work() {
               width: '6px',
               height: '6px',
               borderRadius: '999px',
-              background:
-                p.status === 'Live' || p.status === 'Beta'
-                  ? p.accent
-                  : 'rgba(255,255,255,0.4)',
+              background: accentStatuses.includes(p.status)
+                ? p.accent
+                : 'rgba(255,255,255,0.4)',
             }}
           />
           {p.status}
@@ -274,6 +283,49 @@ export default function Work() {
           >
             Visit {p.href!.replace(/^https?:\/\//, '').replace(/\/$/, '')} →
           </div>
+        )}
+
+        {p.cta && (
+          <a
+            href={p.cta.href}
+            onClick={(e) => {
+              if (p.cta!.href.startsWith('#')) {
+                e.preventDefault();
+                document
+                  .querySelector(p.cta!.href)
+                  ?.scrollIntoView({ behavior: 'smooth' });
+              }
+            }}
+            style={{
+              alignSelf: 'flex-start',
+              marginTop: '24px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              height: '44px',
+              padding: '0 22px',
+              borderRadius: '22px',
+              backgroundColor: p.accent,
+              color: '#FFFFFF',
+              fontFamily: "'Outfit', sans-serif",
+              fontSize: '13px',
+              fontWeight: 600,
+              letterSpacing: '0.04em',
+              textTransform: 'uppercase',
+              textDecoration: 'none',
+              transition: 'filter 0.2s ease, transform 0.2s ease',
+              position: 'relative',
+              zIndex: 1,
+            }}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLElement).style.filter = 'brightness(1.12)';
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLElement).style.filter = 'brightness(1)';
+            }}
+          >
+            {p.cta.label} →
+          </a>
         )}
       </Wrap>
     );
