@@ -196,14 +196,18 @@ export default function About() {
               {
                 k: 'Beta',
                 v: (
-                  <a
-                    href="https://bellabeast.com"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{ color: '#009C3B', textDecoration: 'none', fontWeight: 600 }}
-                  >
-                    Bella Beast →
-                  </a>
+                  <>
+                    <a
+                      href="https://bellabeast.com"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ color: '#009C3B', textDecoration: 'none', fontWeight: 600 }}
+                    >
+                      Bella Beast →
+                    </a>
+                    {' · '}
+                    <span style={{ color: '#D97706', fontWeight: 600 }}>Memory Lane</span>
+                  </>
                 ),
               },
               { k: 'In development', v: 'Atlas · CashPulse · Blaze' },

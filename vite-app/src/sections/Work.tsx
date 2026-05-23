@@ -6,7 +6,7 @@ gsap.registerPlugin(ScrollTrigger);
 
 type Product = {
   name: string;
-  status: 'Live' | 'In development' | 'Beta' | 'Available' | 'Coming soon';
+  status: 'Live' | 'In development' | 'Beta' | 'Available';
   tagline: string;
   description: string;
   href?: string;
@@ -59,7 +59,7 @@ const products: Product[] = [
   },
   {
     name: 'Memory Lane',
-    status: 'Coming soon',
+    status: 'Beta',
     tagline: 'Photo & image restoration',
     description:
       'Bring old photos back to life. Memory Lane uses AI to restore faded, damaged, and low-resolution images so the memories stay as sharp as the moment.',
@@ -76,12 +76,7 @@ const products: Product[] = [
   },
 ];
 
-const accentStatuses: Product['status'][] = [
-  'Live',
-  'Beta',
-  'Available',
-  'Coming soon',
-];
+const accentStatuses: Product['status'][] = ['Live', 'Beta', 'Available'];
 
 export default function Work() {
   const sectionRef = useRef<HTMLElement>(null);
@@ -374,7 +369,7 @@ export default function Work() {
               margin: 0,
             }}
           >
-            One product live. One in beta. Three in private testing.
+            One product live. Two in beta. Three in private testing.
           </h2>
           <p
             style={{
