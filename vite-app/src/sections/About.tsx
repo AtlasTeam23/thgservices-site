@@ -207,7 +207,7 @@ export default function About() {
                     </a>
                     {' · '}
                     <a
-                      href="https://memorylanephoto.app"
+                      href="https://photomemorylane.com"
                       target="_blank"
                       rel="noopener noreferrer"
                       style={{ color: '#D97706', textDecoration: 'none', fontWeight: 600 }}
