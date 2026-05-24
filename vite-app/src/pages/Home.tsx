@@ -16,8 +16,8 @@ export default function Home() {
       <Navigation />
       <main>
         <Hero />
-        <Problem />
         <Work />
+        <Problem />
         <Capabilities />
         <About />
         <BrandArc />
