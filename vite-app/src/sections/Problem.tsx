@@ -99,7 +99,7 @@ export default function Problem() {
               marginBottom: '20px',
             }}
           >
-            Why this matters
+            Why we build
           </span>
           <h2
             ref={headingRef}
@@ -107,11 +107,11 @@ export default function Problem() {
             style={{
               opacity: 0,
               color: '#FFFFFF',
-              maxWidth: '560px',
+              maxWidth: '620px',
               margin: 0,
             }}
           >
-            Speed of response is the single biggest predictor of conversion.
+            Every flagship started with a problem we had to solve ourselves.
           </h2>
         </div>
 
@@ -129,6 +129,18 @@ export default function Problem() {
               marginBottom: '32px',
             }}
           >
+            <div
+              style={{
+                fontFamily: "'JetBrains Mono', monospace",
+                fontSize: '11px',
+                letterSpacing: '0.1em',
+                textTransform: 'uppercase',
+                color: 'rgba(255, 255, 255, 0.45)',
+                marginBottom: '20px',
+              }}
+            >
+              Example · Lead response timing
+            </div>
             <div
               style={{
                 fontFamily: "'Outfit', sans-serif",
@@ -180,13 +192,13 @@ export default function Problem() {
             }}
           >
             <p style={{ margin: '0 0 16px' }}>
-              Speed wins deals. But for most small and mid-sized businesses,
-              instant follow-up means staffing the phone and the inbox 24/7
-              — which they can't afford.
+              Inbound leads going cold while staff scrambled to call back.
+              Google Ads running on autopilot with no idea what was working.
+              Service businesses tracking estimates and customers across
+              three different tools. Each one became a flagship product
+              because we hit the problem first.
             </p>
             <p style={{ margin: 0 }}>
-              We build the software that closes that gap. Our flagship
-              product,{' '}
               <a
                 href="https://leadquik.com"
                 target="_blank"
@@ -194,11 +206,13 @@ export default function Problem() {
                 style={{ color: '#2563EB', textDecoration: 'none', fontWeight: 600 }}
               >
                 LeadQuik →
-              </a>
-              , replies to inbound leads in seconds with AI-driven first
-              touch and human fallback. The rest of the THG Services product
-              line extends the same idea across customer communications,
-              operations, and reporting.
+              </a>{' '}
+              replies the instant a lead lands. Blaze takes command of
+              Google Ads with 15+ years of AdWords expertise behind the
+              wheel. Atlas runs estimating and CRM for service businesses
+              without the spreadsheet sprawl. And when no off-the-shelf
+              tool can do what an operator needs, we build custom apps for
+              clients too.
             </p>
           </div>
         </div>
