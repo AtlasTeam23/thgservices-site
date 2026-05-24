@@ -6,7 +6,12 @@ gsap.registerPlugin(ScrollTrigger);
 
 type Product = {
   name: string;
-  status: 'Live' | 'In development' | 'Beta' | 'Available';
+  status:
+    | 'Live'
+    | 'In development'
+    | 'Beta'
+    | 'Available'
+    | 'Client app';
   tagline: string;
   description: string;
   href?: string;
@@ -20,16 +25,16 @@ const products: Product[] = [
     status: 'Live',
     tagline: 'Lead response platform',
     description:
-      'The instant a new lead comes in, LeadQuik replies in seconds with AI-driven first-touch and human fallback so no opportunity goes cold. Used by businesses across services, professional, and retail categories.',
+      'Our flagship daily driver. Four apps in one — AI lead response in seconds, conversation routing, unified customer comms, and conversion tracking across Google Ads. Used by businesses across services, professional, and retail categories.',
     href: 'https://leadquik.com',
     accent: '#2563EB',
   },
   {
     name: 'Atlas',
     status: 'In development',
-    tagline: 'Field operations & customer comms',
+    tagline: 'Estimating & CRM for service businesses',
     description:
-      'Field operations and customer communication tools for service businesses. Currently in private testing with select customers.',
+      'Estimating, project management, and customer relationship tools for service businesses — built on 25 years of running multi-state operations. Currently in private testing with select customers.',
     accent: '#F97316',
   },
   {
@@ -43,14 +48,14 @@ const products: Product[] = [
   {
     name: 'Blaze',
     status: 'In development',
-    tagline: 'Marketing & outreach automation',
+    tagline: 'AI SEO & ad-spend agent',
     description:
-      'Marketing and outreach automation for small business teams. Currently in private testing.',
+      "An AI agent that commands your Google Ads spend, built on 15+ years of AdWords expertise. In some cases we've saved customers $80K a year while tripling return on ad spend. Currently in private testing.",
     accent: '#EF4444',
   },
   {
     name: 'Bella Beast',
-    status: 'Beta',
+    status: 'Client app',
     tagline: 'Fitness coaching with Coach Adriana',
     description:
       'Train hard. Eat right. Be the beast. A coaching brand and app from Coach Adriana for clients who want a real plan, not a generic one. Currently in beta.',
@@ -59,7 +64,7 @@ const products: Product[] = [
   },
   {
     name: 'Memory Lane',
-    status: 'Beta',
+    status: 'Client app',
     tagline: 'Photo & image restoration',
     description:
       'Bring old photos back to life. Memory Lane uses AI to restore faded, damaged, and low-resolution images so the memories stay as sharp as the moment.',
@@ -78,6 +83,11 @@ const products: Product[] = [
 ];
 
 const accentStatuses: Product['status'][] = ['Live', 'Beta', 'Available'];
+
+// Neutral blue-grey palette for client-work cards so the pill reads
+// informational instead of branded.
+const CLIENT_PILL_COLOR = '#94A3B8'; // slate-400
+const CLIENT_PILL_BG = 'rgba(148, 163, 184, 0.10)';
 
 export default function Work() {
   const sectionRef = useRef<HTMLElement>(null);
@@ -206,12 +216,18 @@ export default function Work() {
             fontSize: '11px',
             letterSpacing: '0.1em',
             textTransform: 'uppercase',
-            color: accentStatuses.includes(p.status)
-              ? p.accent
-              : 'rgba(255,255,255,0.5)',
-            background: accentStatuses.includes(p.status)
-              ? `${p.accent}10`
-              : 'transparent',
+            color:
+              p.status === 'Client app'
+                ? CLIENT_PILL_COLOR
+                : accentStatuses.includes(p.status)
+                  ? p.accent
+                  : 'rgba(255,255,255,0.5)',
+            background:
+              p.status === 'Client app'
+                ? CLIENT_PILL_BG
+                : accentStatuses.includes(p.status)
+                  ? `${p.accent}10`
+                  : 'transparent',
             marginBottom: '20px',
             position: 'relative',
             zIndex: 1,
@@ -223,9 +239,12 @@ export default function Work() {
               width: '6px',
               height: '6px',
               borderRadius: '999px',
-              background: accentStatuses.includes(p.status)
-                ? p.accent
-                : 'rgba(255,255,255,0.4)',
+              background:
+                p.status === 'Client app'
+                  ? CLIENT_PILL_COLOR
+                  : accentStatuses.includes(p.status)
+                    ? p.accent
+                    : 'rgba(255,255,255,0.4)',
             }}
           />
           {p.status}
@@ -370,7 +389,8 @@ export default function Work() {
               margin: 0,
             }}
           >
-            One product live. Two in beta. Three in private testing.
+            Three flagship products. More in the pipeline. Plus apps built
+            for clients.
           </h2>
           <p
             style={{
@@ -382,9 +402,10 @@ export default function Work() {
               margin: '20px 0 0',
             }}
           >
-            We build, operate, and support every product on the THG Services
-            line. We don’t white-label other people’s software, and we don’t
-            ship anything we wouldn’t use ourselves.
+            We build, operate, and support our own product line — and take
+            on custom builds when an existing tool can’t get the job done.
+            We don’t white-label other people’s software, and we don’t ship
+            anything we wouldn’t use ourselves.
           </p>
         </div>
 

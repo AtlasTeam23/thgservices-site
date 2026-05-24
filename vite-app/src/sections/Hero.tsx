@@ -61,7 +61,7 @@ export default function Hero() {
             margin: 0,
           }}
         >
-          Software for businesses that run on leads.
+          Software built by an operator, not a vendor.
         </h1>
 
         <p
@@ -74,10 +74,12 @@ export default function Hero() {
             lineHeight: 1.55,
           }}
         >
-          We build and operate products that help small and mid-sized
-          businesses respond to inbound leads in seconds, unify their
-          customer communications, and run their day-to-day operations.
-          One product is live. Three more are in private testing.
+          THG Services is the software studio of a 25-year entrepreneur — a
+          multi-state operator who&rsquo;s been running companies since long
+          before the apps existed. LeadQuik, Atlas, and Blaze are our
+          flagship products, with more in the pipeline. We also build apps
+          for clients on request, and take on custom work when the
+          off-the-shelf software can&rsquo;t get the job done.
         </p>
 
         <div

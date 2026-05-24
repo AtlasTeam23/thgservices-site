@@ -193,8 +193,9 @@ export default function About() {
                   </a>
                 ),
               },
+              { k: 'In development', v: 'Atlas · CashPulse · Blaze' },
               {
-                k: 'Beta',
+                k: 'Client apps',
                 v: (
                   <>
                     <a
@@ -217,7 +218,6 @@ export default function About() {
                   </>
                 ),
               },
-              { k: 'In development', v: 'Atlas · CashPulse · Blaze' },
               {
                 k: 'Email',
                 v: (
