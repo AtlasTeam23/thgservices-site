@@ -366,12 +366,44 @@ export default function Work() {
       ref={sectionRef}
       style={{
         width: '100%',
+        position: 'relative',
+        overflow: 'hidden',
         backgroundColor: 'var(--thg-bg-section-emphasis)',
         padding: 'clamp(80px, 10vw, 140px) clamp(24px, 5vw, 80px)',
         transition: 'background-color 0.3s ease',
       }}
     >
-      <div style={{ maxWidth: '1280px', margin: '0 auto' }}>
+      {/* Texture: radial glows in opposing corners + faint dot grid.
+          White-alpha values read on both #0A0A0F (dark) and #0F172A
+          (light-mode charcoal). */}
+      <div
+        aria-hidden
+        style={{
+          position: 'absolute',
+          inset: 0,
+          pointerEvents: 'none',
+          backgroundImage: [
+            'radial-gradient(ellipse 70% 55% at 92% 8%, rgba(99, 102, 241, 0.10) 0%, transparent 60%)',
+            'radial-gradient(ellipse 55% 45% at 8% 95%, rgba(37, 99, 235, 0.07) 0%, transparent 55%)',
+            'radial-gradient(circle, rgba(255, 255, 255, 0.035) 1px, transparent 1px)',
+          ].join(', '),
+          backgroundSize: '100% 100%, 100% 100%, 32px 32px',
+          backgroundPosition: '0 0, 0 0, 0 0',
+          maskImage:
+            'linear-gradient(to bottom, transparent 0%, #000 8%, #000 92%, transparent 100%)',
+          WebkitMaskImage:
+            'linear-gradient(to bottom, transparent 0%, #000 8%, #000 92%, transparent 100%)',
+        }}
+      />
+
+      <div
+        style={{
+          position: 'relative',
+          zIndex: 1,
+          maxWidth: '1280px',
+          margin: '0 auto',
+        }}
+      >
         <div ref={headerRef} style={{ opacity: 0, marginBottom: '48px' }}>
           <span
             className="font-mono-label"
