@@ -6,6 +6,7 @@ import { useIsMobile } from '../hooks/use-mobile';
 const navLinks = [
   { label: 'Why', href: '#why' },
   { label: 'Products', href: '#products' },
+  { label: 'Consulting', href: '#consulting' },
   { label: 'Capabilities', href: '#capabilities' },
   { label: 'About', href: '#about' },
   { label: 'Contact', href: '#contact' },

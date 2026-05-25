@@ -3,6 +3,7 @@ import Navigation from '../components/Navigation';
 import Hero from '../sections/Hero';
 import Problem from '../sections/Problem';
 import Work from '../sections/Work';
+import Consulting from '../sections/Consulting';
 import Capabilities from '../sections/Capabilities';
 import About from '../sections/About';
 import BrandArc from '../sections/BrandArc';
@@ -17,6 +18,7 @@ export default function Home() {
       <main>
         <Hero />
         <Work />
+        <Consulting />
         <Problem />
         <Capabilities />
         <About />
