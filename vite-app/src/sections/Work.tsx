@@ -165,27 +165,28 @@ export default function Work() {
           flexDirection: 'column',
           padding: '32px',
           borderRadius: '8px',
-          border: '1px solid var(--thg-border-subtle)',
-          background:
-            'linear-gradient(180deg, var(--thg-bg-elevated) 0%, transparent 100%)',
+          border: '1px solid var(--thg-bg-work-card-border)',
+          background: 'var(--thg-bg-work-card)',
           textDecoration: 'none',
           color: 'inherit',
           minHeight: '320px',
           position: 'relative',
           overflow: 'hidden',
+          boxShadow: 'none',
           transition:
-            'border-color 0.25s ease, transform 0.25s ease, background 0.25s ease',
+            'border-color 0.25s ease, transform 0.25s ease, box-shadow 0.25s ease',
         }}
         onMouseEnter={(e) => {
-          if (!isLink) return;
-          (e.currentTarget as HTMLElement).style.borderColor = p.accent;
-          (e.currentTarget as HTMLElement).style.transform = 'translateY(-4px)';
+          const el = e.currentTarget as HTMLElement;
+          el.style.borderColor = p.accent;
+          el.style.transform = 'translateY(-6px)';
+          el.style.boxShadow = 'var(--thg-work-card-shadow-hover)';
         }}
         onMouseLeave={(e) => {
-          if (!isLink) return;
-          (e.currentTarget as HTMLElement).style.borderColor =
-            'var(--thg-border-subtle)';
-          (e.currentTarget as HTMLElement).style.transform = 'translateY(0)';
+          const el = e.currentTarget as HTMLElement;
+          el.style.borderColor = 'var(--thg-bg-work-card-border)';
+          el.style.transform = 'translateY(0)';
+          el.style.boxShadow = 'none';
         }}
       >
         {/* Accent glow */}
@@ -365,7 +366,7 @@ export default function Work() {
       ref={sectionRef}
       style={{
         width: '100%',
-        backgroundColor: 'var(--thg-bg-section)',
+        backgroundColor: 'var(--thg-bg-section-emphasis)',
         padding: 'clamp(80px, 10vw, 140px) clamp(24px, 5vw, 80px)',
         transition: 'background-color 0.3s ease',
       }}
@@ -375,7 +376,7 @@ export default function Work() {
           <span
             className="font-mono-label"
             style={{
-              color: 'var(--thg-text-quaternary)',
+              color: 'rgba(255, 255, 255, 0.5)',
               display: 'block',
               marginBottom: '20px',
             }}
@@ -385,7 +386,7 @@ export default function Work() {
           <h2
             className="font-heading-xl"
             style={{
-              color: 'var(--thg-text-primary)',
+              color: '#FFFFFF',
               maxWidth: '760px',
               margin: 0,
             }}
@@ -398,7 +399,7 @@ export default function Work() {
               fontFamily: "'Outfit', sans-serif",
               fontSize: '17px',
               lineHeight: 1.6,
-              color: 'var(--thg-text-secondary)',
+              color: 'rgba(255, 255, 255, 0.7)',
               maxWidth: '640px',
               margin: '20px 0 0',
             }}

@@ -85,6 +85,14 @@
     --thg-vignette-end: rgba(4, 5, 10, 0);
     --thg-vignette-top: rgba(4, 5, 10, 0.4);
     --thg-vignette-bottom: rgba(4, 5, 10, 0.6);
+
+    /* "Emphasis" section variant — used by Work so cards pop. Dark in
+       both themes, but tuned per theme. */
+    --thg-bg-section-emphasis: #0A0A0F;
+    --thg-bg-work-card:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.02) 0%, transparent 100%);
+    --thg-bg-work-card-border: rgba(255, 255, 255, 0.08);
+    --thg-work-card-shadow-hover: 0 18px 36px -16px rgba(0, 0, 0, 0.5);
   }
 
   [data-theme='light'] {
@@ -129,6 +137,13 @@
     --thg-vignette-end: rgba(250, 250, 249, 0);
     --thg-vignette-top: rgba(250, 250, 249, 0.3);
     --thg-vignette-bottom: rgba(250, 250, 249, 0.4);
+
+    /* Emphasis section becomes charcoal in light mode so the white cards
+       pop dramatically. Card surfaces flip to solid white. */
+    --thg-bg-section-emphasis: #0F172A;
+    --thg-bg-work-card: #FFFFFF;
+    --thg-bg-work-card-border: rgba(15, 23, 42, 0.08);
+    --thg-work-card-shadow-hover: 0 22px 48px -12px rgba(15, 23, 42, 0.28);
   }
 
   html {
