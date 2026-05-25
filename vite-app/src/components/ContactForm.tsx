@@ -13,7 +13,7 @@ const labelStyle = {
   fontSize: '11px',
   letterSpacing: '0.08em',
   textTransform: 'uppercase' as const,
-  color: 'rgba(255, 255, 255, 0.55)',
+  color: 'var(--thg-text-tertiary)',
   marginBottom: '8px',
   textAlign: 'left' as const,
 };
@@ -21,10 +21,10 @@ const labelStyle = {
 const inputBase = {
   width: '100%',
   padding: '12px 16px',
-  backgroundColor: 'rgba(255, 255, 255, 0.04)',
-  border: '1px solid rgba(255, 255, 255, 0.12)',
+  backgroundColor: 'var(--thg-bg-input)',
+  border: '1px solid var(--thg-border-subtle)',
   borderRadius: '8px',
-  color: '#FFFFFF',
+  color: 'var(--thg-text-primary)',
   fontFamily: "'Outfit', sans-serif",
   fontSize: '15px',
   outline: 'none',
@@ -33,12 +33,12 @@ const inputBase = {
 };
 
 function focusOn(e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) {
-  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.4)';
-  e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.06)';
+  e.currentTarget.style.borderColor = 'var(--thg-border-strong)';
+  e.currentTarget.style.backgroundColor = 'var(--thg-bg-input-focus)';
 }
 function focusOff(e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) {
-  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.12)';
-  e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.04)';
+  e.currentTarget.style.borderColor = 'var(--thg-border-subtle)';
+  e.currentTarget.style.backgroundColor = 'var(--thg-bg-input)';
 }
 
 export default function ContactForm() {
@@ -111,7 +111,7 @@ export default function ContactForm() {
           borderRadius: '12px',
           backgroundColor: 'rgba(37, 99, 235, 0.08)',
           border: '1px solid rgba(37, 99, 235, 0.25)',
-          color: '#FFFFFF',
+          color: 'var(--thg-text-primary)',
           fontFamily: "'Outfit', sans-serif",
           fontSize: '16px',
           lineHeight: 1.5,
@@ -126,7 +126,7 @@ export default function ContactForm() {
             style={{
               background: 'none',
               border: 'none',
-              color: 'rgba(255,255,255,0.55)',
+              color: 'var(--thg-text-tertiary)',
               fontFamily: "'JetBrains Mono', monospace",
               fontSize: '11px',
               letterSpacing: '0.08em',

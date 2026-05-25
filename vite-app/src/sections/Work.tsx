@@ -165,9 +165,9 @@ export default function Work() {
           flexDirection: 'column',
           padding: '32px',
           borderRadius: '8px',
-          border: '1px solid rgba(255,255,255,0.08)',
+          border: '1px solid var(--thg-border-subtle)',
           background:
-            'linear-gradient(180deg, rgba(255,255,255,0.02) 0%, rgba(255,255,255,0) 100%)',
+            'linear-gradient(180deg, var(--thg-bg-elevated) 0%, transparent 100%)',
           textDecoration: 'none',
           color: 'inherit',
           minHeight: '320px',
@@ -184,7 +184,7 @@ export default function Work() {
         onMouseLeave={(e) => {
           if (!isLink) return;
           (e.currentTarget as HTMLElement).style.borderColor =
-            'rgba(255,255,255,0.08)';
+            'var(--thg-border-subtle)';
           (e.currentTarget as HTMLElement).style.transform = 'translateY(0)';
         }}
       >
@@ -210,7 +210,7 @@ export default function Work() {
             gap: '8px',
             alignSelf: 'flex-start',
             padding: '6px 12px',
-            border: '1px solid rgba(255,255,255,0.14)',
+            border: '1px solid var(--thg-border-subtle)',
             borderRadius: '999px',
             fontFamily: "'JetBrains Mono', monospace",
             fontSize: '11px',
@@ -221,7 +221,7 @@ export default function Work() {
                 ? CLIENT_PILL_COLOR
                 : accentStatuses.includes(p.status)
                   ? p.accent
-                  : 'rgba(255,255,255,0.5)',
+                  : 'var(--thg-text-tertiary)',
             background:
               p.status === 'Client app'
                 ? CLIENT_PILL_BG
@@ -244,7 +244,7 @@ export default function Work() {
                   ? CLIENT_PILL_COLOR
                   : accentStatuses.includes(p.status)
                     ? p.accent
-                    : 'rgba(255,255,255,0.4)',
+                    : 'var(--thg-text-quaternary)',
             }}
           />
           {p.status}
@@ -256,7 +256,7 @@ export default function Work() {
             fontSize: '11px',
             letterSpacing: '0.12em',
             textTransform: 'uppercase',
-            color: 'rgba(255,255,255,0.5)',
+            color: 'var(--thg-text-tertiary)',
             marginBottom: '8px',
             position: 'relative',
             zIndex: 1,
@@ -271,7 +271,7 @@ export default function Work() {
             fontSize: 'clamp(28px, 2.4vw, 36px)',
             fontWeight: 600,
             letterSpacing: '-0.02em',
-            color: '#FFFFFF',
+            color: 'var(--thg-text-primary)',
             margin: '0 0 16px',
             position: 'relative',
             zIndex: 1,
@@ -285,7 +285,7 @@ export default function Work() {
             fontFamily: "'Outfit', sans-serif",
             fontSize: '15px',
             lineHeight: 1.6,
-            color: 'rgba(255,255,255,0.65)',
+            color: 'var(--thg-text-secondary)',
             margin: 0,
             flexGrow: 1,
             position: 'relative',
@@ -365,8 +365,9 @@ export default function Work() {
       ref={sectionRef}
       style={{
         width: '100%',
-        backgroundColor: '#0A0A0F',
+        backgroundColor: 'var(--thg-bg-section)',
         padding: 'clamp(80px, 10vw, 140px) clamp(24px, 5vw, 80px)',
+        transition: 'background-color 0.3s ease',
       }}
     >
       <div style={{ maxWidth: '1280px', margin: '0 auto' }}>
@@ -374,7 +375,7 @@ export default function Work() {
           <span
             className="font-mono-label"
             style={{
-              color: 'rgba(255,255,255,0.4)',
+              color: 'var(--thg-text-quaternary)',
               display: 'block',
               marginBottom: '20px',
             }}
@@ -384,7 +385,7 @@ export default function Work() {
           <h2
             className="font-heading-xl"
             style={{
-              color: '#FFFFFF',
+              color: 'var(--thg-text-primary)',
               maxWidth: '760px',
               margin: 0,
             }}
@@ -397,7 +398,7 @@ export default function Work() {
               fontFamily: "'Outfit', sans-serif",
               fontSize: '17px',
               lineHeight: 1.6,
-              color: 'rgba(255,255,255,0.65)',
+              color: 'var(--thg-text-secondary)',
               maxWidth: '640px',
               margin: '20px 0 0',
             }}

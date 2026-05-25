@@ -62,7 +62,8 @@ export default function Footer() {
       ref={footerRef}
       style={{
         width: '100%',
-        backgroundColor: '#000000',
+        backgroundColor: 'var(--thg-bg-footer)',
+        transition: 'background-color 0.3s ease',
         padding: '80px clamp(24px, 5vw, 80px) 40px',
       }}
     >
@@ -78,7 +79,8 @@ export default function Footer() {
           {/* Brand */}
           <div className="footer-col" style={{ opacity: 0 }}>
             <div style={{ marginBottom: '14px' }}>
-              <Logo size={28} />
+              {/* Footer stays dark in both themes — force white wordmark */}
+              <Logo size={28} wordmarkColor="rgba(255, 255, 255, 0.95)" />
             </div>
             <div
               style={{

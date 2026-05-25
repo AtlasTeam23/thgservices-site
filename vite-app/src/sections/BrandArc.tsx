@@ -51,7 +51,8 @@ export default function BrandArc() {
         position: 'relative',
         width: '100%',
         minHeight: '70vh',
-        backgroundColor: '#000000',
+        backgroundColor: 'var(--thg-bg-section)',
+        transition: 'background-color 0.3s ease',
         overflow: 'hidden',
         display: 'flex',
         alignItems: 'center',
@@ -111,7 +112,7 @@ export default function BrandArc() {
           className="font-mono-label"
           style={{
             display: 'block',
-            color: 'rgba(255,255,255,0.5)',
+            color: 'var(--thg-text-tertiary)',
             marginBottom: '20px',
           }}
         >
@@ -123,7 +124,7 @@ export default function BrandArc() {
             fontFamily: "'Outfit', sans-serif",
             fontSize: 'clamp(36px, 4.5vw, 64px)',
             fontWeight: 600,
-            color: '#FFFFFF',
+            color: 'var(--thg-text-primary)',
             letterSpacing: '-0.025em',
             margin: 0,
             lineHeight: 1.05,
@@ -138,7 +139,7 @@ export default function BrandArc() {
             fontFamily: "'Outfit', sans-serif",
             fontSize: '17px',
             lineHeight: 1.55,
-            color: 'rgba(255, 255, 255, 0.65)',
+            color: 'var(--thg-text-secondary)',
             maxWidth: '520px',
             marginLeft: 'auto',
             marginRight: 'auto',
@@ -154,11 +155,11 @@ export default function BrandArc() {
           style={{
             marginTop: '40px',
             paddingTop: '32px',
-            borderTop: '1px solid rgba(255,255,255,0.08)',
+            borderTop: '1px solid var(--thg-border-subtle)',
             fontFamily: "'JetBrains Mono', monospace",
             fontSize: '12px',
             letterSpacing: '0.06em',
-            color: 'rgba(255,255,255,0.45)',
+            color: 'var(--thg-text-tertiary)',
             lineHeight: 1.7,
           }}
         >

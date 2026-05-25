@@ -81,20 +81,21 @@ export default function Capabilities() {
       ref={sectionRef}
       style={{
         width: '100%',
-        backgroundColor: '#0A0A0F',
+        backgroundColor: 'var(--thg-bg-section)',
         backgroundImage:
-          'linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px)',
+          'linear-gradient(var(--thg-border-faint) 1px, transparent 1px), linear-gradient(90deg, var(--thg-border-faint) 1px, transparent 1px)',
         backgroundSize: '64px 64px',
         padding: 'clamp(80px, 10vw, 140px) clamp(24px, 5vw, 80px)',
-        borderTop: '1px solid rgba(255,255,255,0.06)',
-        borderBottom: '1px solid rgba(255,255,255,0.06)',
+        borderTop: '1px solid var(--thg-bg-section-border)',
+        borderBottom: '1px solid var(--thg-bg-section-border)',
+        transition: 'background-color 0.3s ease',
       }}
     >
       <div style={{ maxWidth: '1280px', margin: '0 auto' }}>
         <span
           className="font-mono-label"
           style={{
-            color: 'rgba(255, 255, 255, 0.4)',
+            color: 'var(--thg-text-quaternary)',
             display: 'block',
             marginBottom: '20px',
           }}
@@ -104,7 +105,7 @@ export default function Capabilities() {
         <h2
           className="font-heading-xl"
           style={{
-            color: '#FFFFFF',
+            color: 'var(--thg-text-primary)',
             maxWidth: '760px',
             margin: 0,
           }}
@@ -128,9 +129,9 @@ export default function Capabilities() {
               style={{
                 opacity: 0,
                 padding: '32px 28px',
-                border: '1px solid rgba(255,255,255,0.08)',
+                border: '1px solid var(--thg-border-subtle)',
                 borderRadius: '8px',
-                background: 'rgba(255,255,255,0.02)',
+                background: 'var(--thg-bg-elevated)',
                 transition: 'border-color 0.25s ease, background 0.25s ease',
               }}
               onMouseEnter={(e) => {
@@ -141,9 +142,9 @@ export default function Capabilities() {
               }}
               onMouseLeave={(e) => {
                 (e.currentTarget as HTMLElement).style.borderColor =
-                  'rgba(255,255,255,0.08)';
+                  'var(--thg-border-subtle)';
                 (e.currentTarget as HTMLElement).style.background =
-                  'rgba(255,255,255,0.02)';
+                  'var(--thg-bg-elevated)';
               }}
             >
               <div
@@ -151,7 +152,7 @@ export default function Capabilities() {
                   fontFamily: "'JetBrains Mono', monospace",
                   fontSize: '12px',
                   letterSpacing: '0.12em',
-                  color: 'rgba(255,255,255,0.4)',
+                  color: 'var(--thg-text-quaternary)',
                   marginBottom: '20px',
                 }}
               >
@@ -163,7 +164,7 @@ export default function Capabilities() {
                   fontSize: 'clamp(28px, 2.6vw, 36px)',
                   fontWeight: 600,
                   letterSpacing: '-0.02em',
-                  color: '#FFFFFF',
+                  color: 'var(--thg-text-primary)',
                   marginBottom: '14px',
                 }}
               >
@@ -174,7 +175,7 @@ export default function Capabilities() {
                   fontFamily: "'Outfit', sans-serif",
                   fontSize: '15px',
                   lineHeight: 1.55,
-                  color: 'rgba(255,255,255,0.65)',
+                  color: 'var(--thg-text-secondary)',
                   margin: 0,
                 }}
               >

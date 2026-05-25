@@ -5,7 +5,7 @@ type LogoProps = {
   size?: number;
   /** Show "THG Services" wordmark next to the orb. Default true. */
   showWordmark?: boolean;
-  /** Color of the wordmark text. Default white. */
+  /** Color of the wordmark text. Defaults to the active theme's primary text color. */
   wordmarkColor?: string;
   /** Override default font weight on the wordmark. */
   wordmarkWeight?: number;
@@ -27,7 +27,7 @@ type LogoProps = {
 export default function Logo({
   size = 32,
   showWordmark = true,
-  wordmarkColor = '#FFFFFF',
+  wordmarkColor = 'var(--thg-text-primary)',
   wordmarkWeight = 700,
   className,
   href,

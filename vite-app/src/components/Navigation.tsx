@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import Logo from './Logo';
+import ThemeToggle from './ThemeToggle';
 import { useIsMobile } from '../hooks/use-mobile';
 
 const navLinks = [
@@ -49,10 +50,12 @@ export default function Navigation() {
           justifyContent: 'space-between',
           padding: '0 clamp(20px, 5vw, 80px)',
           transition: 'background-color 0.4s ease, backdrop-filter 0.4s ease, border-color 0.4s ease',
-          backgroundColor: 'rgba(10, 10, 15, 0.92)',
+          backgroundColor: 'var(--thg-nav-bg)',
           backdropFilter: 'blur(12px)',
           WebkitBackdropFilter: 'blur(12px)',
-          borderBottom: scrolled ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(255,255,255,0.04)',
+          borderBottom: scrolled
+            ? '1px solid var(--thg-border-subtle)'
+            : '1px solid var(--thg-border-faint)',
         }}
       >
         {/* Brand */}
@@ -81,9 +84,9 @@ export default function Navigation() {
             }}
             aria-label="Toggle menu"
           >
-            <div style={{ width: 24, height: 2, background: '#fff', marginBottom: 6, transition: 'transform 0.3s', transform: menuOpen ? 'rotate(45deg) translate(4px, 4px)' : 'none' }} />
-            <div style={{ width: 24, height: 2, background: '#fff', marginBottom: 6, opacity: menuOpen ? 0 : 1, transition: 'opacity 0.3s' }} />
-            <div style={{ width: 24, height: 2, background: '#fff', transition: 'transform 0.3s', transform: menuOpen ? 'rotate(-45deg) translate(4px, -4px)' : 'none' }} />
+            <div style={{ width: 24, height: 2, background: 'var(--thg-text-primary)', marginBottom: 6, transition: 'transform 0.3s', transform: menuOpen ? 'rotate(45deg) translate(4px, 4px)' : 'none' }} />
+            <div style={{ width: 24, height: 2, background: 'var(--thg-text-primary)', marginBottom: 6, opacity: menuOpen ? 0 : 1, transition: 'opacity 0.3s' }} />
+            <div style={{ width: 24, height: 2, background: 'var(--thg-text-primary)', transition: 'transform 0.3s', transform: menuOpen ? 'rotate(-45deg) translate(4px, -4px)' : 'none' }} />
           </button>
         ) : (
           <>
@@ -102,10 +105,10 @@ export default function Navigation() {
                   onClick={(e) => handleNavClick(e, link.href)}
                   className="font-nav"
                   style={{
-                    color: '#FFFFFF',
+                    color: 'var(--thg-text-primary)',
                     opacity: 0.7,
                     textDecoration: 'none',
-                    transition: 'opacity 0.3s ease',
+                    transition: 'opacity 0.3s ease, color 0.3s ease',
                   }}
                   onMouseEnter={(e) => {
                     (e.target as HTMLElement).style.opacity = '1';
@@ -119,36 +122,45 @@ export default function Navigation() {
               ))}
             </div>
 
-            {/* CTA - desktop */}
-            <a
-              href="#contact"
-              onClick={(e) => handleNavClick(e, '#contact')}
+            {/* Right group: Contact CTA + theme toggle */}
+            <div
               style={{
-                height: '40px',
-                borderRadius: '20px',
-                padding: '0 24px',
-                backgroundColor: '#2563EB',
-                color: '#FFFFFF',
-                fontFamily: "'Outfit', sans-serif",
-                fontSize: '14px',
-                fontWeight: 600,
-                letterSpacing: '0.04em',
-                textTransform: 'uppercase' as const,
-                textDecoration: 'none',
                 display: 'inline-flex',
                 alignItems: 'center',
-                justifyContent: 'center',
-                transition: 'background-color 0.3s ease',
-              }}
-              onMouseEnter={(e) => {
-                (e.target as HTMLElement).style.backgroundColor = '#1E40AF';
-              }}
-              onMouseLeave={(e) => {
-                (e.target as HTMLElement).style.backgroundColor = '#2563EB';
+                gap: '12px',
               }}
             >
-              Contact Us
-            </a>
+              <a
+                href="#contact"
+                onClick={(e) => handleNavClick(e, '#contact')}
+                style={{
+                  height: '40px',
+                  borderRadius: '20px',
+                  padding: '0 24px',
+                  backgroundColor: '#2563EB',
+                  color: '#FFFFFF',
+                  fontFamily: "'Outfit', sans-serif",
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  letterSpacing: '0.04em',
+                  textTransform: 'uppercase' as const,
+                  textDecoration: 'none',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'background-color 0.3s ease',
+                }}
+                onMouseEnter={(e) => {
+                  (e.target as HTMLElement).style.backgroundColor = '#1E40AF';
+                }}
+                onMouseLeave={(e) => {
+                  (e.target as HTMLElement).style.backgroundColor = '#2563EB';
+                }}
+              >
+                Contact Us
+              </a>
+              <ThemeToggle size={40} />
+            </div>
           </>
         )}
       </nav>
@@ -160,7 +172,7 @@ export default function Navigation() {
             position: 'fixed',
             inset: 0,
             zIndex: 99,
-            backgroundColor: 'rgba(0, 0, 0, 0.95)',
+            backgroundColor: 'var(--thg-bg-page)',
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
@@ -177,7 +189,7 @@ export default function Navigation() {
                 fontFamily: "'Outfit', sans-serif",
                 fontSize: '32px',
                 fontWeight: 600,
-                color: '#FFFFFF',
+                color: 'var(--thg-text-primary)',
                 textDecoration: 'none',
                 letterSpacing: '-0.02em',
               }}
@@ -206,8 +218,11 @@ export default function Navigation() {
               justifyContent: 'center',
             }}
           >
-            Start a Project
+            Contact Us
           </a>
+          <div style={{ marginTop: '16px' }}>
+            <ThemeToggle size={44} />
+          </div>
         </div>
       )}
     </>

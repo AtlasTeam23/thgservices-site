@@ -42,6 +42,93 @@
     --text-black: #111827;
     --text-grey: #6B7280;
     --off-white: #F3F4F6;
+
+    /* === THG site theme tokens — DARK (default) === */
+    /* Surfaces */
+    --thg-bg-page: #04050A;
+    --thg-bg-section: #0A0A0F;
+    --thg-bg-section-border: rgba(255, 255, 255, 0.06);
+    --thg-bg-elevated: rgba(255, 255, 255, 0.02);
+    --thg-bg-elevated-strong: rgba(255, 255, 255, 0.04);
+    --thg-bg-input: rgba(255, 255, 255, 0.04);
+    --thg-bg-input-focus: rgba(255, 255, 255, 0.06);
+    --thg-bg-footer: #000000;
+
+    /* About section — intentionally INVERTS the page */
+    --thg-bg-about: #F3F4F6;
+    --thg-bg-about-card: #FFFFFF;
+    --thg-text-about-heading: #111827;
+    --thg-text-about-body: #4B5563;
+    --thg-text-about-dim: #6B7280;
+    --thg-border-about: #E5E7EB;
+    --thg-bg-about-elevated: #F9FAFB;
+
+    /* Text */
+    --thg-text-primary: #FFFFFF;
+    --thg-text-secondary: rgba(255, 255, 255, 0.7);
+    --thg-text-tertiary: rgba(255, 255, 255, 0.55);
+    --thg-text-quaternary: rgba(255, 255, 255, 0.4);
+    --thg-text-quinary: rgba(255, 255, 255, 0.25);
+
+    /* Borders */
+    --thg-border-faint: rgba(255, 255, 255, 0.06);
+    --thg-border-subtle: rgba(255, 255, 255, 0.08);
+    --thg-border-medium: rgba(255, 255, 255, 0.18);
+    --thg-border-strong: rgba(255, 255, 255, 0.4);
+
+    /* Nav glass background */
+    --thg-nav-bg: rgba(10, 10, 15, 0.92);
+
+    /* Hero vignette layers */
+    --thg-vignette-left: rgba(4, 5, 10, 0.6);
+    --thg-vignette-mid: rgba(4, 5, 10, 0.15);
+    --thg-vignette-end: rgba(4, 5, 10, 0);
+    --thg-vignette-top: rgba(4, 5, 10, 0.4);
+    --thg-vignette-bottom: rgba(4, 5, 10, 0.6);
+  }
+
+  [data-theme='light'] {
+    /* Surfaces — light */
+    --thg-bg-page: #FAFAF9;
+    --thg-bg-section: #F4F4F2;
+    --thg-bg-section-border: rgba(15, 23, 42, 0.06);
+    --thg-bg-elevated: rgba(15, 23, 42, 0.03);
+    --thg-bg-elevated-strong: rgba(15, 23, 42, 0.05);
+    --thg-bg-input: rgba(15, 23, 42, 0.04);
+    --thg-bg-input-focus: rgba(15, 23, 42, 0.06);
+    --thg-bg-footer: #0F172A; /* footer stays dark to anchor the page */
+
+    /* About section — inverts to DARK in light mode */
+    --thg-bg-about: #0A0A0F;
+    --thg-bg-about-card: #1F2937;
+    --thg-text-about-heading: #FFFFFF;
+    --thg-text-about-body: rgba(255, 255, 255, 0.75);
+    --thg-text-about-dim: rgba(255, 255, 255, 0.5);
+    --thg-border-about: rgba(255, 255, 255, 0.1);
+    --thg-bg-about-elevated: #111827;
+
+    /* Text */
+    --thg-text-primary: #0F172A;
+    --thg-text-secondary: #475569;
+    --thg-text-tertiary: #64748B;
+    --thg-text-quaternary: #94A3B8;
+    --thg-text-quinary: #CBD5E1;
+
+    /* Borders */
+    --thg-border-faint: rgba(15, 23, 42, 0.06);
+    --thg-border-subtle: rgba(15, 23, 42, 0.1);
+    --thg-border-medium: rgba(15, 23, 42, 0.18);
+    --thg-border-strong: rgba(15, 23, 42, 0.4);
+
+    /* Nav glass background — light frosted */
+    --thg-nav-bg: rgba(250, 250, 249, 0.85);
+
+    /* Hero vignette layers — much subtler on light */
+    --thg-vignette-left: rgba(250, 250, 249, 0.4);
+    --thg-vignette-mid: rgba(250, 250, 249, 0.1);
+    --thg-vignette-end: rgba(250, 250, 249, 0);
+    --thg-vignette-top: rgba(250, 250, 249, 0.3);
+    --thg-vignette-bottom: rgba(250, 250, 249, 0.4);
   }
 
   html {
@@ -49,12 +136,13 @@
   }
 
   body {
-    background-color: #000000;
-    color: #FFFFFF;
+    background-color: var(--thg-bg-page);
+    color: var(--thg-text-primary);
     font-family: 'Outfit', sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     overflow-x: hidden;
+    transition: background-color 0.3s ease, color 0.3s ease;
   }
 }
 

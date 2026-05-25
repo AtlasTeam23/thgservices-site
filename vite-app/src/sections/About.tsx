@@ -47,8 +47,9 @@ export default function About() {
       ref={sectionRef}
       style={{
         width: '100%',
-        backgroundColor: '#F3F4F6',
+        backgroundColor: 'var(--thg-bg-about)',
         padding: 'clamp(64px, 10vw, 140px) clamp(24px, 5vw, 80px)',
+        transition: 'background-color 0.3s ease',
       }}
     >
       <div
@@ -67,7 +68,7 @@ export default function About() {
           <span
             className="font-mono-label"
             style={{
-              color: '#6B7280',
+              color: 'var(--thg-text-about-dim)',
               display: 'block',
               marginBottom: '24px',
             }}
@@ -77,7 +78,7 @@ export default function About() {
           <h2
             className="font-heading-xl"
             style={{
-              color: '#111827',
+              color: 'var(--thg-text-about-heading)',
               maxWidth: '720px',
             }}
           >
@@ -86,7 +87,7 @@ export default function About() {
           <p
             className="font-body-lg"
             style={{
-              color: '#111827',
+              color: 'var(--thg-text-about-body)',
               maxWidth: '560px',
               marginTop: '32px',
             }}
@@ -99,7 +100,7 @@ export default function About() {
           <p
             className="font-body-lg"
             style={{
-              color: '#111827',
+              color: 'var(--thg-text-about-body)',
               maxWidth: '560px',
               marginTop: '20px',
             }}
@@ -161,18 +162,19 @@ export default function About() {
         <div ref={rightRef} style={{ opacity: 0 }}>
           <div
             style={{
-              border: '1px solid rgba(17, 24, 39, 0.08)',
+              border: '1px solid var(--thg-border-about)',
               borderRadius: '4px',
               padding: '40px',
-              background: '#FFFFFF',
+              background: 'var(--thg-bg-about-card)',
               maxWidth: '460px',
               marginLeft: 'auto',
               boxShadow: '0 20px 60px rgba(0, 0, 0, 0.06)',
+              transition: 'background-color 0.3s ease, border-color 0.3s ease',
             }}
           >
             <div
               className="font-mono-label"
-              style={{ color: '#6B7280', marginBottom: '24px' }}
+              style={{ color: 'var(--thg-text-about-dim)', marginBottom: '24px' }}
             >
               At a Glance
             </div>
@@ -223,7 +225,7 @@ export default function About() {
                 v: (
                   <a
                     href="mailto:developer@leadquik.com"
-                    style={{ color: '#111827', textDecoration: 'none' }}
+                    style={{ color: 'var(--thg-text-about-body)', textDecoration: 'none' }}
                   >
                     developer@leadquik.com
                   </a>
@@ -234,7 +236,7 @@ export default function About() {
                 v: (
                   <a
                     href="tel:+18665197993"
-                    style={{ color: '#111827', textDecoration: 'none' }}
+                    style={{ color: 'var(--thg-text-about-body)', textDecoration: 'none' }}
                   >
                     +1 (866) 519-7993
                   </a>
@@ -252,7 +254,7 @@ export default function About() {
                   borderBottom:
                     i === arr.length - 1
                       ? 'none'
-                      : '1px solid rgba(17,24,39,0.06)',
+                      : '1px solid var(--thg-border-about)',
                 }}
               >
                 <div
@@ -261,7 +263,7 @@ export default function About() {
                     fontSize: '11px',
                     letterSpacing: '0.08em',
                     textTransform: 'uppercase',
-                    color: '#6B7280',
+                    color: 'var(--thg-text-about-dim)',
                     paddingTop: '4px',
                   }}
                 >
@@ -271,7 +273,7 @@ export default function About() {
                   style={{
                     fontFamily: "'Outfit', sans-serif",
                     fontSize: '15px',
-                    color: '#111827',
+                    color: 'var(--thg-text-about-heading)',
                     whiteSpace: 'pre-line',
                     lineHeight: 1.45,
                   }}

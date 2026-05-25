@@ -54,9 +54,10 @@ export default function Problem() {
       id="why"
       style={{
         width: '100%',
-        backgroundColor: '#0A0A0F',
+        backgroundColor: 'var(--thg-bg-section)',
         padding: 'clamp(80px, 10vw, 140px) clamp(24px, 5vw, 80px)',
-        borderTop: '1px solid rgba(255,255,255,0.06)',
+        borderTop: '1px solid var(--thg-bg-section-border)',
+        transition: 'background-color 0.3s ease',
         position: 'relative',
         overflow: 'hidden',
       }}
@@ -94,7 +95,7 @@ export default function Problem() {
             className="font-mono-label"
             style={{
               opacity: 0,
-              color: 'rgba(255, 255, 255, 0.4)',
+              color: 'var(--thg-text-quaternary)',
               display: 'block',
               marginBottom: '20px',
             }}
@@ -106,7 +107,7 @@ export default function Problem() {
             className="font-heading-xl"
             style={{
               opacity: 0,
-              color: '#FFFFFF',
+              color: 'var(--thg-text-primary)',
               maxWidth: '620px',
               margin: 0,
             }}
@@ -135,7 +136,7 @@ export default function Problem() {
                 fontSize: '11px',
                 letterSpacing: '0.1em',
                 textTransform: 'uppercase',
-                color: 'rgba(255, 255, 255, 0.45)',
+                color: 'var(--thg-text-tertiary)',
                 marginBottom: '20px',
               }}
             >
@@ -148,7 +149,7 @@ export default function Problem() {
                 fontWeight: 700,
                 lineHeight: 0.95,
                 letterSpacing: '-0.03em',
-                color: '#FFFFFF',
+                color: 'var(--thg-text-primary)',
                 marginBottom: '16px',
               }}
             >
@@ -159,7 +160,7 @@ export default function Problem() {
                 fontFamily: "'Outfit', sans-serif",
                 fontSize: '17px',
                 lineHeight: 1.5,
-                color: 'rgba(255, 255, 255, 0.85)',
+                color: 'var(--thg-text-primary)',
                 marginBottom: '12px',
                 maxWidth: '460px',
               }}
@@ -173,7 +174,7 @@ export default function Problem() {
                 fontSize: '11px',
                 letterSpacing: '0.08em',
                 textTransform: 'uppercase',
-                color: 'rgba(255, 255, 255, 0.4)',
+                color: 'var(--thg-text-quaternary)',
               }}
             >
               Lead Response Management Study · Oldroyd, MIT / InsideSales.com
@@ -187,7 +188,7 @@ export default function Problem() {
               fontFamily: "'Outfit', sans-serif",
               fontSize: '17px',
               lineHeight: 1.6,
-              color: 'rgba(255, 255, 255, 0.7)',
+              color: 'var(--thg-text-secondary)',
               maxWidth: '520px',
             }}
           >

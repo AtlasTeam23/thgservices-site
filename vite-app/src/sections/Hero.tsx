@@ -1,6 +1,10 @@
 import GalaxyBackground from '../components/GalaxyBackground';
+import AuroraBackground from '../components/AuroraBackground';
+import { useTheme } from '../lib/theme';
 
 export default function Hero() {
+  const { theme } = useTheme();
+
   return (
     <section
       id="hero"
@@ -9,23 +13,24 @@ export default function Hero() {
         position: 'relative',
         width: '100%',
         minHeight: 'min(86vh, 760px)',
-        backgroundColor: '#04050A',
+        backgroundColor: 'var(--thg-bg-page)',
         overflow: 'hidden',
         display: 'flex',
         alignItems: 'flex-start',
+        transition: 'background-color 0.3s ease',
       }}
     >
-      {/* Animated galaxy starfield */}
-      <GalaxyBackground />
+      {/* Background: starfield in dark mode, aurora gradient in light mode */}
+      {theme === 'dark' ? <GalaxyBackground /> : <AuroraBackground />}
 
-      {/* Subtle vignette so headline keeps contrast in the brightest galaxy area */}
+      {/* Subtle vignette so headline keeps contrast over the background */}
       <div
         aria-hidden
         style={{
           position: 'absolute',
           inset: 0,
           background:
-            'linear-gradient(90deg, rgba(4,5,10,0.6) 0%, rgba(4,5,10,0.15) 45%, rgba(4,5,10,0) 100%), linear-gradient(180deg, rgba(4,5,10,0.4) 0%, rgba(4,5,10,0) 30%, rgba(4,5,10,0) 70%, rgba(4,5,10,0.6) 100%)',
+            'linear-gradient(90deg, var(--thg-vignette-left) 0%, var(--thg-vignette-mid) 45%, var(--thg-vignette-end) 100%), linear-gradient(180deg, var(--thg-vignette-top) 0%, var(--thg-vignette-end) 30%, var(--thg-vignette-end) 70%, var(--thg-vignette-bottom) 100%)',
           pointerEvents: 'none',
         }}
       />
@@ -45,7 +50,7 @@ export default function Hero() {
         <span
           className="font-mono-label"
           style={{
-            color: 'rgba(255, 255, 255, 0.55)',
+            color: 'var(--thg-text-tertiary)',
             display: 'block',
             marginBottom: '28px',
           }}
@@ -56,7 +61,7 @@ export default function Hero() {
         <h1
           className="font-display"
           style={{
-            color: '#FFFFFF',
+            color: 'var(--thg-text-primary)',
             maxWidth: '900px',
             margin: 0,
           }}
@@ -67,7 +72,7 @@ export default function Hero() {
         <p
           className="font-body-lg"
           style={{
-            color: 'rgba(255, 255, 255, 0.65)',
+            color: 'var(--thg-text-secondary)',
             maxWidth: '640px',
             marginTop: '28px',
             fontSize: 'clamp(17px, 1.5vw, 20px)',
@@ -140,8 +145,8 @@ export default function Hero() {
               padding: '0 24px',
               borderRadius: '24px',
               backgroundColor: 'transparent',
-              color: '#FFFFFF',
-              border: '1px solid rgba(255,255,255,0.18)',
+              color: 'var(--thg-text-primary)',
+              border: '1px solid var(--thg-border-medium)',
               fontFamily: "'Outfit', sans-serif",
               fontSize: '14px',
               fontWeight: 600,
@@ -151,11 +156,11 @@ export default function Hero() {
               transition: 'border-color 0.2s ease, background-color 0.2s ease',
             }}
             onMouseEnter={(e) => {
-              (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.45)';
-              (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(255,255,255,0.04)';
+              (e.currentTarget as HTMLElement).style.borderColor = 'var(--thg-border-strong)';
+              (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--thg-bg-elevated-strong)';
             }}
             onMouseLeave={(e) => {
-              (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.18)';
+              (e.currentTarget as HTMLElement).style.borderColor = 'var(--thg-border-medium)';
               (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent';
             }}
           >
@@ -179,7 +184,7 @@ export default function Hero() {
           style={{
             width: '1px',
             height: '40px',
-            backgroundColor: 'rgba(255, 255, 255, 0.25)',
+            backgroundColor: 'var(--thg-text-quinary)',
             animation: 'heroPulse 2.4s ease-in-out infinite',
           }}
         />
