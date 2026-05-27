@@ -31,10 +31,10 @@ const products: Product[] = [
   },
   {
     name: 'LeadQuik CRM',
-    status: 'In development',
+    status: 'Live',
     tagline: 'Estimating & CRM for service businesses',
     description:
-      'Estimating, project management, and customer relationship tools for service businesses — built on 25 years of running multi-state operations. Currently in private testing with select customers.',
+      'Estimating, project management, and customer relationship tools for service businesses — built on 25 years of running multi-state operations.',
     accent: '#F97316',
   },
   {
@@ -47,10 +47,10 @@ const products: Product[] = [
   },
   {
     name: 'Blaze',
-    status: 'In development',
+    status: 'Live',
     tagline: 'AI SEO & ad-spend agent',
     description:
-      "An AI agent that commands your Google Ads spend, built on 15+ years of AdWords expertise. In some cases we've saved customers $80K a year while tripling return on ad spend. Currently in private testing.",
+      "An AI agent that commands your Google Ads spend, built on 15+ years of AdWords expertise. In some cases we've saved customers $80K a year while tripling return on ad spend.",
     accent: '#EF4444',
   },
   {
@@ -423,8 +423,8 @@ export default function Work() {
               margin: 0,
             }}
           >
-            Three flagship products. More in the pipeline. Plus apps built
-            for clients.
+            Three flagship products live. More in the pipeline. Plus apps
+            built for clients.
           </h2>
           <p
             style={{

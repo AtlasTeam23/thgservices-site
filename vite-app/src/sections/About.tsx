@@ -183,19 +183,25 @@ export default function About() {
               { k: 'Headquarters', v: '300 Colonial Center Pkwy, Suite 100N\nRoswell, GA 30076' },
               { k: 'D-U-N-S Number', v: '12-981-2006' },
               {
-                k: 'Flagship product',
+                k: 'Flagship products',
                 v: (
-                  <a
-                    href="https://leadquik.com"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{ color: '#2563EB', textDecoration: 'none', fontWeight: 600 }}
-                  >
-                    LeadQuik →
-                  </a>
+                  <>
+                    <a
+                      href="https://leadquik.com"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ color: '#2563EB', textDecoration: 'none', fontWeight: 600 }}
+                    >
+                      LeadQuik →
+                    </a>
+                    {' · '}
+                    <span style={{ color: '#F97316', fontWeight: 600 }}>LeadQuik CRM</span>
+                    {' · '}
+                    <span style={{ color: '#EF4444', fontWeight: 600 }}>Blaze</span>
+                  </>
                 ),
               },
-              { k: 'In development', v: 'LeadQuik CRM · CashPulse · Blaze' },
+              { k: 'In development', v: 'CashPulse' },
               {
                 k: 'Client apps',
                 v: (
