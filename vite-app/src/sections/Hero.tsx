@@ -81,7 +81,7 @@ export default function Hero() {
         >
           THG Services is the software studio of a 25-year entrepreneur — a
           multi-state operator who&rsquo;s been running companies since long
-          before the apps existed. LeadQuik, Atlas, and Blaze are our
+          before the apps existed. LeadQuik, LeadQuik CRM, and Blaze are our
           flagship products, with more in the pipeline. We also build apps
           for clients on request, and take on custom work when the
           off-the-shelf software can&rsquo;t get the job done.

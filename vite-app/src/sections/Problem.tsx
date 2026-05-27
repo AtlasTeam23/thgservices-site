@@ -210,8 +210,9 @@ export default function Problem() {
               </a>{' '}
               replies the instant a lead lands. Blaze takes command of
               Google Ads with 15+ years of AdWords expertise behind the
-              wheel. Atlas runs estimating and CRM for service businesses
-              without the spreadsheet sprawl. And when no off-the-shelf
+              wheel. LeadQuik CRM handles estimating, project management,
+              and customer relationships for service businesses without the
+              spreadsheet sprawl. And when no off-the-shelf
               tool can do what an operator needs, we build custom apps for
               clients too.
             </p>

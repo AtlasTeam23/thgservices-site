@@ -30,7 +30,7 @@ const products: Product[] = [
     accent: '#2563EB',
   },
   {
-    name: 'Atlas',
+    name: 'LeadQuik CRM',
     status: 'In development',
     tagline: 'Estimating & CRM for service businesses',
     description:

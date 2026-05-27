@@ -195,7 +195,7 @@ export default function About() {
                   </a>
                 ),
               },
-              { k: 'In development', v: 'Atlas · CashPulse · Blaze' },
+              { k: 'In development', v: 'LeadQuik CRM · CashPulse · Blaze' },
               {
                 k: 'Client apps',
                 v: (
