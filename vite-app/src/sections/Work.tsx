@@ -293,6 +293,10 @@ export default function Work() {
             color: 'var(--thg-text-secondary)',
             margin: 0,
             flexGrow: 1,
+            // Reserve enough vertical space for the longest description
+            // (~7 lines) so cards stay uniform height across all rows and
+            // visit-links / CTAs end up baseline-aligned.
+            minHeight: 'calc(15px * 1.6 * 7)',
             position: 'relative',
             zIndex: 1,
           }}
