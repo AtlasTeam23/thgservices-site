@@ -255,10 +255,14 @@ export default function Work() {
           style={{
             fontFamily: "'JetBrains Mono', monospace",
             fontSize: '11px',
+            lineHeight: 1.4,
             letterSpacing: '0.12em',
             textTransform: 'uppercase',
             color: 'var(--thg-text-tertiary)',
             marginBottom: '8px',
+            // Reserve 2 lines so single-line taglines align with two-line
+            // ones across the row (keeps the product name baseline-aligned)
+            minHeight: 'calc(11px * 1.4 * 2)',
             position: 'relative',
             zIndex: 1,
           }}
