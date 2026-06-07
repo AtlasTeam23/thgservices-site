@@ -45,6 +45,11 @@ export default function GalaxyVideoBackground() {
       preload="auto"
       aria-hidden="true"
       onError={() => setUseFallback(true)}
+      onLoadedMetadata={(e) => {
+        // Half-speed playback — turns the 5s clip into a 10s loop
+        // that feels cinematic and hides the loop seam better.
+        e.currentTarget.playbackRate = 0.5;
+      }}
       style={{
         position: 'absolute',
         inset: 0,

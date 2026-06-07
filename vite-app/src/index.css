@@ -79,12 +79,13 @@
     /* Nav glass background */
     --thg-nav-bg: rgba(10, 10, 15, 0.92);
 
-    /* Hero vignette layers */
-    --thg-vignette-left: rgba(4, 5, 10, 0.6);
-    --thg-vignette-mid: rgba(4, 5, 10, 0.15);
-    --thg-vignette-end: rgba(4, 5, 10, 0);
-    --thg-vignette-top: rgba(4, 5, 10, 0.4);
-    --thg-vignette-bottom: rgba(4, 5, 10, 0.6);
+    /* Hero vignette layers — stronger in dark mode so the galaxy video's
+       bright galactic core doesn't wash out the headline text */
+    --thg-vignette-left: rgba(4, 5, 10, 0.82);
+    --thg-vignette-mid: rgba(4, 5, 10, 0.5);
+    --thg-vignette-end: rgba(4, 5, 10, 0.1);
+    --thg-vignette-top: rgba(4, 5, 10, 0.5);
+    --thg-vignette-bottom: rgba(4, 5, 10, 0.7);
 
     /* "Emphasis" section variant — used by Work so cards pop. Dark in
        both themes, but tuned per theme. */

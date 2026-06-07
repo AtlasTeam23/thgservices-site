@@ -32,7 +32,7 @@ export default function Hero() {
           position: 'absolute',
           inset: 0,
           background:
-            'linear-gradient(90deg, var(--thg-vignette-left) 0%, var(--thg-vignette-mid) 45%, var(--thg-vignette-end) 100%), linear-gradient(180deg, var(--thg-vignette-top) 0%, var(--thg-vignette-end) 30%, var(--thg-vignette-end) 70%, var(--thg-vignette-bottom) 100%)',
+            'linear-gradient(90deg, var(--thg-vignette-left) 0%, var(--thg-vignette-mid) 60%, var(--thg-vignette-end) 100%), linear-gradient(180deg, var(--thg-vignette-top) 0%, var(--thg-vignette-end) 30%, var(--thg-vignette-end) 70%, var(--thg-vignette-bottom) 100%)',
           pointerEvents: 'none',
         }}
       />
