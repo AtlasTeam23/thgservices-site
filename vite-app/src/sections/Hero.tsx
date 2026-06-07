@@ -1,4 +1,4 @@
-import GalaxyBackground from '../components/GalaxyBackground';
+import GalaxyVideoBackground from '../components/GalaxyVideoBackground';
 import AuroraBackground from '../components/AuroraBackground';
 import { useTheme } from '../lib/theme';
 
@@ -20,8 +20,10 @@ export default function Hero() {
         transition: 'background-color 0.3s ease',
       }}
     >
-      {/* Background: starfield in dark mode, aurora gradient in light mode */}
-      {theme === 'dark' ? <GalaxyBackground /> : <AuroraBackground />}
+      {/* Background: cinematic galaxy video in dark mode (falls back to a
+          procedural starfield if reduced-motion or the video errors),
+          aurora gradient in light mode */}
+      {theme === 'dark' ? <GalaxyVideoBackground /> : <AuroraBackground />}
 
       {/* Subtle vignette so headline keeps contrast over the background */}
       <div
