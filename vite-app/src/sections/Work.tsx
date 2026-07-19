@@ -54,6 +54,15 @@ const products: Product[] = [
     accent: '#EF4444',
   },
   {
+    name: 'Blast Lands',
+    status: 'Beta',
+    tagline: 'All-ages desert battle royale',
+    description:
+      'Drop in, grab loot, survive the sands. A vibrant battle royale set in a shifting desert world — meet Rio and the squad, dodge the sand creatures, and outlast the closing storm. iOS, Android, and web.',
+    href: 'https://blastlands.com',
+    accent: '#DB2777',
+  },
+  {
     name: 'Bella Beast',
     status: 'Client app',
     tagline: 'Fitness coaching with Coach Adriana',

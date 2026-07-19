@@ -203,6 +203,19 @@ export default function About() {
               },
               { k: 'In development', v: 'CashPulse' },
               {
+                k: 'Beta',
+                v: (
+                  <a
+                    href="https://blastlands.com"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ color: '#DB2777', textDecoration: 'none', fontWeight: 600 }}
+                  >
+                    Blast Lands →
+                  </a>
+                ),
+              },
+              {
                 k: 'Client apps',
                 v: (
                   <>
