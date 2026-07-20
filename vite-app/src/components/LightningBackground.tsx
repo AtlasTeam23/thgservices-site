@@ -1,26 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
-import GalaxyBackground from './GalaxyBackground';
 
 /**
  * LightningBackground
  *
  * Dark-mode hero background: renders animated lightning via a WebGL
  * fragment shader (procedural FBM noise driving hue-tinted bolts).
- * Falls back to the procedural canvas starfield (GalaxyBackground)
- * when:
  *
+ * Renders at devicePixelRatio (capped at 3) so bolts stay crisp on
+ * high-DPI displays instead of blurring from CSS-pixel scaling.
+ *
+ * Silently renders nothing when:
  *   - the user prefers reduced motion, or
  *   - WebGL is unavailable, or
  *   - the shader fails to compile/link.
- *
- * Hue defaults to 220 (matches the site's #2563EB primary blue in HSL).
- * xOffset shifts the bolt column to the right so it doesn't sit
- * directly behind the left-aligned headline.
- *
- * Source: adapted from a public shader-hero component. Only the
- * Lightning shader is used here; the surrounding demo layout (nav,
- * hue slider, feature callouts, framer-motion) was intentionally
- * dropped.
+ * The section's underlying background color still shows through, so
+ * the layout doesn't break — you just don't see the effect.
  */
 
 interface LightningProps {
@@ -46,14 +40,26 @@ function Lightning({
     const canvas = canvasRef.current;
     if (!canvas) return;
 
+    // Cap DPR at 3 — covers 3x Retina, avoids blowing GPU budget on
+    // hypothetical 4x+ displays. On a standard laptop this is 2; on
+    // iPhone/newer Macs it's 3.
+    const dpr = Math.min(window.devicePixelRatio || 1, 3);
+
     const resizeCanvas = () => {
-      canvas.width = canvas.clientWidth;
-      canvas.height = canvas.clientHeight;
+      const w = canvas.clientWidth;
+      const h = canvas.clientHeight;
+      // Internal buffer at DPR × CSS size — this is what makes it crisp
+      canvas.width = Math.round(w * dpr);
+      canvas.height = Math.round(h * dpr);
     };
     resizeCanvas();
     window.addEventListener('resize', resizeCanvas);
 
-    const gl = canvas.getContext('webgl');
+    const gl = canvas.getContext('webgl', {
+      antialias: true,
+      premultipliedAlpha: false,
+      preserveDrawingBuffer: false,
+    });
     if (!gl) {
       onWebGLFail?.();
       return;
@@ -66,8 +72,15 @@ function Lightning({
       }
     `;
 
+    // Use highp on fragment shader for crisper detail on capable GPUs;
+    // fall back to mediump automatically if the device only supports it.
     const fragmentShaderSource = `
-      precision mediump float;
+      #ifdef GL_FRAGMENT_PRECISION_HIGH
+        precision highp float;
+      #else
+        precision mediump float;
+      #endif
+
       uniform vec2 iResolution;
       uniform float iTime;
       uniform float uHue;
@@ -219,7 +232,7 @@ function Lightning({
     };
     rafId = requestAnimationFrame(render);
 
-    // Pause when tab hidden to save GPU
+    // Pause when the tab is hidden so we're not burning GPU in the background
     const onVisibility = () => {
       if (document.hidden) {
         running = false;
@@ -252,32 +265,29 @@ function Lightning({
 }
 
 export default function LightningBackground() {
-  const [useFallback, setUseFallback] = useState(() => {
+  const [shouldRender, setShouldRender] = useState(() => {
     if (typeof window === 'undefined') return false;
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return true;
-    // Probe for WebGL support up front
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return false;
     try {
       const test = document.createElement('canvas');
-      if (!test.getContext('webgl')) return true;
+      if (!test.getContext('webgl')) return false;
     } catch {
-      return true;
+      return false;
     }
-    return false;
+    return true;
   });
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const mql = window.matchMedia('(prefers-reduced-motion: reduce)');
     const onChange = (e: MediaQueryListEvent) => {
-      if (e.matches) setUseFallback(true);
+      if (e.matches) setShouldRender(false);
     };
     mql.addEventListener('change', onChange);
     return () => mql.removeEventListener('change', onChange);
   }, []);
 
-  if (useFallback) {
-    return <GalaxyBackground />;
-  }
+  if (!shouldRender) return null;
 
   return (
     <div
@@ -288,8 +298,7 @@ export default function LightningBackground() {
         width: '100%',
         height: '100%',
         pointerEvents: 'none',
-        // Same top/bottom edge fade as the other hero backgrounds so
-        // the section boundary blends cleanly.
+        // Top/bottom edge fade so the effect blends into the section border
         maskImage:
           'linear-gradient(to bottom, transparent 0%, #000 12%, #000 88%, transparent 100%)',
         WebkitMaskImage:
@@ -302,7 +311,7 @@ export default function LightningBackground() {
         speed={0.6}
         intensity={0.5}
         size={2}
-        onWebGLFail={() => setUseFallback(true)}
+        onWebGLFail={() => setShouldRender(false)}
       />
     </div>
   );
