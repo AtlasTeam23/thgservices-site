@@ -195,7 +195,14 @@ export default function About() {
                       LeadQuik →
                     </a>
                     {' · '}
-                    <span style={{ color: '#F97316', fontWeight: 600 }}>LeadQuik CRM</span>
+                    <a
+                      href="https://leadquik.com"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ color: '#F97316', textDecoration: 'none', fontWeight: 600 }}
+                    >
+                      LeadQuik CRM →
+                    </a>
                     {' · '}
                     <span style={{ color: '#EF4444', fontWeight: 600 }}>Blaze</span>
                   </>

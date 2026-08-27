@@ -15,6 +15,7 @@ type Product = {
   tagline: string;
   description: string;
   href?: string;
+  appStoreHref?: string;
   cta?: { label: string; href: string };
   accent: string;
 };
@@ -27,6 +28,7 @@ const products: Product[] = [
     description:
       'Our flagship daily driver. Four apps in one — AI lead response in seconds, conversation routing, unified customer comms, and conversion tracking across Google Ads. Used by businesses across services, professional, and retail categories.',
     href: 'https://leadquik.com',
+    appStoreHref: 'https://apps.apple.com/app/leadquik-leads-jobs-crm/id6797596704',
     accent: '#2563EB',
   },
   {
@@ -35,6 +37,8 @@ const products: Product[] = [
     tagline: 'Estimating & CRM for service businesses',
     description:
       'Estimating, project management, and customer relationship tools for service businesses — built on 25 years of running multi-state operations.',
+    href: 'https://leadquik.com',
+    appStoreHref: 'https://apps.apple.com/app/leadquik-leads-jobs-crm/id6797596704',
     accent: '#F97316',
   },
   {
@@ -313,21 +317,63 @@ export default function Work() {
           {p.description}
         </p>
 
-        {isLink && (
+        {(isLink || p.appStoreHref) && (
           <div
             style={{
               marginTop: '24px',
-              fontFamily: "'Outfit', sans-serif",
-              fontSize: '13px',
-              fontWeight: 600,
-              letterSpacing: '0.04em',
-              textTransform: 'uppercase',
-              color: p.accent,
+              display: 'flex',
+              gap: '18px',
+              flexWrap: 'wrap',
+              alignItems: 'center',
               position: 'relative',
               zIndex: 1,
             }}
           >
-            Visit {p.href!.replace(/^https?:\/\//, '').replace(/\/$/, '')} →
+            {isLink && (
+              <span
+                style={{
+                  fontFamily: "'Outfit', sans-serif",
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  letterSpacing: '0.04em',
+                  textTransform: 'uppercase',
+                  color: p.accent,
+                }}
+              >
+                Visit {p.href!.replace(/^https?:\/\//, '').replace(/\/$/, '')} →
+              </span>
+            )}
+            {p.appStoreHref && (
+              <a
+                href={p.appStoreHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  fontFamily: "'Outfit', sans-serif",
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  letterSpacing: '0.04em',
+                  textTransform: 'uppercase',
+                  color: p.accent,
+                  textDecoration: 'none',
+                }}
+              >
+                <svg
+                  width="12"
+                  height="14"
+                  viewBox="0 0 384 512"
+                  fill="currentColor"
+                  aria-hidden="true"
+                >
+                  <path d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.9zm-56.6-164.2c27.3-32.4 24.8-61.9 24-72.5-24.1 1.4-52 16.4-67.9 34.9-17.5 19.8-27.8 44.3-25.6 71.9 26.1 2 49.9-11.4 69.5-34.3z" />
+                </svg>
+                App Store →
+              </a>
+            )}
           </div>
         )}
 
