@@ -212,14 +212,18 @@ export default function About() {
               {
                 k: 'Beta',
                 v: (
-                  <a
-                    href="https://blastlands.com"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{ color: '#DB2777', textDecoration: 'none', fontWeight: 600 }}
-                  >
-                    Blast Lands →
-                  </a>
+                  <>
+                    <a
+                      href="https://blastlands.com"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ color: '#DB2777', textDecoration: 'none', fontWeight: 600 }}
+                    >
+                      Blast Lands →
+                    </a>
+                    {' · '}
+                    <span style={{ color: '#06B6D4', fontWeight: 600 }}>HighlightsReel</span>
+                  </>
                 ),
               },
               {

@@ -67,6 +67,14 @@ const products: Product[] = [
     accent: '#DB2777',
   },
   {
+    name: 'HighlightsReel',
+    status: 'Beta',
+    tagline: 'Recruiting highlights for athletes',
+    description:
+      'A highlight-reel app for players to showcase their game to college recruiters — and anyone else who wants to see them play. Built for the App Store.',
+    accent: '#06B6D4',
+  },
+  {
     name: 'Bella Beast',
     status: 'Client app',
     tagline: 'Fitness coaching with Coach Adriana',
