@@ -32,6 +32,42 @@ const products: Product[] = [
     accent: '#2563EB',
   },
   {
+    name: 'Bella Beast',
+    status: 'Client app',
+    tagline: 'Fitness coaching with Coach Adriana',
+    description:
+      'Train hard. Eat right. Be the beast. A coaching brand and app from Coach Adriana for clients who want a real plan, not a generic one. Currently in beta.',
+    href: 'https://bellabeast.com',
+    accent: '#009C3B',
+  },
+  {
+    name: 'Blast Lands',
+    status: 'Beta',
+    tagline: 'All-ages desert battle royale',
+    description:
+      'Drop in, grab loot, survive the sands. A vibrant battle royale set in a shifting desert world — meet Rio and the squad, dodge the sand creatures, and outlast the closing storm. iOS, Android, and web.',
+    href: 'https://blastlands.com',
+    accent: '#DB2777',
+  },
+  {
+    name: 'Highlights Reel',
+    status: 'Beta',
+    tagline: 'Recruiting profiles for athletes',
+    description:
+      'Recruiting profiles for club and high school athletes — highlights, game breakdowns, academics, and contact in one shareable page built for recruiters.',
+    href: 'https://highlightsreel.com',
+    accent: '#06B6D4',
+  },
+  {
+    name: 'Memory Lane',
+    status: 'Client app',
+    tagline: 'Photo & image restoration',
+    description:
+      'Bring old photos back to life. Memory Lane uses AI to restore faded, damaged, and low-resolution images so the memories stay as sharp as the moment.',
+    href: 'https://photomemorylane.com',
+    accent: '#D97706',
+  },
+  {
     name: 'CashPulse',
     status: 'In development',
     tagline: 'Cash flow visibility',
@@ -46,41 +82,6 @@ const products: Product[] = [
     description:
       "An AI agent that commands your Google Ads spend, built on 15+ years of AdWords expertise. In some cases we've saved customers $80K a year while tripling return on ad spend.",
     accent: '#EF4444',
-  },
-  {
-    name: 'Blast Lands',
-    status: 'Beta',
-    tagline: 'All-ages desert battle royale',
-    description:
-      'Drop in, grab loot, survive the sands. A vibrant battle royale set in a shifting desert world — meet Rio and the squad, dodge the sand creatures, and outlast the closing storm. iOS, Android, and web.',
-    href: 'https://blastlands.com',
-    accent: '#DB2777',
-  },
-  {
-    name: 'HighlightsReel',
-    status: 'Beta',
-    tagline: 'Recruiting highlights for athletes',
-    description:
-      'A highlight-reel app for players to showcase their game to college recruiters — and anyone else who wants to see them play. Built for the App Store.',
-    accent: '#06B6D4',
-  },
-  {
-    name: 'Bella Beast',
-    status: 'Client app',
-    tagline: 'Fitness coaching with Coach Adriana',
-    description:
-      'Train hard. Eat right. Be the beast. A coaching brand and app from Coach Adriana for clients who want a real plan, not a generic one. Currently in beta.',
-    href: 'https://bellabeast.com',
-    accent: '#009C3B',
-  },
-  {
-    name: 'Memory Lane',
-    status: 'Client app',
-    tagline: 'Photo & image restoration',
-    description:
-      'Bring old photos back to life. Memory Lane uses AI to restore faded, damaged, and low-resolution images so the memories stay as sharp as the moment.',
-    href: 'https://photomemorylane.com',
-    accent: '#D97706',
   },
   {
     name: 'Your App',

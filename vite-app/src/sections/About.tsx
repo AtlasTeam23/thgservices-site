@@ -213,7 +213,14 @@ export default function About() {
                       Blast Lands →
                     </a>
                     {' · '}
-                    <span style={{ color: '#06B6D4', fontWeight: 600 }}>HighlightsReel</span>
+                    <a
+                      href="https://highlightsreel.com"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ color: '#06B6D4', textDecoration: 'none', fontWeight: 600 }}
+                    >
+                      Highlights Reel →
+                    </a>
                   </>
                 ),
               },
