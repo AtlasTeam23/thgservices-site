@@ -445,9 +445,9 @@ export default function Work() {
           inset: 0,
           pointerEvents: 'none',
           backgroundImage: [
-            'radial-gradient(ellipse 70% 55% at 92% 8%, rgba(99, 102, 241, 0.10) 0%, transparent 60%)',
-            'radial-gradient(ellipse 55% 45% at 8% 95%, rgba(37, 99, 235, 0.07) 0%, transparent 55%)',
-            'radial-gradient(circle, rgba(255, 255, 255, 0.035) 1px, transparent 1px)',
+            'radial-gradient(ellipse 70% 55% at 92% 8%, var(--thg-work-glow-tr) 0%, transparent 60%)',
+            'radial-gradient(ellipse 55% 45% at 8% 95%, var(--thg-work-glow-bl) 0%, transparent 55%)',
+            'radial-gradient(circle, var(--thg-work-dot) 1px, transparent 1px)',
           ].join(', '),
           backgroundSize: '100% 100%, 100% 100%, 32px 32px',
           backgroundPosition: '0 0, 0 0, 0 0',
