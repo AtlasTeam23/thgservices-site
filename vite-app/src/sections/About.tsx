@@ -192,15 +192,6 @@ export default function About() {
                       rel="noopener noreferrer"
                       style={{ color: '#2563EB', textDecoration: 'none', fontWeight: 600 }}
                     >
-                      LeadQuik →
-                    </a>
-                    {' · '}
-                    <a
-                      href="https://leadquik.com"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{ color: '#F97316', textDecoration: 'none', fontWeight: 600 }}
-                    >
                       LeadQuik CRM →
                     </a>
                     {' · '}

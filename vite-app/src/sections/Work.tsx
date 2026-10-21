@@ -22,24 +22,14 @@ type Product = {
 
 const products: Product[] = [
   {
-    name: 'LeadQuik',
+    name: 'LeadQuik CRM',
     status: 'Live',
-    tagline: 'Lead response platform',
+    tagline: 'Lead response, estimating & CRM — all in one',
     description:
-      'Our flagship daily driver. Four apps in one — AI lead response in seconds, conversation routing, unified customer comms, and conversion tracking across Google Ads. Used by businesses across services, professional, and retail categories.',
+      'Our flagship daily driver. AI lead response in seconds, conversation routing, unified customer comms, estimating, project management, and Google Ads conversion tracking — one app for service, professional, and retail businesses. Built on 25 years of running multi-state operations.',
     href: 'https://leadquik.com',
     appStoreHref: 'https://apps.apple.com/app/leadquik-leads-jobs-crm/id6797596704',
     accent: '#2563EB',
-  },
-  {
-    name: 'LeadQuik CRM',
-    status: 'Live',
-    tagline: 'Estimating & CRM for service businesses',
-    description:
-      'Estimating, project management, and customer relationship tools for service businesses — built on 25 years of running multi-state operations.',
-    href: 'https://leadquik.com',
-    appStoreHref: 'https://apps.apple.com/app/leadquik-leads-jobs-crm/id6797596704',
-    accent: '#F97316',
   },
   {
     name: 'CashPulse',
