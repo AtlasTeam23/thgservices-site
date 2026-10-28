@@ -314,10 +314,102 @@ export default function About() {
         </div>
       </div>
 
+      {/* Founder subsection — sits below the two-column About grid */}
+      <div
+        style={{
+          maxWidth: '1440px',
+          margin: '80px auto 0',
+          paddingTop: '48px',
+          borderTop: '1px solid var(--thg-border-about)',
+          display: 'grid',
+          gridTemplateColumns: '1fr',
+          gap: '48px',
+          alignItems: 'start',
+        }}
+        className="md:!grid-cols-[1fr_2fr] about-founder"
+      >
+        {/* Left: Founder label + name + credentials rail */}
+        <div>
+          <span
+            className="font-mono-label"
+            style={{
+              color: 'var(--thg-text-about-dim)',
+              display: 'block',
+              marginBottom: '20px',
+            }}
+          >
+            Founder
+          </span>
+          <h3
+            style={{
+              fontFamily: "'Outfit', sans-serif",
+              fontSize: 'clamp(28px, 3vw, 40px)',
+              fontWeight: 600,
+              letterSpacing: '-0.02em',
+              color: 'var(--thg-text-about-heading)',
+              margin: 0,
+            }}
+          >
+            David Brannan
+          </h3>
+          <div
+            style={{
+              marginTop: '20px',
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: '11px',
+              letterSpacing: '0.08em',
+              textTransform: 'uppercase',
+              color: 'var(--thg-text-about-dim)',
+              lineHeight: 1.8,
+            }}
+          >
+            University of South Carolina
+            <br />
+            Mercer University
+            <br />
+            22+ years operating multi-state businesses
+          </div>
+        </div>
+
+        {/* Right: Bio */}
+        <div>
+          <p
+            className="font-body-lg"
+            style={{
+              color: 'var(--thg-text-about-body)',
+              maxWidth: '640px',
+              margin: 0,
+            }}
+          >
+            David brings 22+ years of running multiple seven-figure
+            businesses to the software desk at THG AI Services. Educated at
+            the University of South Carolina and Mercer, with a
+            career-long focus on software and computer technology, he writes
+            code the same way he runs operations — eliminate the busywork
+            between the problem and the result.
+          </p>
+          <p
+            className="font-body-lg"
+            style={{
+              color: 'var(--thg-text-about-body)',
+              maxWidth: '640px',
+              marginTop: '20px',
+            }}
+          >
+            Today he manages and organizes companies across multiple states.
+            Every app on the THG AI Services line started with a problem he
+            hit as an operator first.
+          </p>
+        </div>
+      </div>
+
       <style>{`
         @media (min-width: 768px) {
           .md\\:!grid-cols-\\[55\\%_45\\%\\] {
             grid-template-columns: 55% 45% !important;
+          }
+          .about-founder.md\\:\\!grid-cols-\\[1fr_2fr\\] {
+            grid-template-columns: 1fr 2fr !important;
           }
         }
       `}</style>
