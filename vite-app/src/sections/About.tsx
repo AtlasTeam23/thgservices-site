@@ -67,7 +67,7 @@ export default function About() {
           gap: '80px',
           alignItems: 'start',
         }}
-        className="md:!grid-cols-[55%_45%]"
+        className="about-grid"
       >
         {/* Left column */}
         <div ref={leftRef} style={{ opacity: 0 }}>
@@ -167,13 +167,13 @@ export default function About() {
         {/* Right column - key facts (replaced stock portrait image) */}
         <div ref={rightRef} style={{ opacity: 0 }}>
           <div
+            className="about-glance-card"
             style={{
               border: '1px solid var(--thg-border-about)',
               borderRadius: '4px',
               padding: '40px',
               background: 'var(--thg-bg-about-card)',
               maxWidth: '460px',
-              marginLeft: 'auto',
               boxShadow: '0 20px 60px rgba(0, 0, 0, 0.06)',
               transition: 'background-color 0.3s ease, border-color 0.3s ease',
             }}
@@ -328,7 +328,7 @@ export default function About() {
           gap: '48px',
           alignItems: 'start',
         }}
-        className="md:!grid-cols-[1fr_2fr] about-founder"
+        className="about-founder"
       >
         {/* Left: Founder portrait only */}
         <div>
@@ -409,14 +409,22 @@ export default function About() {
       </div>
 
       <style>{`
-        @media (min-width: 768px) {
-          .md\\:!grid-cols-\\[55\\%_45\\%\\] {
-            grid-template-columns: 55% 45% !important;
+        /* Breakpoint lifted to 900px so tablets below that stack cleanly;
+           the At a Glance card needs at least ~300px to render its
+           120px label + value pair without clipping. */
+        @media (min-width: 900px) {
+          .about-grid {
+            grid-template-columns: 55fr 45fr !important;
+          }
+          /* Right-align the card into its column edge on desktop, matching
+             the Problem section's flush-right cards above. */
+          .about-glance-card {
+            margin-left: auto;
           }
           /* Founder subsection: left col sized to the portrait so the
-             text (eyebrow + name + credentials + bio) sits snug alongside
-             rather than 144px of dead gutter in a loose 1fr. */
-          .about-founder.md\\:\\!grid-cols-\\[1fr_2fr\\] {
+             text (eyebrow + name + bio) sits snug alongside rather than
+             144px of dead gutter in a loose 1fr. */
+          .about-founder {
             grid-template-columns: minmax(0, 320px) 1fr !important;
             gap: 56px !important;
           }

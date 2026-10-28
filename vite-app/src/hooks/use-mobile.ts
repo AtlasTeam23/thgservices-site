@@ -1,6 +1,9 @@
 import * as React from "react"
 
-const MOBILE_BREAKPOINT = 768
+// Lifted from 768 → 1024 so iPad-portrait (~768-1024) uses the hamburger
+// nav. The full desktop nav has 6 links + CTA + theme toggle and the
+// Contact Us button wraps between ~700-1000px.
+const MOBILE_BREAKPOINT = 1024
 
 export function useIsMobile() {
   const [isMobile, setIsMobile] = React.useState<boolean | undefined>(undefined)
