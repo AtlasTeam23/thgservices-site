@@ -57,7 +57,7 @@ export default function Hero() {
             marginBottom: '28px',
           }}
         >
-          THG Services, LLC · Roswell, GA
+          THG Services, LLC · Woodstock, GA
         </span>
 
         <h1

@@ -92,7 +92,7 @@ export default function About() {
               marginTop: '32px',
             }}
           >
-            THG Services, LLC is a software company headquartered in Roswell,
+            THG Services, LLC is a software company based in Woodstock,
             Georgia. We design, build, and support our own products —
             handling everything from concept and engineering through customer
             onboarding and long-term support.
@@ -180,7 +180,7 @@ export default function About() {
             </div>
             {([
               { k: 'Legal name', v: 'THG Services, LLC' },
-              { k: 'Headquarters', v: '300 Colonial Center Pkwy, Suite 100N\nRoswell, GA 30076' },
+              { k: 'Based in', v: 'Woodstock, GA' },
               { k: 'D-U-N-S Number', v: '12-981-2006' },
               {
                 k: 'Flagship products',

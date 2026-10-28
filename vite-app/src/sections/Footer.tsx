@@ -99,7 +99,7 @@ export default function Footer() {
               className="font-mono-label"
               style={{ color: 'rgba(255, 255, 255, 0.4)' }}
             >
-              Software · Roswell, GA
+              Software · Woodstock, GA
             </div>
             <div
               style={{
@@ -110,10 +110,8 @@ export default function Footer() {
                 lineHeight: 1.7,
               }}
             >
-              D-U-N-S 12-981-2006<br />
-              300 Colonial Center Pkwy<br />
-              Suite 100N<br />
-              Roswell, GA 30076, USA
+              Based in Woodstock, GA<br />
+              D-U-N-S 12-981-2006
             </div>
           </div>
 

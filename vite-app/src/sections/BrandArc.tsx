@@ -163,9 +163,7 @@ export default function BrandArc() {
             lineHeight: 1.7,
           }}
         >
-          THG SERVICES, LLC · 300 COLONIAL CENTER PKWY, SUITE 100N
-          <br />
-          ROSWELL, GA 30076 · D-U-N-S 12-981-2006
+          THG SERVICES, LLC · BASED IN WOODSTOCK, GA · D-U-N-S 12-981-2006
         </div>
       </div>
     </section>
