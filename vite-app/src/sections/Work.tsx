@@ -485,7 +485,7 @@ export default function Work() {
               margin: 0,
             }}
           >
-            Three flagship products live. More in the pipeline. Plus apps
+            Multiple products shipped. More in the pipeline. Plus apps
             built for clients.
           </h2>
           <p

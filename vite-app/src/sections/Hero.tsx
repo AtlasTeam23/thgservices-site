@@ -1,5 +1,5 @@
-import LightningBackground from '../components/LightningBackground';
 import AuroraBackground from '../components/AuroraBackground';
+import BrandLogo from '../components/BrandLogo';
 import { useTheme } from '../lib/theme';
 
 export default function Hero() {
@@ -20,10 +20,28 @@ export default function Hero() {
         transition: 'background-color 0.3s ease',
       }}
     >
-      {/* Background: WebGL lightning shader in dark mode (falls back to a
-          procedural starfield if reduced-motion or WebGL isn't available),
-          aurora gradient in light mode */}
-      {theme === 'dark' ? <LightningBackground /> : <AuroraBackground />}
+      {/* Background: boardroom-at-dusk photo backdrop in dark mode,
+          aurora gradient in light mode. Vignette overlay (below) tames
+          the photo for text contrast. */}
+      {theme === 'dark' ? (
+        <img
+          src="/photos/hero-boardroom-dusk.jpg"
+          alt=""
+          aria-hidden="true"
+          loading="eager"
+          fetchPriority="high"
+          style={{
+            position: 'absolute',
+            inset: 0,
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            display: 'block',
+          }}
+        />
+      ) : (
+        <AuroraBackground />
+      )}
 
       {/* Subtle vignette so headline keeps contrast over the background */}
       <div
@@ -49,6 +67,31 @@ export default function Hero() {
           padding: 'clamp(96px, 14vw, 120px) clamp(24px, 5vw, 80px) clamp(48px, 8vw, 64px)',
         }}
       >
+        {/* Prominent brand mark — the new THG / AI SERVICES wordmark.
+            In dark mode we use the transparent cut-out so the letters sit
+            right on the boardroom photo. In light mode the aurora
+            background can wash out white letters, so we fall back to the
+            dark-letters variant of the standalone BrandLogo. */}
+        {theme === 'dark' ? (
+          <img
+            src="/thg-ai-logo-mark-transparent.png"
+            alt="THG AI Services"
+            width={1200}
+            height={460}
+            style={{
+              display: 'block',
+              width: 'min(640px, 85%)',
+              height: 'auto',
+              marginBottom: '36px',
+              marginLeft: 0,
+            }}
+          />
+        ) : (
+          <div style={{ marginBottom: '36px' }}>
+            <BrandLogo variant="dark-letters" size={260} />
+          </div>
+        )}
+
         <span
           className="font-mono-label"
           style={{
@@ -57,7 +100,7 @@ export default function Hero() {
             marginBottom: '28px',
           }}
         >
-          THG Services, LLC · Woodstock, GA
+          Woodstock, GA
         </span>
 
         <h1
@@ -83,10 +126,10 @@ export default function Hero() {
         >
           THG AI Services is the software studio of a 25-year entrepreneur
           — a multi-state operator who&rsquo;s been running companies since
-          long before the apps existed. LeadQuik CRM and Blaze are our
-          flagship products, with more in the pipeline. We also build apps
-          for clients on request, and take on custom work when the
-          off-the-shelf software can&rsquo;t get the job done.
+          long before the apps existed. LeadQuik is our flagship, with
+          more products in the pipeline. We also build apps for clients
+          on request, and take on custom work when the off-the-shelf
+          software can&rsquo;t get the job done.
         </p>
 
         <div
@@ -201,6 +244,12 @@ export default function Hero() {
           .hero-section {
             align-items: flex-start !important;
             min-height: auto !important;
+          }
+          /* Darken the backdrop photo on phones — center crop puts the
+             laptop glow right under the body paragraph, pushing text
+             contrast under AA. */
+          .hero-section > img {
+            filter: brightness(0.7);
           }
         }
         @media (prefers-reduced-motion: reduce) {

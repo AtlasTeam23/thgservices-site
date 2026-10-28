@@ -237,13 +237,12 @@ export default function Problem() {
                 rel="noopener noreferrer"
                 style={{ color: '#2563EB', textDecoration: 'none', fontWeight: 600 }}
               >
-                LeadQuik CRM →
+                LeadQuik →
               </a>{' '}
               replies the instant a lead lands, routes the conversation,
               and handles estimating, project management, and customer
-              relationships without the spreadsheet sprawl. Blaze takes
-              command of Google Ads with 15+ years of AdWords expertise
-              behind the wheel. And when no off-the-shelf
+              relationships without the spreadsheet sprawl. And when no
+              off-the-shelf
               tool can do what an operator needs, we build custom apps for
               clients too.
             </p>

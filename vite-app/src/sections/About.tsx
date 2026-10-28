@@ -57,32 +57,6 @@ export default function About() {
         transition: 'background-color 0.3s ease',
       }}
     >
-      {/* Full-width mood banner — "the operators we build for" */}
-      <div
-        style={{
-          maxWidth: '1440px',
-          margin: '0 auto 64px',
-          borderRadius: '12px',
-          overflow: 'hidden',
-          border: '1px solid var(--thg-border-about)',
-          aspectRatio: '21 / 9',
-          maxHeight: '440px',
-        }}
-      >
-        <img
-          src="/photos/capabilities-team-whiteboard.jpg"
-          alt="Four people at a whiteboard mid-sketch, marker in hand, blue diagram"
-          loading="lazy"
-          style={{
-            width: '100%',
-            height: '100%',
-            objectFit: 'cover',
-            objectPosition: '50% 20%',
-            display: 'block',
-          }}
-        />
-      </div>
-
       <div
         ref={gridRef}
         style={{
@@ -215,20 +189,16 @@ export default function About() {
               { k: 'Based in', v: 'Woodstock, GA' },
               { k: 'D-U-N-S Number', v: '12-981-2006' },
               {
-                k: 'Flagship products',
+                k: 'Flagship',
                 v: (
-                  <>
-                    <a
-                      href="https://leadquik.com"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{ color: '#2563EB', textDecoration: 'none', fontWeight: 600 }}
-                    >
-                      LeadQuik CRM →
-                    </a>
-                    {' · '}
-                    <span style={{ color: '#EF4444', fontWeight: 600 }}>Blaze</span>
-                  </>
+                  <a
+                    href="https://leadquik.com"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ color: '#2563EB', textDecoration: 'none', fontWeight: 600 }}
+                  >
+                    LeadQuik →
+                  </a>
                 ),
               },
               { k: 'In development', v: 'CashPulse' },
@@ -360,7 +330,32 @@ export default function About() {
         }}
         className="md:!grid-cols-[1fr_2fr] about-founder"
       >
-        {/* Left: Founder label + name + credentials rail */}
+        {/* Left: Founder portrait only */}
+        <div>
+          <div
+            style={{
+              borderRadius: '8px',
+              overflow: 'hidden',
+              border: '1px solid var(--thg-border-about)',
+              aspectRatio: '4 / 5',
+              maxWidth: '320px',
+            }}
+          >
+            <img
+              src="/photos/david-brannan-founder.jpg"
+              alt="David Brannan, founder of THG AI Services"
+              loading="lazy"
+              style={{
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover',
+                display: 'block',
+              }}
+            />
+          </div>
+        </div>
+
+        {/* Right: Founder label + name + credentials rail + bio */}
         <div>
           <span
             className="font-mono-label"
@@ -386,7 +381,8 @@ export default function About() {
           </h3>
           <div
             style={{
-              marginTop: '20px',
+              marginTop: '16px',
+              marginBottom: '28px',
               fontFamily: "'JetBrains Mono', monospace",
               fontSize: '11px',
               letterSpacing: '0.08em',
@@ -399,12 +395,8 @@ export default function About() {
             <br />
             Mercer University
             <br />
-            22+ years operating multi-state businesses
+            25 years operating multi-state businesses
           </div>
-        </div>
-
-        {/* Right: Bio */}
-        <div>
           <p
             className="font-body-lg"
             style={{
@@ -413,7 +405,7 @@ export default function About() {
               margin: 0,
             }}
           >
-            David brings 22+ years of running multiple seven-figure
+            David brings 25 years of running multiple seven-figure
             businesses to the software desk at THG AI Services. Educated at
             the University of South Carolina and Mercer, with a
             career-long focus on software and computer technology, he writes
@@ -440,8 +432,12 @@ export default function About() {
           .md\\:!grid-cols-\\[55\\%_45\\%\\] {
             grid-template-columns: 55% 45% !important;
           }
+          /* Founder subsection: left col sized to the portrait so the
+             text (eyebrow + name + credentials + bio) sits snug alongside
+             rather than 144px of dead gutter in a loose 1fr. */
           .about-founder.md\\:\\!grid-cols-\\[1fr_2fr\\] {
-            grid-template-columns: 1fr 2fr !important;
+            grid-template-columns: minmax(0, 320px) 1fr !important;
+            gap: 56px !important;
           }
         }
       `}</style>

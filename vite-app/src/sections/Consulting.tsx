@@ -20,7 +20,7 @@ const services: Service[] = [
   },
   {
     title: 'Google Ads',
-    body: 'Audit and optimize ad spend with 15+ years of AdWords experience — the same playbook that powers Blaze.',
+    body: 'Audit and optimize ad spend with 15+ years of AdWords experience, built on running campaigns across multi-state operations.',
   },
   {
     title: 'Website upgrades',
