@@ -92,9 +92,10 @@ export default function About() {
               marginTop: '32px',
             }}
           >
-            THG Services, LLC is a software company headquartered in Roswell,
-            Georgia. We design, build, and support our own products —
-            handling everything from concept and engineering through customer
+            THG AI Services (THG Services, LLC) is an AI services company
+            based in Woodstock, Georgia. We help small businesses put AI to
+            practical use, and we design, build, and support our own
+            products, from concept and engineering through customer
             onboarding and long-term support.
           </p>
           <p
@@ -180,7 +181,7 @@ export default function About() {
             </div>
             {([
               { k: 'Legal name', v: 'THG Services, LLC' },
-              { k: 'Headquarters', v: '300 Colonial Center Pkwy, Suite 100N\nRoswell, GA 30076' },
+              { k: 'Home base', v: 'Woodstock, GA' },
               { k: 'D-U-N-S Number', v: '12-981-2006' },
               {
                 k: 'Flagship products',
