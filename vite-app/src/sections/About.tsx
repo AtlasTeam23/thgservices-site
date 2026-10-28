@@ -6,19 +6,24 @@ gsap.registerPlugin(ScrollTrigger);
 
 export default function About() {
   const sectionRef = useRef<HTMLElement>(null);
+  const gridRef = useRef<HTMLDivElement>(null);
   const leftRef = useRef<HTMLDivElement>(null);
   const rightRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const section = sectionRef.current;
+    const grid = gridRef.current;
     const left = leftRef.current;
     const right = rightRef.current;
-    if (!section || !left || !right) return;
+    if (!grid || !left || !right) return;
 
+    // Trigger on the two-column grid, not the section — the banner photo
+    // added above the grid pushes the grid ~640px below the section top,
+    // so a section-based trigger would animate columns while they're
+    // still off-screen on laptops.
     const tl = gsap.timeline({
       scrollTrigger: {
-        trigger: section,
-        start: 'top 75%',
+        trigger: grid,
+        start: 'top 85%',
         once: true,
       },
     });
@@ -52,7 +57,34 @@ export default function About() {
         transition: 'background-color 0.3s ease',
       }}
     >
+      {/* Full-width mood banner — "the operators we build for" */}
       <div
+        style={{
+          maxWidth: '1440px',
+          margin: '0 auto 64px',
+          borderRadius: '12px',
+          overflow: 'hidden',
+          border: '1px solid var(--thg-border-about)',
+          aspectRatio: '21 / 9',
+          maxHeight: '440px',
+        }}
+      >
+        <img
+          src="/photos/capabilities-team-whiteboard.jpg"
+          alt="Four people at a whiteboard mid-sketch, marker in hand, blue diagram"
+          loading="lazy"
+          style={{
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            objectPosition: '50% 20%',
+            display: 'block',
+          }}
+        />
+      </div>
+
+      <div
+        ref={gridRef}
         style={{
           maxWidth: '1440px',
           margin: '0 auto',

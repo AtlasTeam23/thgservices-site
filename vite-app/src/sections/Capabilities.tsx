@@ -113,13 +113,37 @@ export default function Capabilities() {
           Four principles run through every product we ship.
         </h2>
 
+        {/* "How we work" visual — team at a whiteboard */}
+        <div
+          style={{
+            marginTop: '48px',
+            borderRadius: '12px',
+            overflow: 'hidden',
+            border: '1px solid var(--thg-border-subtle)',
+            aspectRatio: '21 / 9',
+            maxHeight: '400px',
+          }}
+        >
+          <img
+            src="/photos/about-operator-at-desk.jpg"
+            alt="A business owner at a wooden desk, pointing at a dashboard on her laptop"
+            loading="lazy"
+            style={{
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
+              display: 'block',
+            }}
+          />
+        </div>
+
         <div
           ref={cardsRef}
           style={{
             display: 'grid',
             gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
             gap: '24px',
-            marginTop: '64px',
+            marginTop: '48px',
           }}
         >
           {capabilities.map((c) => (

@@ -505,6 +505,33 @@ export default function Work() {
           </p>
         </div>
 
+        {/* "Real business using our software" visual anchor.
+            Border uses a literal rgba — Work's bg is #0F172A in both themes
+            (emphasis variant), and --thg-border-subtle flips to slate-alpha
+            in light mode which disappears on this bg. */}
+        <div
+          style={{
+            marginBottom: '48px',
+            borderRadius: '12px',
+            overflow: 'hidden',
+            border: '1px solid rgba(255, 255, 255, 0.08)',
+            aspectRatio: '16 / 9',
+            maxHeight: '480px',
+          }}
+        >
+          <img
+            src="/photos/work-shop-owner-tablet.jpg"
+            alt="Shop owner behind a counter, focused on a register-mounted tablet"
+            loading="lazy"
+            style={{
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
+              display: 'block',
+            }}
+          />
+        </div>
+
         <div
           ref={gridRef}
           style={{

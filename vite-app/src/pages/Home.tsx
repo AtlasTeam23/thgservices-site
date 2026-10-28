@@ -17,6 +17,32 @@ export default function Home() {
       <Navigation />
       <main>
         <Hero />
+        {/* Mood band — operators at work, transitions from the dark hero.
+            Rendered eagerly / high-priority because on phones (where the hero
+            collapses to min-height:auto) this band sits inside the first
+            viewport and will be the LCP element. */}
+        <section
+          style={{
+            width: '100%',
+            backgroundColor: 'var(--thg-bg-page)',
+            overflow: 'hidden',
+            borderTop: '1px solid var(--thg-bg-section-border)',
+            borderBottom: '1px solid var(--thg-bg-section-border)',
+          }}
+        >
+          <img
+            src="/photos/hero-boardroom-dusk.jpg"
+            alt="Four people around a long table at dusk, lit by laptops, blue-hour windows behind"
+            loading="eager"
+            fetchPriority="high"
+            style={{
+              width: '100%',
+              height: 'clamp(220px, 32vw, 420px)',
+              objectFit: 'cover',
+              display: 'block',
+            }}
+          />
+        </section>
         <Work />
         <Consulting />
         <Problem />

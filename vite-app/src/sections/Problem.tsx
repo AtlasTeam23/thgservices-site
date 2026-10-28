@@ -8,6 +8,7 @@ export default function Problem() {
   const sectionRef = useRef<HTMLElement>(null);
   const eyebrowRef = useRef<HTMLSpanElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
+  const photoRef = useRef<HTMLDivElement>(null);
   const statRef = useRef<HTMLDivElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
 
@@ -30,9 +31,15 @@ export default function Problem() {
     );
 
     tl.fromTo(
-      statRef.current,
+      [photoRef.current, statRef.current],
       { opacity: 0, y: 30 },
-      { opacity: 1, y: 0, duration: 0.9, ease: 'power3.out' },
+      {
+        opacity: 1,
+        y: 0,
+        duration: 0.9,
+        stagger: 0.08,
+        ease: 'power3.out',
+      },
       '-=0.4'
     );
 
@@ -116,8 +123,32 @@ export default function Problem() {
           </h2>
         </div>
 
-        {/* Right column - stat + body */}
+        {/* Right column - photo + stat + body */}
         <div>
+          {/* Photo — AI first-touch / human follow-up */}
+          <div
+            ref={photoRef}
+            style={{
+              opacity: 0,
+              marginBottom: '24px',
+              borderRadius: '8px',
+              overflow: 'hidden',
+              border: '1px solid var(--thg-border-subtle)',
+              aspectRatio: '16 / 9',
+            }}
+          >
+            <img
+              src="/photos/problem-phone-handoff.jpg"
+              alt="A woman on a phone call in the foreground, a colleague typing on a laptop behind her"
+              loading="lazy"
+              style={{
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover',
+                display: 'block',
+              }}
+            />
+          </div>
           <div
             ref={statRef}
             style={{
