@@ -167,6 +167,30 @@ export default function Consulting() {
           </p>
         </div>
 
+        {/* Section photo — "sit down with us" visual anchor */}
+        <div
+          style={{
+            marginBottom: '48px',
+            borderRadius: '12px',
+            overflow: 'hidden',
+            border: '1px solid var(--thg-border-subtle)',
+            aspectRatio: '16 / 9',
+            maxHeight: '480px',
+          }}
+        >
+          <img
+            src="/photos/consulting-conversation.jpg"
+            alt="Two business owners at a small conference table, mid-conversation"
+            loading="lazy"
+            style={{
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
+              display: 'block',
+            }}
+          />
+        </div>
+
         <div
           ref={gridRef}
           style={{
