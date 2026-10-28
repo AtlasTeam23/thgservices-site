@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import Logo from './Logo';
+import BrandLogo from './BrandLogo';
 import ThemeToggle from './ThemeToggle';
 import { useIsMobile } from '../hooks/use-mobile';
 
@@ -44,7 +44,7 @@ export default function Navigation() {
           top: 0,
           left: 0,
           width: '100%',
-          height: '72px',
+          height: '88px',
           zIndex: 100,
           display: 'flex',
           alignItems: 'center',
@@ -59,9 +59,9 @@ export default function Navigation() {
             : '1px solid var(--thg-border-faint)',
         }}
       >
-        {/* Brand */}
-        <Logo
-          size={isMobile ? 36 : 32}
+        {/* Brand — THG AI Services wordmark (image contains both logotype and subtitle) */}
+        <BrandLogo
+          size={isMobile ? 60 : 72}
           href="#"
           onClick={(e) => {
             e.preventDefault();

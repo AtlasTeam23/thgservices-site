@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
-import Logo from '../components/Logo';
+import BrandLogo from '../components/BrandLogo';
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -80,8 +80,8 @@ export default function Footer() {
           {/* Brand */}
           <div className="footer-col" style={{ opacity: 0 }}>
             <div style={{ marginBottom: '14px' }}>
-              {/* Footer stays dark in both themes — force white wordmark */}
-              <Logo size={28} wordmarkColor="rgba(255, 255, 255, 0.95)" />
+              {/* Footer stays dark in both themes — always use the dark-bg logo variant */}
+              <BrandLogo size={88} alt="THG AI Services" variant="transparent" />
             </div>
             <div
               style={{
