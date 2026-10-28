@@ -13,13 +13,15 @@ type BrandLogoProps = {
   alt?: string;
   /**
    * Which image variant to serve:
-   * - 'auto' (default) picks by active theme
-   * - 'dark-bg' always serves the version with the navy backdrop
-   * - 'transparent' always serves the transparent-background version
-   *   (useful for surfaces that are a fixed dark color regardless of
-   *   the global theme — e.g. the footer).
+   * - 'auto' (default) picks by active theme (dark-bg for dark, dark-letters for light)
+   * - 'dark-bg' always serves the version with the navy backdrop + light letters
+   * - 'transparent' serves the transparent-background version with original
+   *   light letters (useful for surfaces that are a fixed dark color regardless
+   *   of the global theme — e.g. the footer).
+   * - 'dark-letters' serves the transparent-background version with inverted dark
+   *   letters (readable on light surfaces).
    */
-  variant?: 'auto' | 'dark-bg' | 'transparent';
+  variant?: 'auto' | 'dark-bg' | 'transparent' | 'dark-letters';
 };
 
 /**
@@ -43,16 +45,25 @@ export default function BrandLogo({
   variant = 'auto',
 }: BrandLogoProps) {
   const { theme } = useTheme();
-  const resolved =
-    variant === 'dark-bg'
-      ? 'dark'
-      : variant === 'transparent'
-        ? 'light'
-        : theme;
-  const src =
-    resolved === 'dark'
-      ? '/thg-ai-services-logo.png'
-      : '/thg-ai-services-logo-transparent.png';
+  // Resolve which concrete asset to serve.
+  // 'auto' => dark-bg in dark theme, dark-letters in light theme (readable)
+  // 'dark-bg' => always the navy-backdrop version
+  // 'transparent' => original light-letter transparent (for dark surfaces)
+  // 'dark-letters' => inverted dark-letter transparent (for light surfaces)
+  let src: string;
+  if (variant === 'dark-bg') {
+    src = '/thg-ai-services-logo.png';
+  } else if (variant === 'transparent') {
+    src = '/thg-ai-services-logo-transparent.png';
+  } else if (variant === 'dark-letters') {
+    src = '/thg-ai-services-logo-dark-letters.png';
+  } else {
+    // auto
+    src =
+      theme === 'dark'
+        ? '/thg-ai-services-logo.png'
+        : '/thg-ai-services-logo-dark-letters.png';
+  }
 
   const img = (
     <img
