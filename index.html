@@ -3,31 +3,31 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>THG Services, LLC — Software built by an operator, not a vendor</title>
-    <meta name="description" content="THG Services is the software studio of a 25-year multi-state entrepreneur. LeadQuik CRM and Blaze are our flagship products, with more in the pipeline. We also build custom apps for business owners." />
+    <title>THG AI Services | AI Consulting &amp; Automation for Small Businesses in Woodstock, GA</title>
+    <meta name="description" content="THG AI Services helps small businesses in Woodstock, Canton, Roswell, Marietta and Metro Atlanta use AI to answer leads faster, automate busywork, improve Google Ads, and build custom tools." />
     <meta name="theme-color" content="#0A0A0F" />
     <meta name="color-scheme" content="dark light" />
     <link rel="canonical" href="https://thgservices.io/" />
 
     <!-- Open Graph -->
-    <meta property="og:title" content="THG Services, LLC" />
-    <meta property="og:description" content="Software built by an operator, not a vendor. LeadQuik CRM, Blaze — and custom apps when off-the-shelf can’t do it." />
+    <meta property="og:title" content="THG AI Services | AI for Small Businesses in Woodstock, GA" />
+    <meta property="og:description" content="Practical AI for small business owners: faster lead response, automation, Google Ads, chatbots, and custom tools. Based in Woodstock, GA." />
     <meta property="og:url" content="https://thgservices.io/" />
     <meta property="og:type" content="website" />
-    <meta property="og:site_name" content="THG Services, LLC" />
+    <meta property="og:site_name" content="THG AI Services" />
     <meta property="og:image" content="https://thgservices.io/og-image.png" />
     <meta property="og:image:secure_url" content="https://thgservices.io/og-image.png" />
     <meta property="og:image:type" content="image/png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content="THG Services — Software built by an operator, not a vendor" />
+    <meta property="og:image:alt" content="THG AI Services, AI services for small businesses" />
 
     <!-- Twitter -->
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="THG Services, LLC" />
-    <meta name="twitter:description" content="Software built by an operator, not a vendor. LeadQuik CRM, Blaze — and custom apps when off-the-shelf can’t do it." />
+    <meta name="twitter:title" content="THG AI Services | AI for Small Businesses in Woodstock, GA" />
+    <meta name="twitter:description" content="Practical AI for small business owners: faster lead response, automation, Google Ads, chatbots, and custom tools. Based in Woodstock, GA." />
     <meta name="twitter:image" content="https://thgservices.io/og-image.png" />
-    <meta name="twitter:image:alt" content="THG Services — Software built by an operator, not a vendor" />
+    <meta name="twitter:image:alt" content="THG AI Services, AI services for small businesses" />
 
     <!-- Favicons + app icons -->
     <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
@@ -40,37 +40,80 @@
     <script type="application/ld+json">
     {
       "@context": "https://schema.org",
-      "@type": "Organization",
-      "name": "THG Services, LLC",
-      "alternateName": "THG Services",
-      "url": "https://thgservices.io",
-      "logo": "https://thgservices.io/",
-      "description": "Software company building and operating products for small and mid-sized businesses, including LeadQuik.",
-      "address": {
-        "@type": "PostalAddress",
-        "streetAddress": "300 Colonial Center Pkwy, Suite 100N",
-        "addressLocality": "Roswell",
-        "addressRegion": "GA",
-        "postalCode": "30076",
-        "addressCountry": "US"
-      },
-      "contactPoint": {
-        "@type": "ContactPoint",
-        "telephone": "+1-866-519-7993",
-        "email": "developer@leadquik.com",
-        "contactType": "customer support",
-        "availableLanguage": ["en"]
-      },
-      "identifier": {
-        "@type": "PropertyValue",
-        "propertyID": "DUNS",
-        "value": "12-981-2006"
-      },
-      "subOrganization": [
+      "@graph": [
         {
           "@type": "Organization",
-          "name": "LeadQuik",
-          "url": "https://leadquik.com"
+          "@id": "https://thgservices.io/#organization",
+          "name": "THG AI Services",
+          "legalName": "THG Services, LLC",
+          "alternateName": ["THG AI Services, LLC", "THG Services"],
+          "url": "https://thgservices.io/",
+          "logo": {
+            "@type": "ImageObject",
+            "url": "https://thgservices.io/icon-512.png",
+            "width": 512,
+            "height": 512
+          },
+          "image": "https://thgservices.io/og-image.png",
+          "description": "AI services company helping small businesses use AI to respond to leads faster, automate operations, improve advertising, and build custom tools. Based in Woodstock, GA.",
+          "telephone": "+1-866-519-7993",
+          "email": "developer@leadquik.com",
+          "address": {
+            "@type": "PostalAddress",
+            "addressLocality": "Woodstock",
+            "addressRegion": "GA",
+            "addressCountry": "US"
+          },
+          "identifier": {
+            "@type": "PropertyValue",
+            "propertyID": "DUNS",
+            "value": "12-981-2006"
+          },
+          "sameAs": [
+            "https://share.google/RsUK3wMk0a30kz9OR"
+          ],
+          "subOrganization": [
+            {
+              "@type": "Organization",
+              "name": "LeadQuik",
+              "url": "https://leadquik.com"
+            }
+          ]
+        },
+        {
+          "@type": "ProfessionalService",
+          "@id": "https://thgservices.io/#localbusiness",
+          "name": "THG AI Services",
+          "url": "https://thgservices.io/",
+          "parentOrganization": { "@id": "https://thgservices.io/#organization" },
+          "logo": "https://thgservices.io/icon-512.png",
+          "image": "https://thgservices.io/og-image.png",
+          "description": "AI consulting and automation for small businesses: lead response, call and inbox automation, chatbots and AI assistants, Google Ads optimization, website upgrades, custom automation, and faster P&L reporting.",
+          "telephone": "+1-866-519-7993",
+          "address": {
+            "@type": "PostalAddress",
+            "addressLocality": "Woodstock",
+            "addressRegion": "GA",
+            "addressCountry": "US"
+          },
+          "areaServed": [
+            { "@type": "City", "name": "Woodstock, GA" },
+            { "@type": "City", "name": "Canton, GA" },
+            { "@type": "City", "name": "Roswell, GA" },
+            { "@type": "City", "name": "Marietta, GA" },
+            { "@type": "City", "name": "Atlanta, GA" }
+          ],
+          "knowsAbout": [
+            "Artificial intelligence for small business",
+            "AI chatbots and assistants",
+            "Business process automation",
+            "Lead response automation",
+            "Google Ads management",
+            "CRM"
+          ],
+          "sameAs": [
+            "https://share.google/RsUK3wMk0a30kz9OR"
+          ]
         }
       ]
     }
@@ -94,26 +137,23 @@
       .noscript-fallback p { color: rgba(255,255,255,0.7); margin: 0 0 16px; }
       .noscript-fallback a { color: #2563EB; }
     </style>
-    <script type="module" crossorigin src="/assets/index-p-b7vKQP.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-DqK7swl6.css">
+    <script type="module" crossorigin src="/assets/index-JbTWMfjl.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-fj2vycBU.css">
   </head>
   <body>
     <div id="root"></div>
 
     <noscript>
       <div class="noscript-fallback">
-        <h1>THG Services, LLC</h1>
-        <p>Software for businesses that run on leads.</p>
-        <p>THG Services, LLC is a software company headquartered in Roswell, Georgia. We design, build, and operate products that help small and mid-sized businesses respond to leads, communicate with customers, and run their operations.</p>
-        <p><strong>Flagship products:</strong> <a href="https://leadquik.com">LeadQuik CRM</a> (lead response, estimating &amp; CRM in one), Blaze (AI SEO &amp; ad-spend agent).</p>
-        <p><strong>In development:</strong> CashPulse.</p>
-        <p><strong>Beta:</strong> <a href="https://blastlands.com">Blast Lands</a> — all-ages desert battle royale (iOS, Android, web); <a href="https://highlightsreel.com">Highlights Reel</a> — recruiting profiles for club and high school athletes.</p>
-        <p><strong>Client apps:</strong> <a href="https://bellabeast.com">Bella Beast</a> — fitness coaching with Coach Adriana; <a href="https://photomemorylane.com">Memory Lane</a> — AI photo restoration.</p>
+        <h1>THG AI Services: AI services that help small businesses run better</h1>
+        <p>THG AI Services (THG Services, LLC) is an AI services company based in Woodstock, Georgia. We help small business owners in Woodstock, Canton, Roswell, Marietta and Metro Atlanta use AI to respond to leads faster, automate busywork, improve Google Ads, and build custom tools.</p>
+        <p><strong>Services:</strong> call handling and lead capture, email and inbox automation, chatbots and AI assistants, Google Ads audits, website upgrades, custom scripts and automation, faster P&amp;Ls and bookkeeping cleanup.</p>
+        <p><strong>Our products:</strong> <a href="https://leadquik.com">LeadQuik CRM</a> (lead response, estimating &amp; CRM in one), Blaze (AI SEO &amp; ad-spend agent).</p>
+        <p><a href="/blog/">Read the THG AI Services blog</a></p>
         <p>
           <strong>Contact:</strong><br>
-          THG Services, LLC<br>
-          300 Colonial Center Pkwy, Suite 100N<br>
-          Roswell, GA 30076, USA<br>
+          THG AI Services (THG Services, LLC)<br>
+          Woodstock, GA, USA<br>
           Email: <a href="mailto:developer@leadquik.com">developer@leadquik.com</a><br>
           Phone: <a href="tel:+18665197993">+1 (866) 519-7993</a><br>
           D-U-N-S: 12-981-2006

@@ -9,6 +9,7 @@ const navLinks = [
   { label: 'Consulting', href: '#consulting' },
   { label: 'Capabilities', href: '#capabilities' },
   { label: 'About', href: '#about' },
+  { label: 'Blog', href: '/blog/' },
   { label: 'Contact', href: '#contact' },
 ];
 
@@ -27,6 +28,11 @@ export default function Navigation() {
   }, []);
 
   const handleNavClick = (e: React.MouseEvent<HTMLAnchorElement>, href: string) => {
+    // Real page links (e.g. /blog/) navigate normally; only #anchors smooth-scroll.
+    if (!href.startsWith('#')) {
+      setMenuOpen(false);
+      return;
+    }
     e.preventDefault();
     const el = document.querySelector(href);
     if (el) {

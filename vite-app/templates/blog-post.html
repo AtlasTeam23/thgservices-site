@@ -1,0 +1,113 @@
+<!--
+  THG AI Services blog post template (static HTML).
+  How to publish a post:
+    1. Copy this file to vite-app/public/blog/<slug>/index.html (slug = lowercase-words-with-dashes).
+    2. Replace every {{PLACEHOLDER}}; set robots to "index, follow".
+    3. Add a card at the top of vite-app/public/blog/index.html and a blogPost entry in its JSON-LD.
+    4. Add the URL to vite-app/public/sitemap.xml.
+    5. cd vite-app && npm run build, then copy dist/ to the repo root (see PR notes) and commit.
+-->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{POST_TITLE}} | THG AI Services</title>
+  <meta name="description" content="{{META_DESCRIPTION_150_160_CHARS}}" />
+  <!-- TEMPLATE ONLY: change to "index, follow" in the published copy. -->
+  <meta name="robots" content="noindex, nofollow" />
+  <link rel="canonical" href="https://thgservices.io/blog/{{POST_SLUG}}/" />
+  <meta name="theme-color" content="#0A0A0F" />
+
+  <meta property="og:type" content="article" />
+  <meta property="og:site_name" content="THG AI Services" />
+  <meta property="og:title" content="{{POST_TITLE}}" />
+  <meta property="og:description" content="{{SOCIAL_DESCRIPTION}}" />
+  <meta property="og:url" content="https://thgservices.io/blog/{{POST_SLUG}}/" />
+  <meta property="og:image" content="https://thgservices.io/og-image.png" />
+  <meta property="article:published_time" content="{{PUBLISH_DATE_YYYY-MM-DD}}" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="{{POST_TITLE}}" />
+  <meta name="twitter:description" content="{{SOCIAL_DESCRIPTION}}" />
+  <meta name="twitter:image" content="https://thgservices.io/og-image.png" />
+
+  <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400&family=Outfit:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/blog/blog.css" />
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "BlogPosting",
+        "@id": "https://thgservices.io/blog/{{POST_SLUG}}/#article",
+        "headline": "{{POST_TITLE}}",
+        "description": "{{META_DESCRIPTION_150_160_CHARS}}",
+        "datePublished": "{{PUBLISH_DATE_YYYY-MM-DD}}",
+        "dateModified": "{{PUBLISH_DATE_YYYY-MM-DD}}",
+        "mainEntityOfPage": "https://thgservices.io/blog/{{POST_SLUG}}/",
+        "image": "https://thgservices.io/og-image.png",
+        "inLanguage": "en-US",
+        "keywords": "{{KEYWORDS_COMMA_SEPARATED}}",
+        "author": { "@type": "Organization", "name": "THG AI Services", "url": "https://thgservices.io/" },
+        "publisher": {
+          "@type": "Organization",
+          "@id": "https://thgservices.io/#organization",
+          "name": "THG AI Services",
+          "logo": { "@type": "ImageObject", "url": "https://thgservices.io/icon-512.png" }
+        }
+      },
+      {
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://thgservices.io/" },
+          { "@type": "ListItem", "position": 2, "name": "Blog", "item": "https://thgservices.io/blog/" },
+          { "@type": "ListItem", "position": 3, "name": "{{SHORT_TITLE_FOR_BREADCRUMB}}", "item": "https://thgservices.io/blog/{{POST_SLUG}}/" }
+        ]
+      }
+    ]
+  }
+  </script>
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/"><img src="/logo-orb.svg" alt="" width="30" height="30" />THG AI Services</a>
+    <nav class="site-nav" aria-label="Main">
+      <a href="/">Home</a>
+      <a href="/#consulting">Services</a>
+      <a href="/blog/" aria-current="page">Blog</a>
+      <a class="btn" href="/#contact">Contact Us</a>
+    </nav>
+  </header>
+
+  <main>
+    <article>
+      <p class="eyebrow"><a href="/blog/" style="color:inherit;text-decoration:none">Blog</a> · {{CATEGORY}}</p>
+      <h1>{{POST_TITLE}}</h1>
+      <p class="meta">By THG AI Services · <time datetime="{{PUBLISH_DATE_YYYY-MM-DD}}">{{PUBLISH_DATE_HUMAN}}</time> · About a {{N}}-minute read</p>
+
+      <p class="lede">{{INTRO_PARAGRAPH}}</p>
+
+      <h2>{{SECTION_HEADING}}</h2>
+      <p>{{SECTION_BODY}}</p>
+
+      <!-- Repeat h2/p/ul blocks as needed. No invented stats, prices, or client results. -->
+
+      <section class="cta" aria-labelledby="cta-heading">
+        <h2 id="cta-heading">{{CTA_HEADING}}</h2>
+        <p>THG AI Services works with small business owners in Woodstock, Canton, Roswell, Marietta and across Metro Atlanta to set up practical AI: lead response, Google Business Profile upkeep, chat assistants, automation and more. Tell us what's slowing you down and we'll suggest where to start.</p>
+        <p><a class="btn" href="/#contact">Talk to THG AI Services</a></p>
+        <p style="font-size:15px">Or call <a href="tel:+18665197993">(866) 519-7993</a>.</p>
+      </section>
+    </article>
+  </main>
+
+  <footer class="site-footer">
+    <p>&copy; 2026 THG AI Services (THG Services, LLC) · Woodstock, GA · <a href="/privacy.html">Privacy</a> · <a href="/terms.html">Terms</a></p>
+  </footer>
+</body>
+</html>

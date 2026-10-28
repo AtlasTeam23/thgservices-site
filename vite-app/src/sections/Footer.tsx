@@ -10,6 +10,7 @@ const navLinks = [
   { label: 'Consulting', anchor: '#consulting' },
   { label: 'Capabilities', anchor: '#capabilities' },
   { label: 'About', anchor: '#about' },
+  { label: 'Blog', anchor: '/blog/' },
   { label: 'Contact', anchor: '#contact' },
 ];
 
@@ -93,13 +94,13 @@ export default function Footer() {
                 marginBottom: '8px',
               }}
             >
-              THG Services, LLC
+              THG AI Services
             </div>
             <div
               className="font-mono-label"
               style={{ color: 'rgba(255, 255, 255, 0.4)' }}
             >
-              Software · Roswell, GA
+              AI Services for Small Business · Woodstock, GA
             </div>
             <div
               style={{
@@ -110,10 +111,9 @@ export default function Footer() {
                 lineHeight: 1.7,
               }}
             >
+              THG Services, LLC<br />
               D-U-N-S 12-981-2006<br />
-              300 Colonial Center Pkwy<br />
-              Suite 100N<br />
-              Roswell, GA 30076, USA
+              Woodstock, GA, USA
             </div>
           </div>
 
@@ -133,6 +133,7 @@ export default function Footer() {
                 key={link.label}
                 href={link.anchor}
                 onClick={(e) => {
+                  if (!link.anchor.startsWith('#')) return;
                   e.preventDefault();
                   document.querySelector(link.anchor)?.scrollIntoView({ behavior: 'smooth' });
                 }}

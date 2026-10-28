@@ -57,7 +57,7 @@ export default function Hero() {
             marginBottom: '28px',
           }}
         >
-          THG Services, LLC · Roswell, GA
+          THG AI Services · Woodstock, GA
         </span>
 
         <h1
@@ -68,7 +68,7 @@ export default function Hero() {
             margin: 0,
           }}
         >
-          Software built by an operator, not a vendor.
+          AI services that help small businesses run better.
         </h1>
 
         <p
@@ -81,12 +81,12 @@ export default function Hero() {
             lineHeight: 1.55,
           }}
         >
-          THG Services is the software studio of a 25-year entrepreneur — a
-          multi-state operator who&rsquo;s been running companies since long
-          before the apps existed. LeadQuik CRM and Blaze are our flagship
-          products, with more in the pipeline. We also build apps for
-          clients on request, and take on custom work when the off-the-shelf
-          software can&rsquo;t get the job done.
+          THG AI Services helps small business owners in Woodstock, Canton,
+          Roswell, Marietta and across Metro Atlanta put AI to work:
+          answering leads faster, automating busywork, tightening ad spend,
+          and building custom tools when off-the-shelf software can&rsquo;t
+          get the job done. Run by a 25-year operator, and the team behind
+          LeadQuik CRM and Blaze.
         </p>
 
         <div

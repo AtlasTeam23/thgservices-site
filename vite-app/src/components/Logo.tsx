@@ -125,7 +125,7 @@ export default function Logo({
             whiteSpace: 'nowrap',
           }}
         >
-          THG Services
+          THG AI Services
         </span>
       )}
     </span>
