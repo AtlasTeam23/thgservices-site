@@ -379,36 +379,17 @@ export default function About() {
           >
             David Brannan
           </h3>
-          <div
-            style={{
-              marginTop: '16px',
-              marginBottom: '28px',
-              fontFamily: "'JetBrains Mono', monospace",
-              fontSize: '11px',
-              letterSpacing: '0.08em',
-              textTransform: 'uppercase',
-              color: 'var(--thg-text-about-dim)',
-              lineHeight: 1.8,
-            }}
-          >
-            University of South Carolina
-            <br />
-            Mercer University
-            <br />
-            25 years operating multi-state businesses
-          </div>
           <p
             className="font-body-lg"
             style={{
               color: 'var(--thg-text-about-body)',
               maxWidth: '640px',
-              margin: 0,
+              margin: '28px 0 0',
             }}
           >
             David brings 25 years of running multiple seven-figure
-            businesses to the software desk at THG AI Services. Educated at
-            the University of South Carolina and Mercer, with a
-            career-long focus on software and computer technology, he writes
+            businesses to the software desk at THG AI Services. With a
+            career-long focus on running multiple businesses, he writes
             code the same way he runs operations — eliminate the busywork
             between the problem and the result.
           </p>
