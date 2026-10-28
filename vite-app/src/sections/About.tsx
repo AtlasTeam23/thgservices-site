@@ -389,8 +389,8 @@ export default function About() {
           >
             David brings 25 years of running multiple seven-figure
             businesses to the software desk at THG AI Services. With a
-            career-long focus on running multiple businesses, he writes
-            code the same way he runs operations — eliminate the busywork
+            career-long focus on running multiple businesses, he uses
+            technology to run his operations — eliminate the busywork
             between the problem and the result.
           </p>
           <p
