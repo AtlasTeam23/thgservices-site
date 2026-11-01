@@ -36,8 +36,9 @@ const products: Product[] = [
     status: 'Client app',
     tagline: 'Fitness coaching with Coach Adriana',
     description:
-      'Train hard. Eat right. Be the beast. A coaching brand and app from Coach Adriana for clients who want a real plan, not a generic one. Currently in beta.',
+      'Train hard. Eat right. Be the beast. A coaching brand and app from Coach Adriana for clients who want a real plan, not a generic one. Now live on the App Store.',
     href: 'https://bellabeast.com',
+    appStoreHref: 'https://apps.apple.com/us/app/bella-beast/id6825593814',
     accent: '#009C3B',
   },
   {

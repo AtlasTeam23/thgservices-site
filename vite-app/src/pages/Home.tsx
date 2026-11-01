@@ -3,6 +3,7 @@ import Navigation from '../components/Navigation';
 import Hero from '../sections/Hero';
 import Problem from '../sections/Problem';
 import Work from '../sections/Work';
+import FeaturedApp from '../sections/FeaturedApp';
 import Consulting from '../sections/Consulting';
 import Capabilities from '../sections/Capabilities';
 import About from '../sections/About';
@@ -18,6 +19,7 @@ export default function Home() {
       <main>
         <Hero />
         <Work />
+        <FeaturedApp />
         <Consulting />
         <Problem />
         <Capabilities />
