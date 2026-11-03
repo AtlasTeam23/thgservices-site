@@ -16,10 +16,6 @@ export default function About() {
     const right = rightRef.current;
     if (!grid || !left || !right) return;
 
-    // Trigger on the two-column grid, not the section — the banner photo
-    // added above the grid pushes the grid ~640px below the section top,
-    // so a section-based trigger would animate columns while they're
-    // still off-screen on laptops.
     const tl = gsap.timeline({
       scrollTrigger: {
         trigger: grid,
@@ -55,6 +51,8 @@ export default function About() {
         backgroundColor: 'var(--thg-bg-about)',
         padding: 'clamp(64px, 10vw, 140px) clamp(24px, 5vw, 80px)',
         transition: 'background-color 0.3s ease',
+        // The columns slide in from ±40px; without this they widen the page on phones until triggered.
+        overflowX: 'clip',
       }}
     >
       <div
@@ -171,7 +169,7 @@ export default function About() {
             style={{
               border: '1px solid var(--thg-border-about)',
               borderRadius: '4px',
-              padding: '40px',
+              padding: 'clamp(24px, 6vw, 40px)',
               background: 'var(--thg-bg-about-card)',
               maxWidth: '460px',
               boxShadow: '0 20px 60px rgba(0, 0, 0, 0.06)',
@@ -275,10 +273,8 @@ export default function About() {
             ] as { k: string; v: React.ReactNode }[]).map((row, i, arr) => (
               <div
                 key={row.k}
+                className="about-glance-row"
                 style={{
-                  display: 'grid',
-                  gridTemplateColumns: '120px 1fr',
-                  gap: '16px',
                   paddingBottom: i === arr.length - 1 ? 0 : '12px',
                   marginBottom: i === arr.length - 1 ? 0 : '12px',
                   borderBottom:
@@ -379,6 +375,18 @@ export default function About() {
       </div>
 
       <style>{`
+        .about-glance-row {
+          display: grid;
+          grid-template-columns: 120px 1fr;
+          gap: 16px;
+        }
+        /* Label beside value needs ~384px, wider than a phone's column. */
+        @media (max-width: 480px) {
+          .about-glance-row {
+            grid-template-columns: 1fr;
+            gap: 2px;
+          }
+        }
         /* Breakpoint lifted to 900px so tablets below that stack cleanly;
            the At a Glance card needs at least ~300px to render its
            120px label + value pair without clipping. */
