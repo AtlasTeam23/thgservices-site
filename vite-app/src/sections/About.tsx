@@ -330,30 +330,7 @@ export default function About() {
         }}
         className="about-founder"
       >
-        {/* Left: Founder portrait only */}
-        <div>
-          <div
-            style={{
-              borderRadius: '8px',
-              overflow: 'hidden',
-              border: '1px solid var(--thg-border-about)',
-              aspectRatio: '4 / 5',
-              maxWidth: '320px',
-            }}
-          >
-            <img
-              src="/photos/david-brannan-founder.jpg"
-              alt="David Brannan, founder of THG AI Services"
-              loading="lazy"
-              style={{
-                width: '100%',
-                height: '100%',
-                objectFit: 'cover',
-                display: 'block',
-              }}
-            />
-          </div>
-        </div>
+        {/* Founder portrait removed for now; photo stays at /photos/david-brannan-founder.jpg to re-add later. */}
 
         {/* Right: Founder label + name + credentials rail + bio */}
         <div>
@@ -425,8 +402,7 @@ export default function About() {
              text (eyebrow + name + bio) sits snug alongside rather than
              144px of dead gutter in a loose 1fr. */
           .about-founder {
-            grid-template-columns: minmax(0, 320px) 1fr !important;
-            gap: 56px !important;
+            grid-template-columns: minmax(0, 760px) !important;
           }
         }
       `}</style>
