@@ -210,7 +210,10 @@ export default function Hero() {
             <span>LeadQuik · Live session</span>
             <span className="live"><i />LIVE</span>
           </div>
-          <div className="orb" />
+          <div className="orb" aria-hidden="true">
+            <span /><span /><span /><span /><span />
+            <span /><span /><span /><span />
+          </div>
           <div className="feed" ref={feedRef} />
           <div className="bars" ref={barsRef}>
             <span /><span /><span /><span />
@@ -423,15 +426,28 @@ export default function Hero() {
         }
         .hero-v2 .orb {
           height: 150px; margin: 14px 0; border-radius: 16px; position: relative; overflow: hidden;
-          background: radial-gradient(60% 70% at 50% 60%, rgba(59, 130, 246, .55), rgba(10, 20, 46, .2) 70%);
+          background: radial-gradient(80% 100% at 50% 50%, rgba(20, 40, 90, .35), rgba(10, 20, 46, .05) 80%);
+          display: flex; align-items: center; justify-content: center; gap: 8px;
         }
-        .hero-v2 .orb::after {
-          content: ""; position: absolute; width: 120px; height: 120px;
-          left: 50%; top: 50%; margin: -60px 0 0 -60px; border-radius: 50%;
-          background: radial-gradient(circle, rgba(200, 225, 255, .9), rgba(59, 130, 246, .4) 45%, transparent 70%);
-          filter: blur(6px); animation: v2-orb 5s ease-in-out infinite;
+        .hero-v2 .orb span {
+          width: 6px; height: 40%; border-radius: 3px;
+          background: linear-gradient(180deg, var(--v2-sky), var(--v2-blue));
+          box-shadow: 0 0 12px rgba(125, 180, 255, .55);
+          animation: v2-eq 1.4s ease-in-out infinite;
         }
-        @keyframes v2-orb { 50% { transform: scale(1.25); opacity: .7; } }
+        @keyframes v2-eq {
+          0%, 100% { height: 12%; opacity: .55; }
+          50%     { height: 72%; opacity: 1; }
+        }
+        .hero-v2 .orb span:nth-child(1) { animation-delay: 0.00s; animation-duration: 1.10s; }
+        .hero-v2 .orb span:nth-child(2) { animation-delay: 0.18s; animation-duration: 1.30s; }
+        .hero-v2 .orb span:nth-child(3) { animation-delay: 0.32s; animation-duration: 1.00s; }
+        .hero-v2 .orb span:nth-child(4) { animation-delay: 0.08s; animation-duration: 1.50s; }
+        .hero-v2 .orb span:nth-child(5) { animation-delay: 0.42s; animation-duration: 1.20s; }
+        .hero-v2 .orb span:nth-child(6) { animation-delay: 0.14s; animation-duration: 1.35s; }
+        .hero-v2 .orb span:nth-child(7) { animation-delay: 0.26s; animation-duration: 1.15s; }
+        .hero-v2 .orb span:nth-child(8) { animation-delay: 0.38s; animation-duration: 1.45s; }
+        .hero-v2 .orb span:nth-child(9) { animation-delay: 0.06s; animation-duration: 1.25s; }
         .hero-v2 .feed { display: flex; flex-direction: column; gap: 9px; min-height: 198px; }
         .hero-v2 .msg {
           font-size: 13px; line-height: 1.45; padding: 10px 12px; border-radius: 12px;
