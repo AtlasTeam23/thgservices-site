@@ -29,10 +29,9 @@
     <meta name="twitter:image" content="https://thgservices.io/og-image.png" />
     <meta name="twitter:image:alt" content="THG AI Services — Software built by an operator, not a vendor" />
 
-    <!-- Preload the dark-mode hero backdrop so it's discovered during
-         HTML parse, not after the JS bundle executes. Scoped to dark
-         users (light mode uses the AuroraBackground CSS gradient). -->
-    <link rel="preload" as="image" href="/photos/hero-boardroom-dusk.jpg" fetchpriority="high" media="(prefers-color-scheme: dark)" />
+    <!-- Preload the hero backdrop video poster so the hero paints
+         immediately while the mp4 streams in. -->
+    <link rel="preload" as="image" href="/thg-hero-poster.jpg" fetchpriority="high" />
 
     <!-- Favicons + app icons (THG wordmark from /thg-ai-logo-mark.png) -->
     <link rel="icon" href="/favicon.ico?v=2" sizes="any" />
@@ -85,7 +84,7 @@
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400&family=Outfit:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Outfit:wght@400;500;600;700;800&family=Source+Serif+4:opsz,wght@8..60,400&display=swap" rel="stylesheet" />
 
     <style>
       html, body { background-color: #0A0A0F; color: #FFFFFF; }
