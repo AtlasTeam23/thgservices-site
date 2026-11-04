@@ -55,7 +55,7 @@ Done means all of these are true on the live hardwood-guys.com:
 1. A Worker named `hg-concierge` is deployed in Cloudflare account `a568ec07bed6631a31732ab0e2d47aa5` (subdomain `lqteam`), and `https://hg-concierge.lqteam.workers.dev/health` returns `{"ok":true,"llm":"anthropic","email":true,...,"voice":{"stt":true,"tts":"server","provider":"elevenlabs","configured":true,...}}`.
 2. The bot answers as The Hardwood Guys: services, service area, how an estimate works (in person is fine for this business; see section 5), hours, what it will not claim. `node scripts/probe.mjs` passes against the deployed Worker with scenarios rewritten for flooring (section 9).
 3. A visitor who gives a name and phone gets them captured on the spot and is asked for a callback window; a visitor who asks for an estimate is asked for name and number right away.
-4. A submitted lead arrives (a) by email at the address David names and (b) in the THG Georgia organization in LeadQuik via the webhook, with name, 10-digit phone, email if given, property address or ZIP, what they need, callback window, consent, and the transcript.
+4. A submitted lead arrives in the THG Georgia organization in LeadQuik through the same intake the site's web form leads use (required), and by email at the address David names (backup), with name, 10-digit phone, email if given, property address or ZIP, what they need, callback window, consent, and the transcript.
 5. Voice: tapping the bubble plays the recorded greeting; replies are spoken; after 5 the chat says so and offers 5 more for contact details; the speaker toggle mutes; phones without autoplay show "Tap to hear replies".
 6. The privacy page has the AI chat and voice section (section 8).
 7. No secret appears in the repo, in a commit message, in a log line, or in chat. `wrangler secret list` shows names only.
@@ -70,7 +70,7 @@ Ask David, or the THG Georgia team, once, in one message. Defaults in brackets a
 | Lead inbox email | `LEAD_TO_EMAIL` | none; must be given |
 | From address | `LEAD_FROM_EMAIL`; the domain must be verified in Resend | `THG AI Services <concierge@leadquik.com>` works today under the LeadQuik Resend account; `The Hardwood Guys <concierge@leadquik.com>` is the quickest; a hardwood-guys.com sender needs that domain verified in Resend first |
 | Phone number to show in the widget and emails | widget `data-phone`, Worker `copy.ts` | none; must be given |
-| LeadQuik webhook URL for the THG Georgia org | `LEADQUIK_WEBHOOK_URL` (secret) | optional but wanted; https only; payload in section 6 |
+| LeadQuik intake for the THG Georgia org | `LEADQUIK_WEBHOOK_URL` (secret) | **required.** David's decision (2026-11-04): concierge leads go into LeadQuik the same way the site's existing web form leads do. You own this wiring: find how `/form-config.js` and `/lead-popup.js` on hardwood-guys.com submit today and give the Worker an https URL that lands a lead in the same place. Payload in 5.2 |
 | Service area, services, hours, estimate process, pricing stance, warranty, financing, what not to say | `knowledge.md`, `system-prompt.md` | write it from the current hardwood-guys.com pages and David's answers; keep it in plain words |
 | Callback windows | `CALLBACK_WINDOWS` in both Worker and widget | weekdays 9–11, 11–1, 1–3, 3–5 Eastern |
 | Voice | `VOICE_ELEVEN_VOICE_ID` | Matilda `XrExE9yKIg1WjnnlVkGX`; list others with `npm run eleven:voices` |
@@ -93,6 +93,8 @@ Ask David, or the THG Georgia team, once, in one message. Defaults in brackets a
 8. Deploy: `npx wrangler deploy` from the Worker folder while logged in to the account above. Then secrets, each via a Run step David clicks (the value is read from where he already has it, piped to `npx wrangler secret put NAME --name hg-concierge`, never echoed): `LLM_API_KEY`, `RESEND_API_KEY`, `ELEVENLABS_API_KEY`, `LEADQUIK_WEBHOOK_URL`. Check `/health`.
 
 ### 5.2 Leads into LeadQuik (the THG Georgia organization)
+
+**Decision from David, 2026-11-04:** concierge leads must land in LeadQuik exactly like the web leads hardwood-guys.com already sends (the existing form and popup), in the THG Georgia organization. The thgservices.io side does not know that intake; you do. Work out the mapping, the auth and any adapter on the LeadQuik side, then set `LEADQUIK_WEBHOOK_URL` on the Worker. Email delivery stays on as the backup channel.
 
 When `LEADQUIK_WEBHOOK_URL` is set, every delivered lead is POSTed as JSON (5-second timeout, no retry, https only):
 
