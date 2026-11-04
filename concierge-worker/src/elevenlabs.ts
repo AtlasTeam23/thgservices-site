@@ -30,6 +30,8 @@ export const fetchElevenLabs = (config: ElevenConfig, text: string, signal: Abor
       apply_text_normalization: 'auto',
     }),
     signal,
-    // The key is in a header: never follow a redirect to somewhere else with it. A redirect is an error here.
-    redirect: 'error',
+    // The key is in a header: never follow a redirect to somewhere else with it. 'manual' hands any 3xx back
+    // as a response, which the caller treats as a failure because it is not a 200. (The Workers runtime rejects
+    // redirect: 'error' with a TypeError, so that mode cannot be used here.)
+    redirect: 'manual',
   });

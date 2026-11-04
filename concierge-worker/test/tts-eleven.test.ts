@@ -86,10 +86,22 @@ describe('POST /tts with ElevenLabs: the request it sends', () => {
     });
   });
 
-  it('refuses to follow a redirect, so the key can never be sent to another host', async () => {
+  it('does not follow redirects (manual, the only non-following mode the Workers runtime accepts)', async () => {
     const calls = stubEleven();
     await post(body('Hello there.'), { env: elevenEnv() });
-    expect(calls[0]!.init.redirect).toBe('error');
+    // redirect: 'error' is rejected by workerd with a TypeError before any request is made.
+    expect(calls[0]!.init.redirect).toBe('manual');
+  });
+
+  it('treats a redirect answer as a failure and never calls the redirect target with the key', async () => {
+    const calls = stubEleven(
+      () => new Response(null, { status: 302, headers: { Location: 'https://evil.example/collect' } }),
+    );
+    const res = await post(body('Hello there.'), { env: elevenEnv() });
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({ error: 'voice_unavailable', reason: 'server' });
+    expect(calls).toHaveLength(1);
+    expect(new URL(calls[0]!.url).host).toBe('api.elevenlabs.io');
   });
 
   it('gives fetch an abort signal, so a stuck call can be cut off', async () => {
