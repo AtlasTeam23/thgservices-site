@@ -327,7 +327,7 @@ export default function AiConcierge() {
               chat is live it is one big button that opens it; otherwise it is decoration.
               Everything inside is a span (valid inside a button) and hidden from assistive
               tech, so a screen reader gets a single, clearly named control. */}
-          <div ref={cardRef} style={{ opacity: 0, minWidth: 0 }} aria-hidden={enabled ? undefined : 'true'}>
+          <div ref={cardRef} className="aic-card-wrap" style={{ opacity: 0, minWidth: 0 }} aria-hidden={enabled ? undefined : 'true'}>
             {enabled ? (
               <button
                 type="button"
@@ -357,6 +357,10 @@ export default function AiConcierge() {
           align-items: center;
         }
         .aic-card { margin: 0; }
+        /* Phones get the copy and the buttons only; the preview card is desktop-only. */
+        @media (max-width: 899px) {
+          .aic-card-wrap { display: none; }
+        }
         @media (min-width: 900px) {
           .aic-grid {
             grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
