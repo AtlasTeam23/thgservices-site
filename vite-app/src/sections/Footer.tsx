@@ -177,6 +177,14 @@ export default function Footer() {
               onMouseLeave={(e) => { (e.target as HTMLElement).style.opacity = '0.7'; }}>
               SMS Program Terms
             </a>
+            <a href="https://g.page/r/CUWk6o39bFvcEBI/review"
+              target="_blank" rel="noopener noreferrer"
+              aria-label="Review us on Google (opens in a new tab)"
+              style={linkBase}
+              onMouseEnter={(e) => { (e.target as HTMLElement).style.opacity = '1'; }}
+              onMouseLeave={(e) => { (e.target as HTMLElement).style.opacity = '0.7'; }}>
+              Review us on Google
+            </a>
           </div>
 
         </div>
@@ -234,6 +242,25 @@ export default function Footer() {
               onMouseLeave={(e) => { (e.target as HTMLElement).style.color = 'rgba(255, 255, 255, 0.3)'; }}
             >
               Terms
+            </a>
+            <span style={{ color: 'rgba(255, 255, 255, 0.3)', margin: '0 8px' }}>·</span>
+            <a
+              href="https://g.page/r/CUWk6o39bFvcEBI/review"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Review us on Google (opens in a new tab)"
+              style={{
+                fontFamily: "'Outfit', sans-serif",
+                fontSize: '14px',
+                fontWeight: 400,
+                color: 'rgba(255, 255, 255, 0.3)',
+                textDecoration: 'none',
+                transition: 'color 0.3s ease',
+              }}
+              onMouseEnter={(e) => { (e.target as HTMLElement).style.color = 'rgba(255, 255, 255, 0.6)'; }}
+              onMouseLeave={(e) => { (e.target as HTMLElement).style.color = 'rgba(255, 255, 255, 0.3)'; }}
+            >
+              Review us on Google
             </a>
           </div>
         </div>
