@@ -16,8 +16,8 @@ import {
   VOICE_ENDING_SOON,
   VOICE_LISTENING,
   VOICE_SHARE_DETAILS,
-  VOICE_SPOKEN_LIMIT_BONUS,
   VOICE_TRANSCRIBING,
+  voiceSpokenLimitBonus,
 } from './voice/copy';
 
 /** Push-to-talk, as the composer needs it. Leave out (or state 'off') for a text-only composer. */
@@ -50,7 +50,7 @@ type Props = {
    * Read-aloud is paused and sharing details would add more: the notice and a chip that opens
    * the lead form. It stays up (unlike a notice) until the details are shared.
    */
-  readAloudBonus?: { onShare: () => void };
+  readAloudBonus?: { count: number; onShare: () => void };
 };
 
 const MAX_ROWS_PX = 4 * 22 + 20; // four lines of 22px plus vertical padding
@@ -184,14 +184,19 @@ export default function Composer({
           </span>
         )}
       </div>
-      {readAloudBonus && (
-        <div className="thg-cc-readaloud" role="status">
-          <p className="thg-cc-readaloud-text">{VOICE_SPOKEN_LIMIT_BONUS}</p>
+      {/* Always in the page, empty until there is something to say, so the text added later is
+          announced (a status that appears already filled is often missed). The chip is beside
+          it, not inside it. */}
+      <div className="thg-cc-readaloud" data-active={readAloudBonus ? 'true' : undefined}>
+        <p className="thg-cc-readaloud-text" role="status">
+          {readAloudBonus ? voiceSpokenLimitBonus(readAloudBonus.count) : null}
+        </p>
+        {readAloudBonus && (
           <button type="button" className="thg-cc-chip" onClick={readAloudBonus.onShare}>
             {VOICE_SHARE_DETAILS}
           </button>
-        </div>
-      )}
+        )}
+      </div>
       {micOn && voice.disclosed && (
         <p id={noteId} className="thg-cc-voice-note">
           {VOICE_DISCLOSURE}

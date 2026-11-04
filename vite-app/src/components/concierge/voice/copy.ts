@@ -14,7 +14,10 @@ export const VOICE_TRANSCRIBING = 'Transcribing…';
 export const VOICE_HEARD_NOTHING = "I didn't catch that. Try again or type your question.";
 /** Daily budget spent, or the Worker could not do speech-to-text. */
 export const VOICE_OFF = 'Voice is taking a break today. You can still type.';
-export const VOICE_SPEAK_TOGGLE = 'Read replies aloud';
+/** The header toggle's name. Fixed: its state is announced once, by aria-pressed. */
+export const VOICE_SPEAK_TOGGLE = 'Spoken replies';
+/** Its tooltip. */
+export const VOICE_SPEAK_TOGGLE_TITLE = 'Read replies aloud';
 export const VOICE_STOP_SPEAKING = 'Stop reading aloud';
 export const VOICE_DISCLOSURE =
   "Voice uses your microphone only while you're recording. Audio isn't stored.";
@@ -40,13 +43,23 @@ export const VOICE_SOUND_OFF_HINT = 'Sound is off until you tap.';
 
 /** The visitor's daily allowance of spoken replies is used up, and nothing more is on offer. */
 export const VOICE_SPOKEN_LIMIT_DONE = 'Read-aloud is done for today. You can keep chatting here.';
+/** How many spoken replies a bonus adds when the Worker does not say. */
+export const DEFAULT_BONUS_REPLIES = 5;
+
+/** The number to put in the wording: the Worker's, if it is a sensible whole number, else 5. */
+const bonusReplies = (n?: number | null): number =>
+  typeof n === 'number' && Number.isInteger(n) && n >= 1 && n <= 100 ? n : DEFAULT_BONUS_REPLIES;
+
 /** ...and sharing contact details would add more. */
-export const VOICE_SPOKEN_LIMIT_BONUS =
-  "Read-aloud is paused. Share your name, email and number and we'll add 5 more today.";
+export const voiceSpokenLimitBonus = (n?: number | null) =>
+  `Read-aloud is paused. Share your name, email and number and we'll add ${bonusReplies(n)} more today.`;
 /** The chip next to that notice: opens the lead form. */
 export const VOICE_SHARE_DETAILS = 'Share my details';
 /** The line above the lead form when it was opened from that chip. */
-export const VOICE_BONUS_FORM_HEADING = "Add your email and we'll add 5 more spoken replies today.";
+export const voiceBonusFormHeading = (n?: number | null) => {
+  const count = bonusReplies(n);
+  return `Add your email and we'll add ${count} more spoken ${count === 1 ? 'reply' : 'replies'} today.`;
+};
 /** The email field's error when the form was opened for the bonus and it is empty. */
 export const VOICE_EMAIL_FOR_BONUS = 'Enter your email so we can add your replies';
 

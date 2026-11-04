@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
 import type { ChatResult, SttResult } from '../api';
 import type { Recording, RecordingResult } from '../voice/recorder';
@@ -23,14 +23,13 @@ vi.mock('../voice/speech', async (importOriginal) => ({
   stopSpeaking: vi.fn(),
   speakBlob: vi.fn(),
   unlockSpeech: vi.fn(),
-  isSpeechSupported: vi.fn(),
 }));
 
 import { fetchTts, fetchVoiceCaps, postChat, postLead, postStt } from '../api';
 import { getToken } from '../turnstile';
 import { track } from '../../../lib/track';
 import { isRecordingSupported, startRecording, VoiceError } from '../voice/recorder';
-import { isSpeechSupported, speak, speakBlob, stopSpeaking, unlockSpeech } from '../voice/speech';
+import { speak, speakBlob, stopSpeaking, unlockSpeech } from '../voice/speech';
 import { useConcierge } from '../useConcierge';
 import { EMPTY_LEAD_DRAFT } from '../leadDraft';
 import { STORAGE_KEY } from '../storage';
@@ -51,7 +50,6 @@ const speakBlobMock = vi.mocked(speakBlob);
 const postLeadMock = vi.mocked(postLead);
 const stopSpeakingMock = vi.mocked(stopSpeaking);
 const unlockMock = vi.mocked(unlockSpeech);
-const speechSupportedMock = vi.mocked(isSpeechSupported);
 
 const okChat = (reply: string): ChatResult => ({
   kind: 'ok',
@@ -101,7 +99,7 @@ const open = async (result: Hook) => {
 };
 
 /** Open the chat on a browser where voice works. */
-const openWithVoice = async (tts: 'browser' | 'server' | 'none' = 'browser') => {
+const openWithVoice = async (tts: 'server' | 'none' = 'server') => {
   supportedMock.mockReturnValue(true);
   fetchCapsMock.mockResolvedValue({ tts });
   const hook = setup();
@@ -150,9 +148,8 @@ beforeEach(() => {
   getTokenMock.mockResolvedValue(null);
   postChatMock.mockResolvedValue(okChat('We help local businesses save time.'));
   postSttMock.mockResolvedValue(okStt('what do you do'));
-  fetchCapsMock.mockResolvedValue({ tts: 'browser' });
+  fetchCapsMock.mockResolvedValue({ tts: 'server' });
   supportedMock.mockReturnValue(false);
-  speechSupportedMock.mockReturnValue(true);
   startRecordingMock.mockReset();
 });
 
@@ -819,13 +816,12 @@ describe('voice: reading replies aloud', () => {
     });
 
     expect(speakMock).toHaveBeenCalledTimes(1);
-    const [text, mode, hooks] = speakMock.mock.calls[0];
+    const [text, hooks] = speakMock.mock.calls[0];
     expect(text).toBe('We help local businesses save time.');
-    expect(mode).toBe('browser');
 
-    act(() => hooks!.onStart?.('browser'));
+    act(() => hooks!.onStart?.('server'));
     expect(result.current.voice).toBe('speaking');
-    expect(trackMock).toHaveBeenCalledWith('concierge_voice_reply_spoken', { mode: 'browser' });
+    expect(trackMock).toHaveBeenCalledWith('concierge_voice_reply_spoken', { mode: 'server' });
 
     act(() => hooks!.onEnd?.());
     expect(result.current.voice).toBe('idle');
@@ -838,25 +834,26 @@ describe('voice: reading replies aloud', () => {
       await result.current.send('Can I talk to a person?');
     });
     expect(postChatMock).not.toHaveBeenCalled();
-    expect(speakMock).toHaveBeenCalledWith(copy.HANDOFF, 'browser', expect.anything());
+    expect(speakMock).toHaveBeenCalledWith(copy.HANDOFF, expect.anything());
   });
 
-  it('does not speak when reading aloud is off, voice is off, or speech is unsupported', async () => {
+  it('does not speak when reading aloud is off, or the server voice is off for this visit, or voice is off altogether', async () => {
     const { result } = await openWithVoice();
     await act(async () => {
       await result.current.send('hello');
     });
-    expect(speakMock).not.toHaveBeenCalled();
+    expect(speakMock).not.toHaveBeenCalled(); // reading aloud is off
 
-    act(() => result.current.setSpeakEnabled(true));
-    speechSupportedMock.mockReturnValue(false);
+    // The Worker has no server voice (or says it is not configured): text only, toggle or no toggle.
+    const none = await openWithVoice('none');
+    act(() => none.result.current.setSpeakEnabled(true));
     await act(async () => {
-      await result.current.send('hello again');
+      await none.result.current.send('hello again');
     });
     expect(speakMock).not.toHaveBeenCalled();
+    expect(fetchTtsMock).not.toHaveBeenCalled();
 
     // Voice off for the whole session (no microphone): nothing is read either, even if it was on.
-    speechSupportedMock.mockReturnValue(true);
     supportedMock.mockReturnValue(false);
     window.sessionStorage.setItem(VOICE_PREFS_KEY, JSON.stringify({ speak: true, disclosed: true }));
     const off = setup();
@@ -917,33 +914,24 @@ describe('voice: reading replies aloud', () => {
   it('uses the server voice when /health says so, fetching the audio with the session id and passing every answer on', async () => {
     const { result } = await openWithVoice('server');
     act(() => result.current.setSpeakEnabled(true));
-    expect(unlockMock).toHaveBeenLastCalledWith('server');
+    expect(unlockMock).toHaveBeenCalled();
     await act(async () => {
       await result.current.send('hello');
     });
-    const [text, mode, hooks] = speakMock.mock.calls[0];
-    expect(mode).toBe('server');
+    const [text, hooks] = speakMock.mock.calls[0];
 
     const blob = new Blob([new Uint8Array(3)], { type: 'audio/mpeg' });
+    const signal = new AbortController().signal;
     for (const answer of [
       { kind: 'ok', blob },
       { kind: 'limit', bonusAvailable: true },
       { kind: 'unavailable' },
     ] as const) {
       fetchTtsMock.mockResolvedValueOnce(answer);
-      expect(await hooks!.fetchAudio!(text)).toEqual(answer);
+      expect(await hooks!.fetchAudio!(text, signal)).toEqual(answer);
     }
-    expect(fetchTtsMock).toHaveBeenCalledWith(text, result.current.sessionId);
-  });
-
-  it('the browser voice never asks the Worker for audio', async () => {
-    const { result } = await openWithVoice('browser');
-    act(() => result.current.setSpeakEnabled(true));
-    await act(async () => {
-      await result.current.send('hello');
-    });
-    expect(speakMock.mock.calls[0][2]?.fetchAudio).toBeUndefined();
-    expect(fetchTtsMock).not.toHaveBeenCalled();
+    // The run's abort signal goes with the request.
+    expect(fetchTtsMock).toHaveBeenCalledWith(text, result.current.sessionId, signal);
   });
 });
 
@@ -955,7 +943,7 @@ describe('voice: analytics hygiene', () => {
     const { result } = await openWithVoice();
     act(() => result.current.setSpeakEnabled(true));
     await talk(result);
-    act(() => speakMock.mock.calls[0][2]!.onStart?.('browser'));
+    act(() => speakMock.mock.calls[0][1]!.onStart?.('server'));
 
     const events = voiceEvents();
     expect(events.length).toBeGreaterThanOrEqual(3);
@@ -1113,13 +1101,27 @@ describe('voice: replies are read only while the panel is open and the tab visib
     expect(speakMock).toHaveBeenCalledTimes(1);
   });
 
+  it('a reply whose audio arrives after the panel was closed or the tab hidden is dropped, not played', async () => {
+    const { result } = await openWithVoice();
+    act(() => result.current.setSpeakEnabled(true));
+    await act(async () => {
+      await result.current.send('hello');
+    });
+    const hooks = speakMock.mock.calls.at(-1)![1]!;
+    expect(hooks.canPlay?.()).toBe(true);
+    act(() => result.current.setActive(false)); // hidden while the request was out
+    expect(hooks.canPlay?.()).toBe(false);
+    act(() => result.current.setActive(true));
+    expect(hooks.canPlay?.()).toBe(true);
+  });
+
   it('closing the panel stops a reply that is being read', async () => {
     const { result } = await openWithVoice();
     act(() => result.current.setSpeakEnabled(true));
     await act(async () => {
       await result.current.send('hello');
     });
-    act(() => speakMock.mock.calls[0][2]!.onStart?.('browser'));
+    act(() => speakMock.mock.calls[0][1]!.onStart?.('server'));
     expect(result.current.voice).toBe('speaking');
     stopSpeakingMock.mockClear();
     act(() => {
@@ -1134,27 +1136,20 @@ describe('voice: replies are read only while the panel is open and the tab visib
 // ---- What can read replies aloud ---------------------------------------------
 
 describe('voice: whether the speaker toggle has anything to do', () => {
-  it('is available when the browser can speak', async () => {
-    const { result } = await openWithVoice('browser');
-    expect(result.current.speakAvailable).toBe(true);
-  });
-
-  it('is not when the browser cannot speak and the premium voice is off', async () => {
-    speechSupportedMock.mockReturnValue(false);
-    const { result } = await openWithVoice('browser');
-    expect(result.current.voice).toBe('idle');
-    expect(result.current.speakAvailable).toBe(false);
-  });
-
-  it('is, with the server voice on, even where the browser cannot speak', async () => {
-    speechSupportedMock.mockReturnValue(false);
+  it('is available when the Worker has a server voice', async () => {
     const { result } = await openWithVoice('server');
     expect(result.current.speakAvailable).toBe(true);
   });
 
+  it('is not when there is no server voice (there is no browser voice to fall back on)', async () => {
+    const { result } = await openWithVoice('none');
+    expect(result.current.voice).toBe('idle'); // the mic is still there
+    expect(result.current.speakAvailable).toBe(false);
+  });
+
   it('is false while voice is off altogether', async () => {
     const { result } = setup();
-    await open(result.current ? result : result);
+    await open(result);
     expect(result.current.voice).toBe('off');
     expect(result.current.speakAvailable).toBe(false);
   });
@@ -1172,7 +1167,7 @@ describe('voice: analytics event names', () => {
     // Start, transcribed, reply_spoken.
     const happy = await openWithVoice();
     await talk(happy.result);
-    act(() => speakMock.mock.calls[0][2]!.onStart?.('browser'));
+    act(() => speakMock.mock.calls[0][1]!.onStart?.('server'));
     collect();
 
     // Empty transcript.
@@ -1209,7 +1204,7 @@ describe('voice: analytics event names', () => {
 
 // ---- Text only: no audio of any kind -----------------------------------------
 
-describe('voice: a server voice that is not configured', () => {
+describe('voice: no server voice (text only)', () => {
   it('means text only: no toggle, nothing spoken, nothing unlocked, and the mic still works', async () => {
     const { result } = await openWithVoice('none');
     expect(result.current.voice).toBe('idle');
@@ -1243,7 +1238,7 @@ describe('voice: the cap on spoken replies', () => {
     await act(async () => {
       await result.current.send(text);
     });
-    return speakMock.mock.calls.at(-1)![2]!;
+    return speakMock.mock.calls.at(-1)![1]!;
   };
 
   const serverWithSpeech = async () => {
@@ -1353,9 +1348,7 @@ describe('voice: the cap on spoken replies', () => {
       expect(result.current.readAloudBonus).toBe(true);
       expect(result.current.voiceNotice).toBeNull();
       expect(result.current.speakAvailable).toBe(false);
-      expect(voiceCopy.VOICE_SPOKEN_LIMIT_BONUS).toBe(
-        "Read-aloud is paused. Share your name, email and number and we'll add 5 more today."
-      );
+      expect(result.current.bonusCount).toBe(5); // the Worker did not say: the default
       expect(voiceCopy.VOICE_SHARE_DETAILS).toBe('Share my details');
       expect(storedPrefs()).toMatchObject({ spokenLimit: true, bonusOffer: true });
       expect(trackMock).toHaveBeenCalledWith('concierge_voice_error', { reason: 'budget' });
@@ -1368,6 +1361,22 @@ describe('voice: the cap on spoken replies', () => {
       const again = await openWithVoice('server');
       expect(again.result.current.readAloudBonus).toBe(true);
       expect(again.result.current.speakAvailable).toBe(false);
+    });
+
+    it('uses the number of bonus replies the Worker names, remembers it, and says it in the form', async () => {
+      const { result } = await serverWithSpeech();
+      const hooks = await sendAndGetHooks(result);
+      act(() => hooks.onLimit?.(true, 10));
+      expect(result.current.readAloudBonus).toBe(true);
+      expect(result.current.bonusCount).toBe(10);
+      expect(storedPrefs()).toMatchObject({ bonusOffer: true, bonusCount: 10 });
+
+      const again = await openWithVoice('server');
+      expect(again.result.current.readAloudBonus).toBe(true);
+      expect(again.result.current.bonusCount).toBe(10);
+
+      act(() => again.result.current.shareDetails());
+      expect(again.result.current.leadHeading).toBe(voiceCopy.voiceBonusFormHeading(10));
     });
 
     it('resumes spoken replies after a lead with an email is sent, clearing the cap and the notice', async () => {
@@ -1399,14 +1408,14 @@ describe('voice: the cap on spoken replies', () => {
       });
       expect(speakMock).toHaveBeenCalledTimes(1);
       expect(speakMock.mock.calls[0][0]).toBe('Spoken again.');
-      expect(speakMock.mock.calls[0][1]).toBe('server');
-    });
+          });
 
-    it('a lead without an email does not lift the cap', async () => {
+    it('a lead without an email does not lift the cap, but it does close the offer: no chip that would do nothing', async () => {
       postLeadMock.mockResolvedValue({ kind: 'ok', delivery: 'email' });
       const { result } = await serverWithSpeech();
       const hooks = await sendAndGetHooks(result);
       act(() => hooks.onLimit?.(true));
+      expect(result.current.readAloudBonus).toBe(true);
       await act(async () => {
         await result.current.submitLead({
           name: 'Jane Doe',
@@ -1416,9 +1425,50 @@ describe('voice: the cap on spoken replies', () => {
           consent: true,
         });
       });
-      expect(result.current.readAloudBonus).toBe(true);
+      expect(result.current.leadDone).toBe(true);
+      expect(result.current.readAloudBonus).toBe(false);
       expect(result.current.speakAvailable).toBe(false);
-      expect(storedPrefs()).toMatchObject({ spokenLimit: true, bonusOffer: true });
+      // Still capped, no longer on offer: stored that way, so a reload does not bring the chip back.
+      expect(storedPrefs()).toMatchObject({ spokenLimit: true });
+      expect(storedPrefs()?.bonusOffer).toBeUndefined();
+      expect(storedPrefs()?.bonusUsed).toBeUndefined();
+      speakMock.mockClear();
+      const again = await openWithVoice('server');
+      expect(again.result.current.readAloudBonus).toBe(false);
+      expect(again.result.current.speakAvailable).toBe(false);
+      await act(async () => {
+        await again.result.current.send('still capped');
+      });
+      expect(speakMock).not.toHaveBeenCalled();
+    });
+
+    it('never offers the bonus after a lead was sent, even if the stored offer says otherwise (reload)', async () => {
+      window.sessionStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({
+          sessionId: '11111111-1111-4111-8111-111111111111',
+          messages: [],
+          leadSubmitted: true,
+          ended: false,
+          utm: {},
+        })
+      );
+      window.sessionStorage.setItem(
+        VOICE_PREFS_KEY,
+        JSON.stringify({ speak: true, disclosed: true, spokenLimit: true, bonusOffer: true })
+      );
+      const { result } = await openWithVoice('server');
+      expect(result.current.leadDone).toBe(true);
+      expect(result.current.readAloudBonus).toBe(false);
+    });
+
+    it('does not show the offer when the server voice is off, whatever was stored', async () => {
+      window.sessionStorage.setItem(
+        VOICE_PREFS_KEY,
+        JSON.stringify({ speak: true, disclosed: true, spokenLimit: true, bonusOffer: true })
+      );
+      const { result } = await openWithVoice('none');
+      expect(result.current.readAloudBonus).toBe(false);
     });
 
     it('a failed lead does not lift the cap either', async () => {
@@ -1465,6 +1515,108 @@ describe('voice: the cap on spoken replies', () => {
   });
 });
 
+// ---- The persisted cap lapses ------------------------------------------------
+
+describe('voice: a remembered cap does not last forever', () => {
+  const NOON = new Date('2026-11-04T12:00:00').getTime();
+  const storeCap = (at: number | null, extra: Record<string, unknown> = {}) =>
+    window.sessionStorage.setItem(
+      VOICE_PREFS_KEY,
+      JSON.stringify({ speak: true, disclosed: true, spokenLimit: true, spokenLimitAt: at, ...extra })
+    );
+  const clockAt = (ms: number) => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(ms);
+  };
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('records when the cap was seen', async () => {
+    clockAt(NOON);
+    const { result } = await openWithVoice('server');
+    act(() => result.current.setSpeakEnabled(true));
+    await act(async () => {
+      await result.current.send('hello');
+    });
+    act(() => speakMock.mock.calls.at(-1)![1]!.onLimit?.(false));
+    expect(storedPrefs()).toMatchObject({ spokenLimit: true, spokenLimitAt: NOON });
+  });
+
+  it('while it is fresh, nothing is requested for any reply', async () => {
+    clockAt(NOON + 30 * 60_000);
+    storeCap(NOON);
+    const { result } = await openWithVoice('server');
+    expect(result.current.speakAvailable).toBe(false);
+    for (const text of ['one', 'two', 'three']) {
+      postChatMock.mockResolvedValueOnce(okChat(`reply to ${text}`));
+      await act(async () => {
+        await result.current.send(text);
+      });
+    }
+    expect(speakMock).not.toHaveBeenCalled();
+    expect(fetchTtsMock).not.toHaveBeenCalled();
+  });
+
+  it('after an hour it lapses on load: the toggle is back and the next reply is requested', async () => {
+    clockAt(NOON + 61 * 60_000);
+    storeCap(NOON, { bonusOffer: true });
+    const { result } = await openWithVoice('server');
+    expect(result.current.speakAvailable).toBe(true);
+    expect(result.current.readAloudBonus).toBe(false);
+    await act(async () => {
+      await result.current.send('hello');
+    });
+    expect(speakMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('the next day it lapses on load, however recent the cap was', async () => {
+    clockAt(new Date('2026-11-05T00:02:00').getTime());
+    storeCap(new Date('2026-11-04T23:58:00').getTime());
+    const { result } = await openWithVoice('server');
+    expect(result.current.speakAvailable).toBe(true);
+    await act(async () => {
+      await result.current.send('hello');
+    });
+    expect(speakMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('a cap written before there was a timestamp lapses too', async () => {
+    clockAt(NOON);
+    storeCap(null);
+    const { result } = await openWithVoice('server');
+    expect(result.current.speakAvailable).toBe(true);
+  });
+
+  it('lapses in a panel that was left open past the hour, not only on a reload', async () => {
+    clockAt(NOON);
+    const { result } = await openWithVoice('server');
+    act(() => result.current.setSpeakEnabled(true));
+    await act(async () => {
+      await result.current.send('hello');
+    });
+    act(() => speakMock.mock.calls.at(-1)![1]!.onLimit?.(false));
+    expect(result.current.speakAvailable).toBe(false);
+
+    speakMock.mockClear();
+    clockAt(NOON + 30 * 60_000);
+    postChatMock.mockResolvedValueOnce(okChat('still capped'));
+    await act(async () => {
+      await result.current.send('a bit later');
+    });
+    expect(speakMock).not.toHaveBeenCalled(); // fresh: not asked again on every reply
+
+    clockAt(NOON + 61 * 60_000);
+    postChatMock.mockResolvedValueOnce(okChat('an hour on'));
+    await act(async () => {
+      await result.current.send('much later');
+    });
+    expect(speakMock).toHaveBeenCalledTimes(1); // the cap lapsed: asked again
+    expect(result.current.speakAvailable).toBe(true);
+    expect(storedPrefs()?.spokenLimit).toBeUndefined();
+  });
+});
+
 // ---- Opening the lead form for the bonus -------------------------------------
 
 describe('voice: sharing details for the bonus', () => {
@@ -1477,7 +1629,7 @@ describe('voice: sharing details for the bonus', () => {
     act(() => result.current.shareDetails());
     expect(result.current.showLeadForm).toBe(true);
     expect(result.current.leadEmailRequired).toBe(true);
-    expect(result.current.leadHeading).toBe(voiceCopy.VOICE_BONUS_FORM_HEADING);
+    expect(result.current.leadHeading).toBe(voiceCopy.voiceBonusFormHeading(5));
     expect(result.current.messages).toHaveLength(before);
     expect(trackMock).toHaveBeenCalledWith('concierge_lead_form_shown');
   });
@@ -1534,7 +1686,7 @@ describe('voice: audio the browser will not start without a tap', () => {
     await act(async () => {
       await result.current.send(text);
     });
-    const hooks = speakMock.mock.calls.at(-1)![2]!;
+    const hooks = speakMock.mock.calls.at(-1)![1]!;
     const replyId = result.current.messages.at(-1)!.id;
     const audio = blob();
     act(() => hooks.onBlocked?.(audio));
@@ -1573,7 +1725,7 @@ describe('voice: audio the browser will not start without a tap', () => {
     });
     // The new reply is being fetched: the old pill no longer stands for the latest reply.
     expect(result.current.blockedReplyId).toBeNull();
-    const hooks = speakMock.mock.calls.at(-1)![2]!;
+    const hooks = speakMock.mock.calls.at(-1)![1]!;
     const secondId = result.current.messages.at(-1)!.id;
     act(() => hooks.onBlocked?.(blob()));
     expect(result.current.blockedReplyId).toBe(secondId);
@@ -1582,7 +1734,7 @@ describe('voice: audio the browser will not start without a tap', () => {
     await act(async () => {
       await result.current.send('and again');
     });
-    act(() => speakMock.mock.calls.at(-1)![2]!.onStart?.('server'));
+    act(() => speakMock.mock.calls.at(-1)![1]!.onStart?.('server'));
     expect(result.current.blockedReplyId).toBeNull();
   });
 
@@ -1614,8 +1766,7 @@ describe('voice: audio the browser will not start without a tap', () => {
       await result.current.send('next');
     });
     expect(speakMock).toHaveBeenCalledTimes(1);
-    expect(speakMock.mock.calls[0][1]).toBe('server');
-  });
+      });
 
   it('if even the tap is refused the pill stays, with the same audio', async () => {
     const { result } = await serverWithSpeech();

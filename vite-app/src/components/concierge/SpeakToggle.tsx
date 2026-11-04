@@ -1,4 +1,9 @@
-import { VOICE_SOUND_OFF, VOICE_SOUND_ON, VOICE_SPEAK_TOGGLE } from './voice/copy';
+import {
+  VOICE_SOUND_OFF,
+  VOICE_SOUND_ON,
+  VOICE_SPEAK_TOGGLE,
+  VOICE_SPEAK_TOGGLE_TITLE,
+} from './voice/copy';
 
 type Props = {
   pressed: boolean;
@@ -10,15 +15,15 @@ type Props = {
 /** "Read replies aloud" in the panel header. */
 export default function SpeakToggle({ pressed, onToggle, showLabel = false }: Props) {
   const state = pressed ? VOICE_SOUND_ON : VOICE_SOUND_OFF;
-  // The visible words are part of the name (WCAG 2.5.3); the name still says what the button is for.
-  const name = showLabel ? `${state}, ${VOICE_SPEAK_TOGGLE.toLowerCase()}` : VOICE_SPEAK_TOGGLE;
+  // The name is fixed and aria-pressed carries the state, so a screen reader says it once; the
+  // visible "Sound on" / "Sound off" is for the eye only.
   return (
     <button
       type="button"
       className={`thg-cc-speak${showLabel ? ' thg-cc-speak--labelled' : ''}`}
       aria-pressed={pressed}
-      aria-label={name}
-      title={VOICE_SPEAK_TOGGLE}
+      aria-label={VOICE_SPEAK_TOGGLE}
+      title={VOICE_SPEAK_TOGGLE_TITLE}
       onClick={onToggle}
     >
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">

@@ -90,15 +90,19 @@ export default function ChatPanel({ open, request, onClose, returnFocusRef }: Ch
     if (!open) stopAll();
   }, [open, setActive, stopAll]);
   useEffect(() => stopAll, [stopAll]);
-  // A hidden tab must not keep recording; a transcript already on its way is left to finish.
+  // A hidden tab must not keep recording or keep talking; a transcript already on its way is
+  // left to finish (its reply is shown, not read).
   useEffect(() => {
     const onVisibility = () => {
       setActive(open && !document.hidden);
-      if (document.hidden) cancelRecording();
+      if (document.hidden) {
+        cancelRecording();
+        stopSpeaking();
+      }
     };
     document.addEventListener('visibilitychange', onVisibility);
     return () => document.removeEventListener('visibilitychange', onVisibility);
-  }, [open, setActive, cancelRecording]);
+  }, [open, setActive, cancelRecording, stopSpeaking]);
 
   // Full-screen on phones: track the visual viewport so the on-screen keyboard
   // never covers the composer, and keep the page behind from scrolling. Lenis
@@ -234,7 +238,9 @@ export default function ChatPanel({ open, request, onClose, returnFocusRef }: Ch
           error={chat.composerError}
           notice={chat.voiceNotice}
           readAloudBonus={
-            voice !== 'off' && chat.readAloudBonus ? { onShare: chat.shareDetails } : undefined
+            voice !== 'off' && chat.readAloudBonus && !chat.leadDone
+              ? { count: chat.bonusCount, onShare: chat.shareDetails }
+              : undefined
           }
           voice={{
             state: voice,

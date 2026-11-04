@@ -12,10 +12,14 @@ export type VoicePrefs = {
   disclosed: boolean;
   /** The day's voice budget is spent: no mic for the rest of this tab session. */
   blocked: boolean;
-  /** The day's spoken-reply allowance is used up: no more audio is requested this tab session. */
+  /** The day's spoken-reply allowance is used up: no audio is requested while this holds. */
   spokenLimit: boolean;
+  /** When the cap was seen (epoch ms); it lapses after an hour or at local midnight. */
+  spokenLimitAt: number | null;
   /** ...and the Worker said sharing contact details would add more (the offer is still open). */
   bonusOffer: boolean;
+  /** How many replies the offer adds, if the Worker said (otherwise the default is used). */
+  bonusCount: number | null;
   /** The details were shared and the bonus granted; it is not offered a second time. */
   bonusUsed: boolean;
   /** "Sound is off until you tap." has been shown. */
@@ -27,12 +31,40 @@ const NONE: VoicePrefs = {
   disclosed: false,
   blocked: false,
   spokenLimit: false,
+  spokenLimitAt: null,
   bonusOffer: false,
+  bonusCount: null,
   bonusUsed: false,
   soundHint: false,
 };
 
-export function loadVoicePrefs(): VoicePrefs {
+/** How long a cap is believed: the Worker's allowance is per day, but a visitor may have been granted more. */
+export const CAP_MAX_AGE_MS = 60 * 60 * 1000;
+
+/** The cap has lapsed: older than an hour, from an earlier local calendar day, or of unknown age. */
+export function capExpired(prefs: VoicePrefs, now: number): boolean {
+  if (!prefs.spokenLimit) return false;
+  const at = prefs.spokenLimitAt;
+  if (at === null) return true;
+  return now - at > CAP_MAX_AGE_MS || new Date(at).toDateString() !== new Date(now).toDateString();
+}
+
+/** The same prefs with the cap (and the offer that went with it) cleared. */
+export const withoutCap = (prefs: VoicePrefs): VoicePrefs => ({
+  ...prefs,
+  spokenLimit: false,
+  spokenLimitAt: null,
+  bonusOffer: false,
+  bonusCount: null,
+});
+
+export function loadVoicePrefs(now: number = Date.now()): VoicePrefs {
+  const prefs = readVoicePrefs();
+  // A cap that has lapsed is dropped on load, so a returning visitor's replies are read again.
+  return capExpired(prefs, now) ? withoutCap(prefs) : prefs;
+}
+
+function readVoicePrefs(): VoicePrefs {
   try {
     const raw = window.sessionStorage.getItem(VOICE_PREFS_KEY);
     if (!raw) return { ...NONE };
@@ -43,7 +75,10 @@ export function loadVoicePrefs(): VoicePrefs {
       disclosed: o.disclosed === true,
       blocked: o.blocked === true,
       spokenLimit: o.spokenLimit === true,
+      spokenLimitAt:
+        typeof o.spokenLimitAt === 'number' && Number.isFinite(o.spokenLimitAt) ? o.spokenLimitAt : null,
       bonusOffer: o.bonusOffer === true,
+      bonusCount: typeof o.bonusCount === 'number' && Number.isInteger(o.bonusCount) ? o.bonusCount : null,
       bonusUsed: o.bonusUsed === true,
       soundHint: o.soundHint === true,
     };
@@ -61,8 +96,9 @@ export function saveVoicePrefs(prefs: VoicePrefs): void {
         disclosed: prefs.disclosed,
         // Only written when set, so the stored shape stays two flags for everyone else.
         ...(prefs.blocked ? { blocked: true } : {}),
-        ...(prefs.spokenLimit ? { spokenLimit: true } : {}),
+        ...(prefs.spokenLimit ? { spokenLimit: true, spokenLimitAt: prefs.spokenLimitAt } : {}),
         ...(prefs.bonusOffer ? { bonusOffer: true } : {}),
+        ...(prefs.bonusOffer && prefs.bonusCount !== null ? { bonusCount: prefs.bonusCount } : {}),
         ...(prefs.bonusUsed ? { bonusUsed: true } : {}),
         ...(prefs.soundHint ? { soundHint: true } : {}),
       })

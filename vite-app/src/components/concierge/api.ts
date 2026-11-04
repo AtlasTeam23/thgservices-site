@@ -56,20 +56,25 @@ export type SttResult =
 
 /**
  * `limit`: the visitor's daily allowance of spoken replies is used up (429 tts_limit);
- * `bonusAvailable` says whether sharing contact details would add more. Anything else that
- * is not audio is `unavailable`, and that reply simply stays text.
+ * `bonusAvailable` says whether sharing contact details would add more, and `bonus`, when the
+ * Worker says so, how many. Anything else that is not audio is `unavailable`, and that reply
+ * simply stays text.
  */
 export type TtsResult =
   | { kind: 'ok'; blob: Blob }
-  | { kind: 'limit'; bonusAvailable: boolean }
+  | { kind: 'limit'; bonusAvailable: boolean; bonus?: number }
   | { kind: 'unavailable' };
 
 /**
  * What reads replies aloud (GET /health), given that the Worker offers speech to text at all:
- * the browser's own voice, a voice fetched from the Worker (whichever provider it uses; the
- * widget does not care which), or nothing (text only).
+ * audio fetched from the Worker's /tts (whichever provider it uses; the widget does not care
+ * which), or nothing (text only). There is no browser voice.
  */
-export type VoiceCaps = { tts: 'browser' | 'server' | 'none' };
+export type VoiceCaps = { tts: 'server' | 'none' };
+
+/** How many spoken replies a bonus adds, if the Worker says: a whole number from 1 to 100. */
+const asBonusCount = (v: unknown): number | undefined =>
+  typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 100 ? v : undefined;
 
 export type LeadResult =
   | { kind: 'ok'; delivery: LeadDelivery }
@@ -100,14 +105,19 @@ async function call<T>(
   init: RequestInit,
   timeoutMs: number,
   read: (res: Response) => Promise<T>,
-  fallback: T
+  fallback: T,
+  /** Cancels the request when the caller no longer wants the answer. */
+  external?: AbortSignal
 ): Promise<Transport<T>> {
+  if (external?.aborted) return { ok: false, reason: 'network' };
   const controller = new AbortController();
   let timedOut = false;
   const timer = setTimeout(() => {
     timedOut = true;
     controller.abort();
   }, timeoutMs);
+  const onExternalAbort = () => controller.abort();
+  external?.addEventListener('abort', onExternalAbort, { once: true });
 
   try {
     const res = await fetch(`${apiBase()}${path}`, {
@@ -126,6 +136,7 @@ async function call<T>(
     return { ok: false, reason: timedOut ? 'timeout' : 'network' };
   } finally {
     clearTimeout(timer);
+    external?.removeEventListener('abort', onExternalAbort);
   }
 }
 
@@ -277,7 +288,11 @@ export async function postStt(
 }
 
 /** The server voice (only called when /health says the voice is not the browser's). */
-export async function fetchTts(text: string, sessionId: string): Promise<TtsResult> {
+export async function fetchTts(
+  text: string,
+  sessionId: string,
+  signal?: AbortSignal
+): Promise<TtsResult> {
   const res = await call<Blob | Body | null>(
     '/tts',
     {
@@ -287,20 +302,26 @@ export async function fetchTts(text: string, sessionId: string): Promise<TtsResu
     },
     TTS_TIMEOUT_MS,
     async (r) => (r.status === 200 ? r.blob() : readJson(r)),
-    null
+    null,
+    signal
   );
   if (!res.ok) return { kind: 'unavailable' };
   if (res.status === 200 && isBlob(res.body) && res.body.size > 0) {
     return { kind: 'ok', blob: res.body };
   }
   if (res.status === 429 && !isBlob(res.body) && res.body?.error === 'tts_limit') {
-    return { kind: 'limit', bonusAvailable: res.body.bonusAvailable === true };
+    const bonus = asBonusCount(res.body.bonus);
+    return {
+      kind: 'limit',
+      bonusAvailable: res.body.bonusAvailable === true,
+      ...(bonus !== undefined ? { bonus } : {}),
+    };
   }
   return { kind: 'unavailable' };
 }
 
 /**
- * Whether the Worker offers speech to text, and which voice reads replies. Null for
+ * Whether the Worker offers speech to text, and whether replies are read aloud. Null for
  * anything else (no voice block, `stt: false`, a 4xx, unreachable): the widget then shows
  * no voice controls at all. One more try after a network failure, a timeout or a 5xx, since
  * a single dropped request should not cost the visitor the mic for the whole visit.
@@ -312,11 +333,10 @@ export async function fetchVoiceCaps(): Promise<VoiceCaps | null> {
     if (res.status !== 200) return null;
     const voice = asBody(res.body?.voice);
     if (!voice || voice.stt !== true) return null;
-    // Anything that is not "browser" (the new "server", the older "aura", whatever comes next)
-    // means: fetch the audio from /tts. A server voice that is not configured is text only.
-    const server = typeof voice.tts === 'string' && voice.tts !== '' && voice.tts !== 'browser';
-    if (server) return { tts: voice.configured === false ? 'none' : 'server' };
-    return { tts: 'browser' };
+    // An allow-list: the server voice is on only for exactly "server", and not when the Worker
+    // says it is not configured. Anything else ("browser", "none", an older or unknown value,
+    // nothing at all) is text only.
+    return { tts: voice.tts === 'server' && voice.configured !== false ? 'server' : 'none' };
   }
   return null;
 }

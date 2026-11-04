@@ -26,7 +26,6 @@ vi.mock('../voice/speech', async (importOriginal) => ({
   speakBlob: vi.fn(),
   stopSpeaking: vi.fn(),
   unlockSpeech: vi.fn(),
-  isSpeechSupported: vi.fn(),
 }));
 
 import ChatPanel, { type OpenRequest } from '../ChatPanel';
@@ -37,7 +36,7 @@ import { fetchVoiceCaps, postChat, postLead, postStt } from '../api';
 import { getToken } from '../turnstile';
 import { track } from '../../../lib/track';
 import { isRecordingSupported, startRecording, VoiceError } from '../voice/recorder';
-import { isSpeechSupported, speak, speakBlob, stopSpeaking, unlockSpeech } from '../voice/speech';
+import { speak, speakBlob, stopSpeaking, unlockSpeech } from '../voice/speech';
 import { EMPTY_LEAD_DRAFT } from '../leadDraft';
 import { VOICE_PREFS_KEY } from '../voice/prefs';
 import * as vc from '../voice/copy';
@@ -107,8 +106,7 @@ beforeEach(() => {
   vi.mocked(getToken).mockResolvedValue(null);
   postChatMock.mockResolvedValue(okChat('We help local businesses save time.'));
   postSttMock.mockResolvedValue(okStt('what do you do'));
-  vi.mocked(fetchVoiceCaps).mockResolvedValue({ tts: 'browser' });
-  vi.mocked(isSpeechSupported).mockReturnValue(true);
+  vi.mocked(fetchVoiceCaps).mockResolvedValue({ tts: 'server' });
   supportedMock.mockReturnValue(false);
   startRecordingMock.mockReset();
 });
@@ -389,20 +387,20 @@ describe('Composer with voice', () => {
 
   it('announces what the microphone is doing', () => {
     const { rerender } = setup(voice({ state: 'recording' }));
-    const status = screen.getByRole('status');
+    const status = voiceStatus();
     expect(status).toHaveTextContent(vc.VOICE_LISTENING);
     rerender(
       <Composer onSend={vi.fn()} busy={false} disabled={false} error={null} voice={voice({ state: 'transcribing' })} />
     );
-    expect(screen.getByRole('status')).toHaveTextContent(vc.VOICE_TRANSCRIBING);
+    expect(voiceStatus()).toHaveTextContent(vc.VOICE_TRANSCRIBING);
     rerender(
       <Composer onSend={vi.fn()} busy={false} disabled={false} error={null} voice={voice({ state: 'recording', ending: true })} />
     );
-    expect(screen.getByRole('status')).toHaveTextContent(vc.VOICE_ENDING_SOON);
+    expect(voiceStatus()).toHaveTextContent(vc.VOICE_ENDING_SOON);
     rerender(
       <Composer onSend={vi.fn()} busy={false} disabled={false} error={null} voice={voice()} />
     );
-    expect(screen.getByRole('status')).toBeEmptyDOMElement();
+    expect(voiceStatus()).toBeEmptyDOMElement();
   });
 
   it('shows the microphone disclosure under the composer once voice has been used, and ties it to the mic', () => {
@@ -426,6 +424,51 @@ describe('Composer with voice', () => {
     setup(voice(), { error: 'Too long', notice: vc.VOICE_DENIED });
     expect(screen.getByRole('alert')).toHaveTextContent('Too long');
     expect(screen.getByRole('textbox', { name: 'Message' })).toHaveAttribute('aria-invalid', 'true');
+  });
+
+  describe('the read-aloud notice is a live region that is always there', () => {
+    const regionOf = (container: HTMLElement) =>
+      container.querySelector<HTMLElement>('.thg-cc-readaloud [role="status"]');
+    const renderComposer = (readAloudBonus?: { count: number; onShare: () => void }) => (
+      <Composer
+        onSend={vi.fn()}
+        busy={false}
+        disabled={false}
+        error={null}
+        voice={voice()}
+        readAloudBonus={readAloudBonus}
+      />
+    );
+
+    it('is mounted, empty, before there is anything to say (so a screen reader is already listening)', () => {
+      const { container } = render(renderComposer());
+      const region = regionOf(container);
+      expect(region).not.toBeNull();
+      expect(region).toBeEmptyDOMElement();
+      expect(screen.queryByRole('button', { name: vc.VOICE_SHARE_DETAILS })).not.toBeInTheDocument();
+    });
+
+    it('is the same element when the text arrives and when it goes: filled, not newly inserted', () => {
+      const { container, rerender } = render(renderComposer());
+      const before = regionOf(container)!;
+      rerender(renderComposer({ count: 5, onShare: vi.fn() }));
+      const during = regionOf(container)!;
+      expect(during).toBe(before);
+      expect(during).toHaveTextContent("Read-aloud is paused. Share your name, email and number and we'll add 5 more today.");
+      expect(during).not.toContainElement(screen.getByRole('button', { name: vc.VOICE_SHARE_DETAILS }));
+      rerender(renderComposer());
+      expect(regionOf(container)).toBe(before);
+      expect(before).toBeEmptyDOMElement();
+      expect(screen.queryByRole('button', { name: vc.VOICE_SHARE_DETAILS })).not.toBeInTheDocument();
+    });
+
+    it('its chip works', async () => {
+      const user = userEvent.setup();
+      const onShare = vi.fn();
+      render(renderComposer({ count: 5, onShare }));
+      await user.click(screen.getByRole('button', { name: vc.VOICE_SHARE_DETAILS }));
+      expect(onShare).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('passes presses up, and typing still works', async () => {
@@ -475,6 +518,8 @@ const renderPanel = async (props: Parameters<typeof Harness>[0] = {}) => {
   return utils;
 };
 
+// The mic's own status line (the composer has a second, for the read-aloud notice).
+const voiceStatus = () => document.querySelector<HTMLElement>('.thg-cc-voice-status')!;
 const mic = () => screen.queryByRole('button', { name: /^(Click|Hold) to talk$/ });
 const speakerToggle = () => screen.queryByRole('button', { name: vc.VOICE_SPEAK_TOGGLE });
 
@@ -516,7 +561,7 @@ describe('ChatPanel voice', () => {
     await user.click(mic()!);
     await settle();
     expect(mic()).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByRole('status')).toHaveTextContent(vc.VOICE_LISTENING);
+    expect(voiceStatus()).toHaveTextContent(vc.VOICE_LISTENING);
     expect(trackMock).toHaveBeenCalledWith('concierge_voice_start');
 
     await user.click(mic()!);
@@ -531,11 +576,7 @@ describe('ChatPanel voice', () => {
     // First voice use: the disclosure line appears and replies are read aloud.
     expect(screen.getByText(vc.VOICE_DISCLOSURE)).toBeInTheDocument();
     expect(speakerToggle()).toHaveAttribute('aria-pressed', 'true');
-    expect(speakMock).toHaveBeenCalledWith(
-      'We help local businesses save time.',
-      'browser',
-      expect.anything()
-    );
+    expect(speakMock).toHaveBeenCalledWith('We help local businesses save time.', expect.anything());
   });
 
   it('an empty transcript shows the "didn\'t catch that" copy and sends nothing', async () => {
@@ -614,8 +655,8 @@ describe('ChatPanel voice', () => {
     await settle();
     expect(document.querySelector('.thg-cc-eq')).toBeNull();
 
-    const hooks = speakMock.mock.calls[0][2]!;
-    act(() => hooks.onStart?.('browser'));
+    const hooks = speakMock.mock.calls[0][1]!;
+    act(() => hooks.onStart?.('server'));
     const eq = screen.getByRole('button', { name: vc.VOICE_STOP_SPEAKING });
     expect(eq.closest('.thg-cc-header')).not.toBeNull();
     expect(eq).toHaveAttribute('data-mode', 'speaking');
@@ -675,7 +716,7 @@ describe('ChatPanel voice', () => {
     expect(postSttMock).not.toHaveBeenCalled();
   });
 
-  it('hiding the page (switching tabs) releases the microphone but leaves the reading alone', async () => {
+  it('hiding the page (switching tabs) releases the microphone and stops the reading', async () => {
     const user = userEvent.setup();
     const rec = fakeRecording();
     startRecordingMock.mockResolvedValue(rec.recording);
@@ -692,7 +733,7 @@ describe('ChatPanel voice', () => {
       hidden.mockRestore();
     }
     expect(rec.recording.cancel).toHaveBeenCalledTimes(1);
-    expect(stopSpeakingMock).not.toHaveBeenCalled();
+    expect(stopSpeakingMock).toHaveBeenCalled();
   });
 
   it('typing in the composer stops the reading', async () => {
@@ -875,23 +916,22 @@ describe('ChatPanel voice: the last seconds', () => {
     await renderPanel();
     await user.click(mic()!);
     await settle();
-    expect(screen.getByRole('status')).toHaveTextContent(vc.VOICE_LISTENING);
+    expect(voiceStatus()).toHaveTextContent(vc.VOICE_LISTENING);
     act(() => startRecordingMock.mock.calls[0][0]!.onEnding?.());
-    expect(screen.getByRole('status')).toHaveTextContent('Ending soon');
+    expect(voiceStatus()).toHaveTextContent('Ending soon');
     expect(mic()!.querySelector('.thg-cc-ring')).not.toBeNull();
   });
 });
 
-describe('ChatPanel voice: the speaker toggle', () => {
-  it('is hidden where nothing can read replies aloud', async () => {
-    vi.mocked(isSpeechSupported).mockReturnValue(false);
+describe('ChatPanel voice: the speaker toggle needs a server voice', () => {
+  it('is hidden when the Worker has none (there is no browser voice): the mic is still there', async () => {
+    vi.mocked(fetchVoiceCaps).mockResolvedValue({ tts: 'none' });
     await renderPanel();
     expect(mic()).toBeInTheDocument();
     expect(speakerToggle()).not.toBeInTheDocument();
   });
 
-  it('is shown with the server voice even where the browser cannot speak', async () => {
-    vi.mocked(isSpeechSupported).mockReturnValue(false);
+  it('is shown when it has one', async () => {
     vi.mocked(fetchVoiceCaps).mockResolvedValue({ tts: 'server' });
     await renderPanel();
     expect(speakerToggle()).toBeInTheDocument();
@@ -901,18 +941,31 @@ describe('ChatPanel voice: the speaker toggle', () => {
 // ---- The speaker toggle's label on touch devices -----------------------------
 
 describe('ChatPanel voice: the speaker toggle', () => {
-  it('shows "Sound off" / "Sound on" as text on a touch screen, and the name says the same', async () => {
+  it('shows "Sound off" / "Sound on" as text on a touch screen, while the name stays fixed and aria-pressed carries the state', async () => {
     const user = userEvent.setup();
     stubMatchMedia(['pointer: coarse']);
     await renderPanel();
-    let toggle = screen.getByRole('button', { name: 'Sound off, read replies aloud' });
+    const toggle = screen.getByRole('button', { name: 'Spoken replies' });
     expect(toggle).toHaveTextContent('Sound off');
     expect(toggle).toHaveAttribute('aria-pressed', 'false');
     expect(toggle.querySelector('.thg-cc-speak-label')).toBeVisible();
 
     await user.click(toggle);
-    toggle = screen.getByRole('button', { name: 'Sound on, read replies aloud' });
+    // The very same button: its name did not change, so the state is announced once (by aria-pressed).
+    expect(screen.getByRole('button', { name: 'Spoken replies' })).toBe(toggle);
+    expect(toggle).toHaveAccessibleName('Spoken replies');
     expect(toggle).toHaveTextContent('Sound on');
+    expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    // The words are for the eye; a screen reader gets the name and the pressed state, not both.
+    expect(toggle.querySelector('.thg-cc-speak-label')).toHaveAttribute('aria-hidden', 'true');
+  });
+
+  it('has the same fixed name with a pointer, in both states', async () => {
+    const user = userEvent.setup();
+    await renderPanel();
+    const toggle = screen.getByRole('button', { name: 'Spoken replies' });
+    await user.click(toggle);
+    expect(toggle).toHaveAccessibleName('Spoken replies');
     expect(toggle).toHaveAttribute('aria-pressed', 'true');
   });
 
@@ -944,7 +997,7 @@ describe('ChatPanel voice: "Tap to hear replies"', () => {
   const blockedReply = async () => {
     await typeAndSend('hello');
     await settle();
-    const hooks = speakMock.mock.calls.at(-1)![2]!;
+    const hooks = speakMock.mock.calls.at(-1)![1]!;
     act(() => hooks.onBlocked?.(blob()));
     await settle();
     return hooks;
@@ -1000,7 +1053,7 @@ describe('ChatPanel voice: "Tap to hear replies"', () => {
     await typeAndSend('typed instead');
     await settle();
     expect(screen.queryByRole('button', { name: 'Tap to hear replies' })).not.toBeInTheDocument();
-    act(() => speakMock.mock.calls.at(-1)![2]!.onBlocked?.(blob()));
+    act(() => speakMock.mock.calls.at(-1)![1]!.onBlocked?.(blob()));
     await settle();
     const pill = screen.getByRole('button', { name: 'Tap to hear replies' });
     expect(pill.closest('li')).toHaveTextContent('A newer reply.');
@@ -1020,7 +1073,7 @@ describe('ChatPanel voice: the cap on spoken replies', () => {
   const hitCap = async (bonusAvailable: boolean) => {
     await typeAndSend('hello');
     await settle();
-    act(() => speakMock.mock.calls.at(-1)![2]!.onLimit?.(bonusAvailable));
+    act(() => speakMock.mock.calls.at(-1)![1]!.onLimit?.(bonusAvailable));
     await settle();
   };
 
@@ -1044,12 +1097,28 @@ describe('ChatPanel voice: the cap on spoken replies', () => {
     expect(
       screen.getByText("Read-aloud is paused. Share your name, email and number and we'll add 5 more today.")
     ).toBeInTheDocument();
+    // The notice sits in the permanently mounted status region; the chip is next to it, not in it.
+    const region = document.querySelector('.thg-cc-readaloud [role="status"]')!;
+    expect(region).toHaveTextContent('Read-aloud is paused');
+    expect(region).not.toContainElement(screen.getByRole('button', { name: 'Share my details' }));
     const chip = screen.getByRole('button', { name: 'Share my details' });
     expect(chip).toHaveClass('thg-cc-chip');
     expect(speakerToggle()).not.toBeInTheDocument();
 
     await user.type(screen.getByRole('textbox', { name: 'Message' }), 'a');
     expect(screen.getByRole('button', { name: 'Share my details' })).toBeInTheDocument();
+  });
+
+  it('says how many replies the Worker named, in the notice and in the form', async () => {
+    const user = userEvent.setup();
+    await serverPanel();
+    await typeAndSend('hello');
+    await settle();
+    act(() => speakMock.mock.calls.at(-1)![1]!.onLimit?.(true, 10));
+    await settle();
+    expect(screen.getByText(/we'll add 10 more today/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Share my details' }));
+    expect(screen.getByText("Add your email and we'll add 10 more spoken replies today.")).toBeInTheDocument();
   });
 
   it('the chip opens the lead form with the email required; sending it brings spoken replies back', async () => {
@@ -1090,6 +1159,42 @@ describe('ChatPanel voice: the cap on spoken replies', () => {
     await settle();
     expect(speakMock).toHaveBeenCalledTimes(1);
     expect(speakMock.mock.calls[0][0]).toBe('Spoken again.');
+  });
+
+  it('a normal callback request without an email takes the chip away for good: it never sits there doing nothing', async () => {
+    const user = userEvent.setup();
+    postLeadMock.mockResolvedValue({ kind: 'ok', delivery: 'email' });
+    // The reply that hits the cap also offers a callback ("Yes, call me").
+    postChatMock.mockResolvedValueOnce({
+      kind: 'ok',
+      data: {
+        reply: 'Want us to call you?',
+        intent: 'answer',
+        offerCallback: true,
+        readyToConfirm: false,
+        lead: { ...EMPTY_LEAD_DRAFT },
+      },
+    });
+    await serverPanel();
+    await hitCap(true);
+    expect(screen.getByRole('button', { name: 'Share my details' })).toBeInTheDocument();
+
+    // The visitor takes that ordinary offer instead, and leaves the email blank.
+    await user.click(screen.getByRole('button', { name: copy.OFFER_YES }));
+    const form = screen.getByRole('form', { name: 'Callback request' });
+    expect(within(form).getByLabelText('Email (optional)')).toBeInTheDocument();
+    await user.type(within(form).getByLabelText('Name'), 'Jane Doe');
+    await user.type(within(form).getByLabelText('Phone'), '(770) 555-1234');
+    await user.type(within(form).getByLabelText('Business name'), 'Doe Plumbing');
+    await user.selectOptions(within(form).getByLabelText('Best callback window'), 'afternoon_1_3');
+    await user.click(within(form).getByLabelText(copy.CONSENT));
+    await user.click(within(form).getByRole('button', { name: /request my callback/i }));
+    await settle();
+    expect(postLeadMock).toHaveBeenCalledTimes(1);
+
+    expect(screen.queryByRole('button', { name: 'Share my details' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Read-aloud is paused/)).not.toBeInTheDocument();
+    expect(speakerToggle()).not.toBeInTheDocument(); // still capped
   });
 
   it('"Not now, keep chatting" brings the composer back and the notice with it', async () => {

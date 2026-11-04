@@ -307,6 +307,10 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 4px 8px;
+}
+
+/* The status region is always in the page (empty); it only takes room once it has something to say. */
+.thg-cc-readaloud[data-active] {
   padding: 0 4px 8px;
 }
 

@@ -10,6 +10,7 @@ import { makeMessage, TURNSTILE_AFTER_TURN } from '../thread';
 import { getToken } from '../turnstile';
 import type { ConciergeState } from '../useConcierge';
 import {
+  DEFAULT_BONUS_REPLIES,
   VOICE_DENIED,
   VOICE_ERROR,
   VOICE_HEARD_NOTHING,
@@ -19,7 +20,7 @@ import {
   VOICE_SOUND_OFF_HINT,
   VOICE_SPOKEN_LIMIT_DONE,
 } from './copy';
-import { loadVoicePrefs, saveVoicePrefs, type VoicePrefs } from './prefs';
+import { capExpired, loadVoicePrefs, saveVoicePrefs, withoutCap, type VoicePrefs } from './prefs';
 import {
   isRecordingSupported,
   MIN_RECORDING_MS,
@@ -29,11 +30,11 @@ import {
   type RecordingResult,
 } from './recorder';
 import {
-  isSpeechSupported,
   speak,
   speakBlob,
   stopSpeaking as stopReading,
   unlockSpeech,
+  type SpeechMode,
 } from './speech';
 
 /**
@@ -61,6 +62,7 @@ export function initialVoiceState(): Pick<
   | 'voiceDisclosed'
   | 'blockedReplyId'
   | 'readAloudBonus'
+  | 'bonusCount'
 > {
   return {
     voice: 'off',
@@ -71,14 +73,15 @@ export function initialVoiceState(): Pick<
     voiceDisclosed: false,
     blockedReplyId: null,
     readAloudBonus: false,
+    bonusCount: DEFAULT_BONUS_REPLIES,
   };
 }
 
 export function createVoiceController({ get, patch, send }: VoiceHost) {
   let prefs: VoicePrefs = loadVoicePrefs();
 
-  /** What reads replies aloud; /health decides. 'none' is text only. */
-  let ttsMode: 'browser' | 'server' | 'none' = 'browser';
+  /** Whether replies are read aloud (by the server voice); /health decides. 'none' is text only. */
+  let ttsMode: 'server' | 'none' = 'none';
   /** The reply audio the browser would not start, kept so that a tap can play it (no second request). */
   let held: { blob: Blob; messageId: string } | null = null;
   let checked = false;
@@ -102,10 +105,21 @@ export function createVoiceController({ get, patch, send }: VoiceHost) {
     };
   };
 
-  /** Replies can be read aloud: something can do it, and the day's allowance is not used up. */
-  const canSpeak = (): boolean =>
-    !prefs.spokenLimit &&
-    (ttsMode === 'server' || (ttsMode === 'browser' && isSpeechSupported()));
+  /**
+   * The cap on spoken replies is in force. A cap that has lapsed (an hour, or a new day) is
+   * dropped here, so even a panel left open comes back to asking for audio.
+   */
+  const capInForce = (): boolean => {
+    if (!prefs.spokenLimit) return false;
+    if (!capExpired(prefs, Date.now())) return true;
+    prefs = withoutCap(prefs);
+    saveVoicePrefs(prefs);
+    patch({ speakAvailable: ttsMode === 'server', readAloudBonus: false });
+    return false;
+  };
+
+  /** Replies can be read aloud: there is a server voice, and the day's allowance is not used up. */
+  const canSpeak = (): boolean => ttsMode === 'server' && !capInForce();
 
   /** Ask the Worker once whether voice is on. Browsers that cannot record never ask. */
   const checkVoice = async (): Promise<void> => {
@@ -124,7 +138,9 @@ export function createVoiceController({ get, patch, send }: VoiceHost) {
         voice: 'idle',
         speakAvailable: canSpeak(),
         // The cap and the bonus on offer outlive a reload in the same tab.
-        readAloudBonus: ttsMode === 'server' && prefs.spokenLimit && prefs.bonusOffer && !prefs.bonusUsed,
+        readAloudBonus:
+          ttsMode === 'server' && prefs.spokenLimit && prefs.bonusOffer && !prefs.bonusUsed && !get().leadDone,
+        bonusCount: prefs.bonusCount ?? DEFAULT_BONUS_REPLIES,
       });
     }
   };
@@ -344,7 +360,7 @@ export function createVoiceController({ get, patch, send }: VoiceHost) {
 
   /** Inside a tap on the mic or the speaker toggle: let iOS know speech is wanted. */
   const unlock = () => {
-    if (ttsMode !== 'none') unlockSpeech(ttsMode);
+    if (ttsMode === 'server') unlockSpeech();
   };
 
   /** Forget the reply that is waiting for a tap (a newer reply, or sound turned off, replaces it). */
@@ -365,27 +381,43 @@ export function createVoiceController({ get, patch, send }: VoiceHost) {
   };
 
   /** The day's allowance of spoken replies is used up: text only from here, until a bonus is granted. */
-  const limitReached = (bonusAvailable: boolean) => {
-    if (prefs.spokenLimit) return; // one report is enough
+  const limitReached = (bonusAvailable: boolean, bonus?: number) => {
+    if (capInForce()) return; // one report is enough
     const offer = bonusAvailable && !prefs.bonusUsed && !get().leadDone;
-    prefs = { ...prefs, spokenLimit: true, bonusOffer: offer };
+    prefs = {
+      ...prefs,
+      spokenLimit: true,
+      spokenLimitAt: Date.now(),
+      bonusOffer: offer,
+      bonusCount: offer && bonus !== undefined ? bonus : null,
+    };
     saveVoicePrefs(prefs);
     clearBlocked();
     track('concierge_voice_error', { reason: 'budget' });
     patch({
       speakAvailable: false,
       readAloudBonus: offer,
+      bonusCount: prefs.bonusCount ?? DEFAULT_BONUS_REPLIES,
       // With a bonus on offer the notice (and its chip) stay up; otherwise one line, once.
       voiceNotice: offer ? null : VOICE_SPOKEN_LIMIT_DONE,
     });
   };
 
-  /** A lead with an email was sent: if that is the bonus on offer, spoken replies resume. */
-  const noteLeadSubmitted = () => {
+  /**
+   * A lead was sent. With an email, that is the bonus on offer, so spoken replies resume. Without
+   * one the offer is over (a second form cannot be opened), so the chip must go, and the cap stays.
+   */
+  const noteLeadSubmitted = (hasEmail: boolean) => {
     if (!prefs.spokenLimit || !prefs.bonusOffer) return;
-    prefs = { ...prefs, spokenLimit: false, bonusOffer: false, bonusUsed: true };
-    saveVoicePrefs(prefs);
-    patch({ readAloudBonus: false, speakAvailable: canSpeak() });
+    if (hasEmail) {
+      prefs = { ...withoutCap(prefs), bonusUsed: true };
+      saveVoicePrefs(prefs);
+      patch({ readAloudBonus: false, speakAvailable: canSpeak() });
+    } else {
+      prefs = { ...prefs, bonusOffer: false };
+      saveVoicePrefs(prefs);
+      patch({ readAloudBonus: false, voiceNotice: VOICE_SPOKEN_LIMIT_DONE });
+    }
   };
 
   /** The browser would not start this reply's audio: offer a tap, once explain why. */
@@ -401,7 +433,7 @@ export function createVoiceController({ get, patch, send }: VoiceHost) {
     patch(notice);
   };
 
-  const onSpeechStart = (mode: 'browser' | 'server') => {
+  const onSpeechStart = (mode: SpeechMode) => {
     held = null;
     patch({
       blockedReplyId: null,
@@ -421,9 +453,9 @@ export function createVoiceController({ get, patch, send }: VoiceHost) {
     const { speakEnabled, voice } = get();
     if (!active || !speakEnabled || !canSpeak()) return;
     if (voice === 'off' || voice === 'recording' || voice === 'transcribing') return;
-    if (ttsMode === 'none') return;
-    speak(text, ttsMode, {
-      fetchAudio: ttsMode === 'server' ? (t) => fetchTts(t, get().sessionId) : undefined,
+    speak(text, {
+      fetchAudio: (t, signal) => fetchTts(t, get().sessionId, signal),
+      canPlay: () => active, // closed or hidden while the request was out: drop the clip
       onStart: onSpeechStart,
       onEnd: onSpeechEnd,
       onLimit: limitReached,

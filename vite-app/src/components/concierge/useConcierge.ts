@@ -42,7 +42,7 @@ import type {
 } from './types';
 import { buildTranscript, FORM_FIELDS, LIMITS } from './validation';
 import { makeMessage, TURNSTILE_AFTER_TURN } from './thread';
-import { VOICE_BONUS_FORM_HEADING } from './voice/copy';
+import { voiceBonusFormHeading } from './voice/copy';
 import { createVoiceController, initialVoiceState, type VoiceState } from './voice/controller';
 
 export type ConciergeStatus = 'idle' | 'sending' | 'leadOnly' | 'ended';
@@ -91,6 +91,8 @@ export type ConciergeState = {
   blockedReplyId: string | null;
   /** Spoken replies are paused and sharing details would add more: show that notice with its chip. */
   readAloudBonus: boolean;
+  /** How many spoken replies that offer adds (the Worker's figure, or 5). */
+  bonusCount: number;
   /** Show the microphone line under the composer (from the first voice use until the panel closes). */
   voiceDisclosed: boolean;
 };
@@ -261,7 +263,7 @@ function createController() {
     voice.stopSpeaking();
     set({
       showLeadForm: true,
-      leadHeading: VOICE_BONUS_FORM_HEADING,
+      leadHeading: voiceBonusFormHeading(state.bonusCount),
       leadEmailRequired: true,
       leadError: false,
       chips: [],
@@ -470,8 +472,9 @@ function createController() {
         delivery: res.delivery,
       });
       track('concierge_lead');
-      // A lead with an email is what earns the read-aloud bonus, if one is on offer.
-      if (input.email) voice.noteLeadSubmitted();
+      // A lead with an email is what earns the read-aloud bonus, if one is on offer; any lead
+      // closes the offer (the chip that opened the form could not be used again).
+      voice.noteLeadSubmitted(Boolean(input.email));
       const first = input.name.split(/\s+/)[0];
       openFormAfterId = undefined; // sent: nothing left to resume after a reload
       push(makeMessage('assistant', CONFIRM(first, WINDOWS[input.callbackWindow])), {
