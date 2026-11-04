@@ -140,7 +140,7 @@ export default function Hero() {
           <a href="#consulting" onClick={smooth('#consulting')}>Consulting</a>
           <a href="#capabilities" onClick={smooth('#capabilities')}>Capabilities</a>
           <a href="#about" onClick={smooth('#about')}>About</a>
-          <a className="cta" href="#contact" onClick={smooth('#contact')}>Contact us</a>
+          <a className="cta" href="#contact" onClick={smooth('#contact')} data-cta-id="nav_contact" data-cta-label="Contact us">Contact us</a>
         </nav>
       </header>
 
@@ -186,10 +186,22 @@ export default function Hero() {
             pipeline.
           </p>
           <div className="actions">
-            <a className="btn primary" href="#products" onClick={smooth('#products')}>
+            <a
+              className="btn primary"
+              href="#products"
+              onClick={smooth('#products')}
+              data-cta-id="hero_products"
+              data-cta-label="Our products"
+            >
               Our products →
             </a>
-            <a className="btn ghost" href="#contact" onClick={smooth('#contact')}>
+            <a
+              className="btn ghost"
+              href="#contact"
+              onClick={smooth('#contact')}
+              data-cta-id="hero_contact"
+              data-cta-label="Contact us"
+            >
               Contact us
             </a>
           </div>

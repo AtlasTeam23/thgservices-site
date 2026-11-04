@@ -1,0 +1,84 @@
+/*
+ * Welcome band shown on /from-estimate, above the hero. Scoped under
+ * .thg-fe-* and reading the site's --thg-* theme variables, so it follows
+ * <html data-theme="light|dark">. Mobile first: stacked, then one row from
+ * 760px. Text is >= 4.5:1 on its background in both themes; the link uses a
+ * lighter blue on dark and a deeper blue on light (the brand #2563EB is only
+ * ~3.8:1 on the dark surface).
+ */
+
+.thg-fe-band {
+  --fe-link: #93c5fd;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 16px clamp(24px, 5vw, 80px);
+  background-color: var(--thg-bg-section);
+  border-bottom: 1px solid var(--thg-bg-section-border);
+  font-family: 'Outfit', sans-serif;
+  transition: background-color 0.3s ease;
+}
+
+[data-theme='light'] .thg-fe-band {
+  --fe-link: #1d4ed8;
+}
+
+.thg-fe-inner {
+  max-width: 1280px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.thg-fe-copy {
+  min-width: 0;
+}
+
+.thg-fe-eyebrow {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--thg-text-secondary);
+}
+
+.thg-fe-text {
+  margin: 0;
+  max-width: 90ch;
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--thg-text-primary);
+  overflow-wrap: break-word;
+}
+
+.thg-fe-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  flex: none;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-decoration: none;
+  color: var(--fe-link);
+}
+
+.thg-fe-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.thg-fe-link:focus-visible {
+  outline: 2px solid var(--fe-link);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+@media (min-width: 760px) {
+  .thg-fe-inner {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 32px;
+  }
+}

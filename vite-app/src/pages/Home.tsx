@@ -9,13 +9,15 @@ import Capabilities from '../sections/Capabilities';
 import About from '../sections/About';
 import BrandArc from '../sections/BrandArc';
 import Footer from '../sections/Footer';
+import FromEstimateWelcome from '../components/FromEstimateWelcome';
 
-export default function Home() {
+export default function Home({ fromEstimate = false }: { fromEstimate?: boolean }) {
   useLenis();
 
   return (
     <>
       <main>
+        {fromEstimate && <FromEstimateWelcome />}
         <Hero />
         <AiConcierge />
         <Work />

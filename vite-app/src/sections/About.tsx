@@ -125,6 +125,8 @@ export default function About() {
           </p>
           <a
             href="#contact"
+            data-cta-id="about_contact"
+            data-cta-label="Get in Touch"
             onClick={(e) => {
               e.preventDefault();
               document.querySelector('#contact')?.scrollIntoView({ behavior: 'smooth' });

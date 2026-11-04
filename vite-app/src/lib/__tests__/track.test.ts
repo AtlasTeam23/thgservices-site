@@ -1,53 +1,64 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { track } from '../track';
 
-describe('track', () => {
+// track() is now a thin alias of analytics.trackEvent(): the concierge keeps
+// its call sites, and brand merging, gating and logging live in one place.
+describe('track (alias of trackEvent)', () => {
   afterEach(() => {
-    delete window.gtag;
+    vi.resetModules();
     vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+    vi.doUnmock('../analytics');
+    delete window.gtag;
+    delete window.dataLayer;
   });
 
-  it('calls window.gtag with the event name and params when gtag is defined', () => {
-    const gtag = vi.fn();
-    window.gtag = gtag;
+  it('forwards the name and params to trackEvent unchanged', async () => {
+    const trackEvent = vi.fn();
+    vi.doMock('../analytics', () => ({ trackEvent }));
+    const { track } = await import('../track');
     track('concierge_open', { source: 'bubble' });
-    expect(gtag).toHaveBeenCalledTimes(1);
-    expect(gtag).toHaveBeenCalledWith('event', 'concierge_open', {
-      source: 'bubble',
-    });
+    expect(trackEvent).toHaveBeenCalledTimes(1);
+    expect(trackEvent).toHaveBeenCalledWith('concierge_open', { source: 'bubble' });
   });
 
-  it('passes undefined params through when none are given', () => {
+  it('passes undefined params through when none are given', async () => {
+    const trackEvent = vi.fn();
+    vi.doMock('../analytics', () => ({ trackEvent }));
+    const { track } = await import('../track');
+    track('concierge_lead_form_shown');
+    expect(trackEvent).toHaveBeenCalledWith('concierge_lead_form_shown', undefined);
+  });
+
+  it('does not throw and does not call a stray window.gtag while analytics is off', async () => {
     const gtag = vi.fn();
     window.gtag = gtag;
-    track('concierge_lead_form_shown');
-    expect(gtag).toHaveBeenCalledWith(
-      'event',
-      'concierge_lead_form_shown',
-      undefined
-    );
-  });
-
-  it('does not throw when gtag is undefined', () => {
-    vi.spyOn(console, 'debug').mockImplementation(() => {});
-    expect(window.gtag).toBeUndefined();
-    expect(() => track('concierge_open', { source: 'bubble' })).not.toThrow();
-  });
-
-  it('does not throw when gtag itself throws', () => {
-    vi.spyOn(console, 'debug').mockImplementation(() => {});
-    window.gtag = () => {
-      throw new Error('blocked');
-    };
-    expect(() => track('concierge_open', { source: 'bubble' })).not.toThrow();
-  });
-
-  it('logs to console.debug in development builds', () => {
     const debug = vi.spyOn(console, 'debug').mockImplementation(() => {});
-    expect(import.meta.env.DEV).toBe(true);
+    const { track } = await import('../track');
+    expect(() => track('concierge_open', { source: 'bubble' })).not.toThrow();
+    expect(gtag).not.toHaveBeenCalled();
+    expect(debug).not.toHaveBeenCalled();
+  });
+
+  it('adds the brand and logs "[analytics]" once analytics is on', async () => {
+    vi.stubEnv('VITE_GA4_ID', 'G-TEST');
+    vi.stubEnv('VITE_GA4_DEBUG', 'true');
+    window.history.replaceState({}, '', '/?utm_campaign=sunshine');
+    const debug = vi.spyOn(console, 'debug').mockImplementation(() => {});
+    const { initAnalytics } = await import('../analytics');
+    const { track } = await import('../track');
+    initAnalytics();
     track('concierge_quick_reply', { chip: 'What do you do?' });
-    expect(debug).toHaveBeenCalledWith('[track]', 'concierge_quick_reply', {
+    const last = window.dataLayer?.at(-1);
+    expect(Array.from(last as ArrayLike<unknown>)).toEqual([
+      'event',
+      'concierge_quick_reply',
+      { chip: 'What do you do?', brand: 'sunshine' },
+    ]);
+    expect(debug).toHaveBeenCalledWith('[analytics]', 'concierge_quick_reply', {
       chip: 'What do you do?',
+      brand: 'sunshine',
     });
+    window.history.replaceState({}, '', '/');
+    window.sessionStorage.clear();
   });
 });

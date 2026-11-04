@@ -1,4 +1,5 @@
 import { useMemo, useState, type FormEvent } from 'react';
+import { trackEvent } from '../lib/analytics';
 
 // Web3Forms access key. This is a public, per-destination key — it's
 // designed to be exposed in client-side code. To rotate, generate a new
@@ -89,6 +90,8 @@ export default function ContactForm() {
       const data = await res.json();
       if (data.success) {
         setStatus('success');
+        // No arguments from the form: fd holds a name, email, phone and message.
+        trackEvent('generate_lead', { form_id: 'contact' });
         form.reset();
         setMathSeed((s) => s + 1);
       } else {

@@ -522,6 +522,10 @@ describe('useConcierge: lead submit', () => {
       callback_window: 'midday_11_1',
       delivery: 'email',
     });
+    // The GA4 key event: no params at all, so no lead details can leak into it.
+    expect(trackMock).toHaveBeenCalledWith('concierge_lead');
+    expect(trackMock.mock.calls.filter(([name]) => name === 'concierge_lead')).toHaveLength(1);
+    expect(trackMock.mock.calls.find(([name]) => name === 'concierge_lead')).toEqual(['concierge_lead']);
     expect(result.current.showLeadForm).toBe(false);
     expect(result.current.leadDone).toBe(true);
     expect(result.current.messages.at(-1)?.content).toBe(
@@ -665,6 +669,7 @@ describe('useConcierge: lead submit', () => {
       await result.current.submitLead(leadInput);
     });
     expect(trackMock).toHaveBeenCalledWith('concierge_lead_failed');
+    expect(trackMock).not.toHaveBeenCalledWith('concierge_lead');
     expect(result.current.leadError).toBe(true);
     expect(result.current.showLeadForm).toBe(true);
     expect(result.current.leadDone).toBe(false);
