@@ -184,7 +184,7 @@ Copy the voice_id you want into VOICE_ELEVEN_VOICE_ID in wrangler.jsonc.
  * --base-url is where the key is sent, so it is restricted: any https:// URL, or plain http:// only for a stub on
  * this machine (localhost or 127.0.0.1). No credentials in the URL. Real use never needs the flag at all.
  */
-const isAllowedBaseUrl = (value) => {
+export const isAllowedBaseUrl = (value) => {
   let url;
   try {
     url = new URL(value);

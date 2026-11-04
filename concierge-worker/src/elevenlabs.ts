@@ -10,9 +10,10 @@ export const ELEVEN_API = 'https://api.elevenlabs.io';
 /**
  * Voice settings are sent with every request so a voice's stored defaults cannot change how replies sound.
  * These are ElevenLabs' own documented defaults for the four fields (stability 0.5, similarity 0.75, style 0,
- * speaker boost on); `speed` is left at its default of 1.
+ * speaker boost on); `speed` is left at its default of 1. The recorded greeting (scripts/eleven-greeting.mjs) sends
+ * the same four values, and test/greeting.test.ts keeps the two in step.
  */
-const VOICE_SETTINGS = { stability: 0.5, similarity_boost: 0.75, style: 0, use_speaker_boost: true } as const;
+export const VOICE_SETTINGS = { stability: 0.5, similarity_boost: 0.75, style: 0, use_speaker_boost: true } as const;
 
 /**
  * Starts the streaming call and resolves when the response headers arrive; the body keeps streaming after

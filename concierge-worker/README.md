@@ -83,7 +83,7 @@ Local notes:
 ```sh
 npm test            # vitest, inside the Workers runtime, with the real Durable Object
 npm run typecheck   # tsc --noEmit
-npm run test:probe  # unit tests for the probe script's own assertions
+npm run test:probe  # unit tests for the probe script's own assertions and for the ElevenLabs scripts (voices, greeting)
 npm run probe       # bot checklist against http://localhost:8787 (see below)
 ```
 
@@ -345,6 +345,19 @@ How a slot is counted: it is reserved **before** the provider is called, in one 
 
 What the Worker sends: `POST https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream?output_format=mp3_22050_32` with the key in the `xi-api-key` header and a JSON body of `text`, `model_id`, `voice_settings` (`stability: 0.5`, `similarity_boost: 0.75`, `style: 0`, `use_speaker_boost: true`) and `apply_text_normalization: "auto"`. It sends the reply text, so ElevenLabs processes what the helper says (which can include a name the visitor gave); the privacy page (task W8 of the voice plan) has to name ElevenLabs before this goes live. Logs carry only `{event: "tts_error", provider, ms, status}` (or `error`, the error's name) for a failure and `{event: "tts", provider, ms, status, chars}` for every attempt: never the key, the text, or anything ElevenLabs said back. The tests run against a stubbed `fetch`; the Worker has not been exercised against the real API, so the first real reply after setup is the real check.
 
+### The opening greeting (a recording, not a request)
+
+The widget starts speaking the instant a visitor opens the chat: a recording of the greeting text, played from a static file on the site. It never calls `/tts`, never counts against the per-visitor cap or the daily character budget, and nothing is sent anywhere to play it. It plays at most once per tab session, only when the server voice is on (the widget reads `/health` once when the page loads), the thread has no visitor messages yet, the visitor has not turned sound off and the day's allowance of spoken replies is not used up. Playing it counts as the visitor's first use of voice, so replies are read aloud from then on, under the usual cap.
+
+The recording is `vite-app/public/concierge/greeting.mp3`, with `greeting.json` beside it (`{text, voiceId, modelId, format, generatedAt}`). `npm run eleven:greeting -- --text "<the greeting>"` makes both. It reads `VOICE_ELEVEN_VOICE_ID`, `VOICE_ELEVEN_MODEL` and `VOICE_ELEVEN_FORMAT` from `wrangler.jsonc` and `ELEVENLABS_API_KEY` from `.dev.vars`, calls `POST /v1/text-to-speech/{voice_id}?output_format=...` with the same body the Worker sends for a spoken reply, and writes both files (`--out PATH` changes where; the `.json` follows the MP3's name). It prints where it wrote, never the key, and exits non-zero with a plain message if anything is missing or the call fails; one run spends about 170 characters of the ElevenLabs allowance.
+
+Record it again whenever one of these changes, and commit both files:
+
+- `GREETING` in `vite-app/src/components/concierge/copy.ts`. Pass the exact new text as `--text`. The widget's test (`greetingRecording.test.ts`) fails until `greeting.json` has the same text, and prints the command to run.
+- The voice, model or output format in `wrangler.jsonc`. `test/greeting.test.ts` here fails until `greeting.json` names the same three values, so the greeting is always the voice the replies use.
+
+The same test pins the script's voice settings (stability, similarity, style, speaker boost) to the Worker's `VOICE_SETTINGS` in `src/elevenlabs.ts`. `npm run test:probe` covers the script against a stub; no test calls the real API. The file is served by the site (it ends up at `/concierge/greeting.mp3` after the usual copy of the build to the repo root), so a new recording reaches visitors when the site is deployed, not the Worker.
+
 ### What it costs on the Workers Free plan
 
 Workers AI bills in neurons, and the Free plan includes 10,000 a day for the whole account (<https://developers.cloudflare.com/workers-ai/platform/pricing/>, checked 2026-11-03):
@@ -403,6 +416,7 @@ For ElevenLabs add the key to `.dev.vars` and run `npx wrangler dev --port 8787 
 - A name or phone number a visitor types into the chat is a chat message like any other: it is sent to the AI provider (Anthropic) so the helper can reply, and the Worker does not store it. The `lead` object in a reply is built from the visitor's own words and is never logged. The privacy page already says chat messages go to Anthropic and that contact details given in the chat are collected, so it should still be accurate; re-read it whenever the collection flow changes.
 - Voice: a recording exists only for the length of the `/stt` request. It is read into memory, sent to Cloudflare Workers AI (Whisper) for transcription, and dropped; the Worker stores no audio and no transcript, and neither is ever logged. Logs carry only `{event: "stt", ms, status, audioBytes, seconds}` (`seconds` is what was charged) (and `{event: "tts", ms, status, chars}` for the premium voice), plus `stt_error` / `tts_error` lines with the error's name and timing, never its message, and `{event: "tts_speaker_fallback", model, requested, used}` when `VOICE_SPEAKER` is not on the selected model's list (configuration only, never visitor text; `requested` is cut to 32 characters). The transcript is an ordinary chat message once the widget sends it to `/chat`, which the paragraph above already covers. The privacy page needs its own paragraph about the microphone and Workers AI (task W8 of the voice plan).
 - ElevenLabs voice: when `VOICE_TTS=elevenlabs` the text of each spoken reply is sent to ElevenLabs to be turned into audio. It is the helper's reply, not the visitor's own words, but a reply can repeat a name or detail the visitor gave. The Worker stores and logs none of it. The privacy page has to name ElevenLabs before this is enabled.
+- The opening greeting is a static MP3 served from the site itself. Playing it sends nothing to ElevenLabs or to the Worker; the text was sent to ElevenLabs once, when the recording was made.
 - The per-visitor counters (`ip:tts-spoken:`, `ip:tts-bonus:`) are keyed by the hashed address bucket, like every other per-address counter, hold only a number, and are deleted by an alarm once Eastern midnight has passed.
 - A lead that fails every delivery path is not saved anywhere. That is deliberate (it keeps the privacy statement true); the widget tells the visitor to call instead.
 
