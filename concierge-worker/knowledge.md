@@ -32,7 +32,7 @@ We work with local businesses of all kinds, especially ones with phones to answe
 
 ## How working with us goes
 
-It starts with a quick call to hear what is eating up your time. Then we sit down with you, in person around Woodstock and metro Atlanta or by video, and map out how your day really runs: calls, leads, estimates, email, ads, and books. From there we pick the smallest mix of software and AI tools that fixes the busywork, and we use what you already have wherever we can. We set it up, connect it, and show your team how it works. After that we stay on as support and tune things as your business changes. On that first call the team gives you a straight answer about scope and cost.
+It starts with a quick call to hear what is eating up your time. Then we meet with you online, by video, and map out how your day really runs: calls, leads, estimates, email, ads, and books. From there we pick the smallest mix of software and AI tools that fixes the busywork, and we use what you already have wherever we can. We set it up, connect it, and show your team how it works. After that we stay on as support and tune things as your business changes. On that first call the team gives you a straight answer about scope and cost.
 
 ## After-hours calls
 
@@ -66,7 +66,8 @@ The AI Website Concierge is the same chat helper you are using now, placed on a 
 - Do I need to be technical? No. We set things up and show your team how to use them.
 - Will this replace my staff? It is meant to take the repetitive parts off their plate so they can spend more time with customers.
 - Can you work with the tools I already use, like QuickBooks or Xero, Google Ads, my current website, or my phone system? Yes. Working with what you already use is usually where we start.
-- Where are you? Woodstock, Georgia. We serve Cherokee County and metro Atlanta, and we have clients in other states too.
+- Where are you? We're based in Woodstock, Georgia, serving Cherokee County and metro Atlanta, and we have clients in other states too. Everything with THG AI Services happens online, by phone and video, so there is nothing to travel to.
+- Can you come out to my shop? For THG AI Services, no; it all happens online. We start with a quick call, then a video meeting, and we set things up remotely.
 - How do I get started? With a quick call. The chat helper can set one up for you right here, or you can call (866) 519-7993.
 - Can I see examples? The team shares real examples on a call.
 

@@ -46,7 +46,7 @@ describe('knowledge.md', () => {
     for (const title of ADDED) {
       const body = sections().get(title) ?? '';
       expect(words(body), title).toBeGreaterThan(25);
-      expect(words(body), title).toBeLessThanOrEqual(170);
+      expect(words(body), title).toBeLessThanOrEqual(200); // the FAQ grew when the remote-only answers were added (was 170)
     }
   });
 
@@ -94,9 +94,16 @@ describe('knowledge.md', () => {
 
   it('describes how working together goes, where THG is, and how to start', () => {
     const how = sections().get('How working with us goes') ?? '';
-    for (const word of ['quick call', 'Woodstock', 'metro Atlanta', 'video', 'support']) expect(how, word).toContain(word);
+    for (const word of ['quick call', 'online', 'video', 'support']) expect(how, word).toContain(word);
     const faq = sections().get('Frequently asked questions') ?? '';
-    for (const word of ['technical', 'staff', 'QuickBooks', 'Xero', 'Cherokee County', '(866) 519-7993', 'examples']) expect(faq, word).toContain(word);
+    for (const word of ['technical', 'staff', 'QuickBooks', 'Xero', 'Woodstock', 'Cherokee County', 'metro Atlanta', '(866) 519-7993', 'examples']) expect(faq, word).toContain(word);
+  });
+
+  it('says THG AI Services works with clients remotely only, and never offers an in-person visit', () => {
+    expect(KNOWLEDGE).not.toMatch(/\bin[\s-]person\b/i);
+    const faq = sections().get('Frequently asked questions') ?? '';
+    expect(faq).toContain('Everything with THG AI Services happens online, by phone and video, so there is nothing to travel to.');
+    expect(faq).toContain('- Can you come out to my shop? For THG AI Services, no; it all happens online. We start with a quick call, then a video meeting, and we set things up remotely.');
   });
 
   it('describes the after-hours call handling and the concierge for a business', () => {

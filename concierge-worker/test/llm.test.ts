@@ -89,6 +89,10 @@ describe('system prompt', () => {
     }
     expect(SYSTEM_PROMPT).toContain('\nHard rules. These hold for the whole conversation.');
     expect(SYSTEM_PROMPT).toMatch(/^You are the THG helper, the chat helper on thgservices\.io/);
+    // Remote only: the first paragraph says so, and the helper is told never to offer an in-person visit.
+    expect(SYSTEM_PROMPT).toContain(
+      'you help visitors set up a quick phone call, and from there a virtual meeting by video, with David\'s team. THG AI Services works with clients remotely, so never offer or suggest an in-person visit.',
+    );
     // The v1 wording it replaces is gone.
     expect(SYSTEM_PROMPT).not.toContain('The only number you may ever state');
     expect(SYSTEM_PROMPT).not.toContain('Two to four sentences per reply');

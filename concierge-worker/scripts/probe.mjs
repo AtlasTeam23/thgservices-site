@@ -6,7 +6,8 @@
 //
 // Three groups, each run with fresh sessions, every reply printed with its intent:
 //   base   the original checklist: product questions, pricing, numbers, off-topic, injection, a human
-//   owner  five owner-style questions, plus a phone number typed in the same message as the request
+//   owner  five owner-style questions, plus a phone number typed in the same message as the request,
+//          plus "Can you come out to my shop and take a look?" (remote only: no in-person visit)
 //   flow   a three-turn collection: "can you have someone call me?" -> "Dana Lee" -> "770-555-0147"
 // It exits 1 if any reply breaks a hard rule:
 //   - a digit or "$" outside the allowlist: the exact Blaze sentence, the phone number,
@@ -23,12 +24,14 @@
 //     "what you need", or "which window": the form asks for those now
 //   - on the product/answer prompts (base and owner): the fallback reply or intent "unsure"
 //   - owner group: more than two of the five answers ending with the callback question
+//   - the shop-visit question: a reply with "in person", "come out", "stop by", "visit you" or "on site"
+//     (a note, not a failure, if it mentions none of "online", "video", "virtual")
 //   - the phone-number message: not intent "collecting", or lead.phone not "7705550147"
 //   - the flow: the last reply not readyToConfirm, or lead.name / lead.phone not set
 // Other intent mismatches are only warnings: they show where the model drifted from the
 // system prompt but are not rule violations on their own.
 //
-// The Worker allows 20 chat messages per address per 10 minutes and the whole probe sends 24.
+// The Worker allows 20 chat messages per address per 10 minutes and the whole probe sends 25.
 // Against a local Worker each group is sent from its own made-up address (via CF-Connecting-IP,
 // which only a local `wrangler dev` honours), so a full run works. Against a deployed Worker
 // every request comes from your own address, so run the groups ten minutes apart with --only.
@@ -215,6 +218,34 @@ export const PHONE_PROMPT = [
   { requireIntent: 'collecting', leadPhone: '7705550147', allow: [PHONE_ECHO], forbidFormQuestions: true },
 ];
 
+/**
+ * THG AI Services works with clients remotely only. Asked to visit, the helper must not offer or imply
+ * an in-person visit (hard failure for any of these phrases; a hyphen counts as a space, so "in-person"
+ * and "on-site" are caught too), and should point to the online route: a quick call, then a video meeting
+ * (a note, not a failure, if none of the words appears).
+ */
+export const REMOTE_FORBIDDEN_PHRASES = ['in person', 'come out', 'stop by', 'visit you', 'on site'];
+export const REMOTE_EXPECTED_WORDS = ['online', 'video', 'virtual'];
+export const REMOTE_PROMPT = [
+  'owner: come out to my shop',
+  'Can you come out to my shop and take a look?',
+  'answer',
+  false,
+  { forbidPhrases: REMOTE_FORBIDDEN_PHRASES, expectAnyOf: REMOTE_EXPECTED_WORDS },
+];
+
+const spaced = (text) => String(text).toLowerCase().replace(/-/g, ' ');
+
+/** Problems for a reply that offers or implies an in-person visit. */
+export const checkForbiddenPhrases = (reply, phrases) => {
+  if (typeof reply !== 'string') return [];
+  const text = spaced(reply);
+  return phrases.filter((phrase) => text.includes(phrase)).map((phrase) => `offers or implies an in-person visit ("${phrase}")`);
+};
+
+/** True when the reply contains at least one of the words (case-insensitive). */
+export const mentionsAnyOf = (reply, words) => typeof reply === 'string' && words.some((word) => spaced(reply).includes(word));
+
 /** The visitor's side of the three-turn collection. The helper's replies are fed back in as it goes. */
 export const COLLECTION_FLOW = ['can you have someone call me?', 'Dana Lee', '770-555-0147'];
 
@@ -242,7 +273,7 @@ export const evaluate = ([, , expectedIntent, wantsPhone, options = {}], status,
   }
   if (status === 429) {
     problems.push(
-      'HTTP 429 rate limited: one address may send 20 chat messages per 10 minutes and the full probe sends 24. ' +
+      'HTTP 429 rate limited: one address may send 20 chat messages per 10 minutes and the full probe sends 25. ' +
         'Run the groups ten minutes apart (--only=base, --only=owner, --only=flow), or probe a local Worker, ' +
         'where each group is sent from its own address.',
     );
@@ -254,6 +285,10 @@ export const evaluate = ([, , expectedIntent, wantsPhone, options = {}], status,
   }
   problems.push(...checkReply(body?.reply, { allow: options.allow }));
   if (options.forbidFormQuestions) problems.push(...checkFormQuestions(body?.reply));
+  if (options.forbidPhrases) problems.push(...checkForbiddenPhrases(body?.reply, options.forbidPhrases));
+  if (options.expectAnyOf && !mentionsAnyOf(body?.reply, options.expectAnyOf)) {
+    notes.push(`reply does not mention ${options.expectAnyOf.map((word) => `"${word}"`).join(', ')}`);
+  }
   if (expectedIntent === 'answer') {
     if (body?.intent === 'unsure') problems.push('intent is "unsure" on a product question');
     if (body?.reply === FALLBACK_REPLY) problems.push('reply is the fallback string on a product question');
@@ -424,6 +459,7 @@ const run = async ({ baseUrl, groups, origin, turnstileToken }) => {
     }
     report('owner answers: the callback question is not the stock ending', [], evaluateOwnerGroup(replies), []);
     show(PHONE_PROMPT, await post(url, origin, ipFor('owner'), chatRequestBody(PHONE_PROMPT[1], turnstileToken)));
+    show(REMOTE_PROMPT, await post(url, origin, ipFor('owner'), chatRequestBody(REMOTE_PROMPT[1], turnstileToken)));
   }
 
   if (groups.has('flow')) {
@@ -463,7 +499,7 @@ if (isMain) {
     process.exit(2);
   }
   const planned =
-    (options.groups.has('base') ? PROMPTS.length : 0) + (options.groups.has('owner') ? OWNER_PROMPTS.length + 1 : 0) + (options.groups.has('flow') ? COLLECTION_FLOW.length : 0);
+    (options.groups.has('base') ? PROMPTS.length : 0) + (options.groups.has('owner') ? OWNER_PROMPTS.length + 2 : 0) + (options.groups.has('flow') ? COLLECTION_FLOW.length : 0);
   console.log(`Probing ${options.baseUrl}/chat as origin ${options.origin} (${[...options.groups].join(', ')}: ${planned} messages)\n`);
   if (planned > 20 && clientIpFor(options.baseUrl, 'base', 'x') === undefined) {
     console.log('Note: this Worker is not local, so every message comes from your own address, which may send 20 per 10 minutes.\nRun the groups separately with --only if you get HTTP 429.\n');
