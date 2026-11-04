@@ -1,18 +1,23 @@
-import { VOICE_SPEAK_TOGGLE } from './voice/copy';
+import { VOICE_SOUND_OFF, VOICE_SOUND_ON, VOICE_SPEAK_TOGGLE } from './voice/copy';
 
 type Props = {
   pressed: boolean;
   onToggle: () => void;
+  /** Touch screens: say "Sound on" / "Sound off" in words next to the icon. */
+  showLabel?: boolean;
 };
 
 /** "Read replies aloud" in the panel header. */
-export default function SpeakToggle({ pressed, onToggle }: Props) {
+export default function SpeakToggle({ pressed, onToggle, showLabel = false }: Props) {
+  const state = pressed ? VOICE_SOUND_ON : VOICE_SOUND_OFF;
+  // The visible words are part of the name (WCAG 2.5.3); the name still says what the button is for.
+  const name = showLabel ? `${state}, ${VOICE_SPEAK_TOGGLE.toLowerCase()}` : VOICE_SPEAK_TOGGLE;
   return (
     <button
       type="button"
-      className="thg-cc-speak"
+      className={`thg-cc-speak${showLabel ? ' thg-cc-speak--labelled' : ''}`}
       aria-pressed={pressed}
-      aria-label={VOICE_SPEAK_TOGGLE}
+      aria-label={name}
       title={VOICE_SPEAK_TOGGLE}
       onClick={onToggle}
     >
@@ -30,6 +35,11 @@ export default function SpeakToggle({ pressed, onToggle }: Props) {
           </>
         )}
       </svg>
+      {showLabel && (
+        <span className="thg-cc-speak-label" aria-hidden="true">
+          {state}
+        </span>
+      )}
     </button>
   );
 }

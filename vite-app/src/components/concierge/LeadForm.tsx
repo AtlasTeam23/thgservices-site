@@ -11,6 +11,7 @@ import { LEAD_DRAFT_KEYS, parseLeadDraft } from './leadDraft';
 import PhoneText from './PhoneText';
 import type { FieldErrors, LeadDraft, LeadInput } from './types';
 import type { SubmitLeadOutcome } from './useConcierge';
+import { VOICE_EMAIL_FOR_BONUS } from './voice/copy';
 import { formatPhone, validateLead, type LeadFormValues } from './validation';
 
 type Props = {
@@ -34,6 +35,8 @@ type Props = {
    * has typed so far, cleaned like a model draft, so their edits are not lost.
    */
   onDismiss?: (draft: LeadDraft) => void;
+  /** The email is required this time (the form was opened for the read-aloud bonus). */
+  emailRequired?: boolean;
 };
 
 type Field = keyof LeadFormValues;
@@ -68,9 +71,16 @@ const initialValues = (prefill?: LeadDraft): LeadFormValues => {
   return values;
 };
 
+/** The same, with the email in its place (between phone and business) when it is required. */
+const REQUIRED_WITH_EMAIL = ['name', 'phone', 'email', 'business', 'callbackWindow'] as const;
+
 /** The first required field still empty, or 'consent' when only the box is left. */
-const firstUnfilled = (values: LeadFormValues): (typeof REQUIRED_FIELDS)[number] | 'consent' =>
-  REQUIRED_FIELDS.find((name) => !values[name].trim()) ?? 'consent';
+const firstUnfilled = (
+  values: LeadFormValues,
+  emailRequired: boolean
+): (typeof REQUIRED_WITH_EMAIL)[number] | 'consent' =>
+  (emailRequired ? REQUIRED_WITH_EMAIL : REQUIRED_FIELDS).find((name) => !values[name].trim()) ??
+  'consent';
 
 export default function LeadForm({
   onSubmit,
@@ -80,10 +90,11 @@ export default function LeadForm({
   prefill,
   heading,
   onDismiss,
+  emailRequired = false,
 }: Props) {
   const [values, setValues] = useState<LeadFormValues>(() => initialValues(prefill));
   // Where focus goes when the form appears; decided once, from the pre-filled values.
-  const [focusTarget] = useState(() => firstUnfilled(initialValues(prefill)));
+  const [focusTarget] = useState(() => firstUnfilled(initialValues(prefill), emailRequired));
   const [errors, setErrors] = useState<FieldErrors>({});
   const formRef = useRef<HTMLFormElement>(null);
   const alertRef = useRef<HTMLDivElement>(null);
@@ -151,7 +162,7 @@ export default function LeadForm({
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (sending) return;
-    const result = validateLead(values);
+    const result = validateLead(values, emailRequired ? { emailRequiredMessage: VOICE_EMAIL_FOR_BONUS } : {});
     if (!result.ok) {
       setErrors(result.fields);
       focusFirstInvalid(result.fields);
@@ -250,10 +261,11 @@ export default function LeadForm({
       </div>
 
       <div className="thg-cc-field">
-        <label htmlFor={idOf('email')}>Email (optional)</label>
+        <label htmlFor={idOf('email')}>{emailRequired ? 'Email' : 'Email (optional)'}</label>
         <input
           id={idOf('email')}
           name="email"
+          aria-required={emailRequired ? true : undefined}
           className="thg-cc-input"
           type="email"
           inputMode="email"

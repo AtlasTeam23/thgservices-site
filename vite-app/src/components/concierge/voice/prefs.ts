@@ -12,21 +12,43 @@ export type VoicePrefs = {
   disclosed: boolean;
   /** The day's voice budget is spent: no mic for the rest of this tab session. */
   blocked: boolean;
+  /** The day's spoken-reply allowance is used up: no more audio is requested this tab session. */
+  spokenLimit: boolean;
+  /** ...and the Worker said sharing contact details would add more (the offer is still open). */
+  bonusOffer: boolean;
+  /** The details were shared and the bonus granted; it is not offered a second time. */
+  bonusUsed: boolean;
+  /** "Sound is off until you tap." has been shown. */
+  soundHint: boolean;
+};
+
+const NONE: VoicePrefs = {
+  speak: null,
+  disclosed: false,
+  blocked: false,
+  spokenLimit: false,
+  bonusOffer: false,
+  bonusUsed: false,
+  soundHint: false,
 };
 
 export function loadVoicePrefs(): VoicePrefs {
   try {
     const raw = window.sessionStorage.getItem(VOICE_PREFS_KEY);
-    if (!raw) return { speak: null, disclosed: false, blocked: false };
+    if (!raw) return { ...NONE };
     const parsed: unknown = JSON.parse(raw);
     const o = parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : {};
     return {
       speak: typeof o.speak === 'boolean' ? o.speak : null,
       disclosed: o.disclosed === true,
       blocked: o.blocked === true,
+      spokenLimit: o.spokenLimit === true,
+      bonusOffer: o.bonusOffer === true,
+      bonusUsed: o.bonusUsed === true,
+      soundHint: o.soundHint === true,
     };
   } catch {
-    return { speak: null, disclosed: false, blocked: false };
+    return { ...NONE };
   }
 }
 
@@ -39,6 +61,10 @@ export function saveVoicePrefs(prefs: VoicePrefs): void {
         disclosed: prefs.disclosed,
         // Only written when set, so the stored shape stays two flags for everyone else.
         ...(prefs.blocked ? { blocked: true } : {}),
+        ...(prefs.spokenLimit ? { spokenLimit: true } : {}),
+        ...(prefs.bonusOffer ? { bonusOffer: true } : {}),
+        ...(prefs.bonusUsed ? { bonusUsed: true } : {}),
+        ...(prefs.soundHint ? { soundHint: true } : {}),
       })
     );
   } catch {

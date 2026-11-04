@@ -1,25 +1,40 @@
 // Reading replies aloud (voice plan sections 1.2 and 1.4).
 //
-// Default: the browser's own speechSynthesis (free, instant). With the premium
-// voice on (`tts: 'aura'` in /health) the audio comes from the Worker instead and
-// plays in an <audio> element, falling back to the browser voice whenever the
-// server cannot deliver. One reply is spoken at a time; starting another or
-// calling stopSpeaking() ends the one in progress, and its callbacks never fire
-// again.
+// Two voices, and /health decides which one a visit gets, never both:
+//  - 'browser': the browser's own speechSynthesis (free, instant).
+//  - 'server': audio fetched from the Worker's /tts, played in an <audio> element. If the
+//    server cannot deliver, the reply stays text; the browser voice does not step in. If the
+//    browser blocks playback until the visitor taps, the audio is handed back so a tap can
+//    play it (see speakBlob).
+// One reply is spoken at a time; starting another or calling stopSpeaking() ends the one in
+// progress, and its callbacks never fire again.
 
-export type SpeechMode = 'browser' | 'aura';
+export type SpeechMode = 'browser' | 'server';
+
+/** What the server voice returned for a reply. Structurally the same as api.ts's TtsResult. */
+export type AudioResult =
+  | { kind: 'ok'; blob: Blob }
+  | { kind: 'limit'; bonusAvailable: boolean }
+  | { kind: 'unavailable' };
 
 export type SpeakHooks = {
-  /** Premium voice only: fetch the audio for this text; null when it is not available. */
-  fetchAudio?: (text: string) => Promise<Blob | null>;
-  /** Sound has begun. Reports the voice actually used (the premium voice can fall back). */
+  /** Server voice only: fetch the audio for this text. */
+  fetchAudio?: (text: string) => Promise<AudioResult>;
+  /** Sound has begun. */
   onStart?: (mode: SpeechMode) => void;
   /** Finished, stopped, or failed. Called exactly once per speak(). */
   onEnd?: () => void;
+  /** Server voice only: the daily allowance of spoken replies is used up. No sound follows. */
+  onLimit?: (bonusAvailable: boolean) => void;
+  /**
+   * Server voice only: the browser would not start the audio without a tap. The audio is
+   * handed over so that a tap can play it with speakBlob().
+   */
+  onBlocked?: (blob: Blob) => void;
 };
 
-/** The Worker's /tts limit (the same as a reply's); anything longer is read by the browser voice. */
-export const AURA_MAX_CHARS = 1000;
+/** The Worker's /tts limit (the same as a reply's); a longer reply is not spoken. */
+export const SERVER_MAX_CHARS = 1000;
 
 /**
  * Chrome's network voices cut an utterance off after about 15 seconds, so a reply
@@ -120,6 +135,7 @@ export function splitForSpeech(text: string, max = CHUNK_CHARS): string[] {
 // ---- One reply at a time -------------------------------------------------------
 
 type Run = {
+  ended: boolean;
   /** Stop the underlying voice or audio (does not report). */
   halt: () => void;
   /** Report the end, once. */
@@ -135,7 +151,11 @@ let active: Run | null = null;
 
 /** How many utterances the current reply is holding on to. For tests. */
 export const heldUtteranceCount = (): number => active?.held.length ?? 0;
-/** The <audio> element primed by unlockSpeech('aura'); reused so iOS keeps allowing it. */
+/**
+ * The one <audio> element for server audio, created by unlockSpeech('server') or by the first
+ * play from inside a tap. Reused for every reply: on iOS, an element a gesture has played on
+ * stays allowed to play later, and a fresh element would not be.
+ */
 let sharedAudio: HTMLAudioElement | null = null;
 
 /** Stop whatever is being read. Its onEnd fires now; nothing from it fires afterwards. */
@@ -159,7 +179,7 @@ export function resetSpeech(): void {
  * started during a gesture.
  */
 export function unlockSpeech(mode: SpeechMode = 'browser'): void {
-  if (isSpeechSupported()) {
+  if (mode === 'browser' && isSpeechSupported()) {
     try {
       const utterance = new SpeechSynthesisUtterance('');
       utterance.volume = 0;
@@ -171,7 +191,7 @@ export function unlockSpeech(mode: SpeechMode = 'browser'): void {
       // not allowed here; the next gesture will do
     }
   }
-  if (mode === 'aura' && typeof Audio !== 'undefined') {
+  if (mode === 'server' && typeof Audio !== 'undefined') {
     try {
       sharedAudio ??= new Audio();
       sharedAudio.src = SILENT_WAV;
@@ -182,6 +202,146 @@ export function unlockSpeech(mode: SpeechMode = 'browser'): void {
   }
 }
 
+function newRun(hooks: SpeakHooks): Run {
+  const run: Run = {
+    ended: false,
+    halt: () => {},
+    held: [],
+    end: () => {
+      if (run.ended) return;
+      run.ended = true;
+      run.held = [];
+      if (active === run) active = null;
+      hooks.onEnd?.();
+    },
+  };
+  active = run;
+  return run;
+}
+
+function startBrowser(run: Run, text: string, hooks: SpeakHooks): void {
+  if (!isSpeechSupported()) {
+    run.end();
+    return;
+  }
+  run.halt = () => {
+    try {
+      speechSynthesis.cancel();
+    } catch {
+      // nothing to cancel
+    }
+  };
+  try {
+    speechSynthesis.cancel(); // also clears anything left queued, such as the unlock utterance
+    const voice = pickVoice(speechSynthesis.getVoices());
+    const pieces = splitForSpeech(text);
+    let started = false;
+    pieces.forEach((piece, i) => {
+      const utterance = new SpeechSynthesisUtterance(piece);
+      utterance.lang = 'en-US';
+      if (voice) utterance.voice = voice;
+      if (i === 0) {
+        utterance.onstart = () => {
+          if (run.ended || started) return;
+          started = true;
+          hooks.onStart?.('browser');
+        };
+      }
+      if (i === pieces.length - 1) utterance.onend = () => run.end();
+      utterance.onerror = () => {
+        if (run.ended) return;
+        run.halt();
+        run.end();
+      };
+      run.held.push(utterance);
+      speechSynthesis.speak(utterance);
+    });
+  } catch {
+    run.end();
+  }
+}
+
+/**
+ * Play audio on the shared element. A refusal because the browser wants a tap is reported
+ * through `onBlocked` (with the audio, so a tap can play it); any other failure just ends the
+ * reply, which then stays text.
+ */
+function playBlob(run: Run, blob: Blob, hooks: SpeakHooks): void {
+  let audio: HTMLAudioElement | null = null;
+  let url: string | null = null;
+  const cleanup = () => {
+    if (audio) {
+      audio.onended = null;
+      audio.onerror = null;
+      try {
+        audio.pause();
+      } catch {
+        // not playing
+      }
+    }
+    if (url) {
+      URL.revokeObjectURL(url);
+      url = null;
+    }
+  };
+  const giveUp = () => {
+    cleanup();
+    run.end();
+  };
+  run.halt = cleanup;
+
+  try {
+    sharedAudio ??= new Audio();
+    audio = sharedAudio;
+    url = URL.createObjectURL(blob);
+    audio.src = url;
+    audio.onended = () => {
+      if (!run.ended) giveUp();
+    };
+    audio.onerror = () => {
+      if (!run.ended) giveUp();
+    };
+    audio.play().then(
+      () => {
+        if (!run.ended) hooks.onStart?.('server');
+      },
+      (error: unknown) => {
+        if (run.ended) return;
+        const blocked = (error as { name?: string } | null)?.name === 'NotAllowedError';
+        cleanup();
+        if (blocked) hooks.onBlocked?.(blob);
+        run.end();
+      }
+    );
+  } catch {
+    if (!run.ended) giveUp();
+  }
+}
+
+function startServer(run: Run, text: string, hooks: SpeakHooks): void {
+  const { fetchAudio } = hooks;
+  if (!fetchAudio || text.length > SERVER_MAX_CHARS) {
+    run.end();
+    return;
+  }
+  fetchAudio(text).then(
+    (result) => {
+      if (run.ended) return;
+      if (result.kind === 'limit') {
+        hooks.onLimit?.(result.bonusAvailable);
+        run.end();
+      } else if (result.kind === 'ok') {
+        playBlob(run, result.blob, hooks);
+      } else {
+        run.end();
+      }
+    },
+    () => {
+      if (!run.ended) run.end();
+    }
+  );
+}
+
 export function speak(text: string, mode: SpeechMode, hooks: SpeakHooks = {}): void {
   stopSpeaking();
   const clean = text.replace(/\s+/g, ' ').trim();
@@ -189,128 +349,17 @@ export function speak(text: string, mode: SpeechMode, hooks: SpeakHooks = {}): v
     hooks.onEnd?.();
     return;
   }
+  const run = newRun(hooks);
+  if (mode === 'server') startServer(run, clean, hooks);
+  else startBrowser(run, clean, hooks);
+}
 
-  let ended = false;
-  const run: Run = {
-    halt: () => {},
-    end: () => {
-      if (ended) return;
-      ended = true;
-      run.held = [];
-      if (active === run) active = null;
-      hooks.onEnd?.();
-    },
-    held: [],
-  };
-  active = run;
-
-  const startBrowser = () => {
-    if (!isSpeechSupported()) {
-      run.end();
-      return;
-    }
-    run.halt = () => {
-      try {
-        speechSynthesis.cancel();
-      } catch {
-        // nothing to cancel
-      }
-    };
-    try {
-      speechSynthesis.cancel(); // also clears anything left queued, such as the unlock utterance
-      const voice = pickVoice(speechSynthesis.getVoices());
-      const pieces = splitForSpeech(clean);
-      let started = false;
-      pieces.forEach((piece, i) => {
-        const utterance = new SpeechSynthesisUtterance(piece);
-        utterance.lang = 'en-US';
-        if (voice) utterance.voice = voice;
-        if (i === 0) {
-          utterance.onstart = () => {
-            if (ended || started) return;
-            started = true;
-            hooks.onStart?.('browser');
-          };
-        }
-        if (i === pieces.length - 1) utterance.onend = () => run.end();
-        utterance.onerror = () => {
-          if (ended) return;
-          run.halt();
-          run.end();
-        };
-        run.held.push(utterance);
-        speechSynthesis.speak(utterance);
-      });
-    } catch {
-      run.end();
-    }
-  };
-
-  const startAura = (fetchAudio: (text: string) => Promise<Blob | null>) => {
-    let audio: HTMLAudioElement | null = null;
-    let url: string | null = null;
-    const cleanup = () => {
-      if (audio) {
-        audio.onended = null;
-        audio.onerror = null;
-        try {
-          audio.pause();
-        } catch {
-          // not playing
-        }
-      }
-      if (url) {
-        URL.revokeObjectURL(url);
-        url = null;
-      }
-    };
-    const fallBack = () => {
-      cleanup();
-      run.halt = () => {};
-      startBrowser();
-    };
-    run.halt = cleanup;
-
-    fetchAudio(clean).then(
-      (blob) => {
-        if (ended) return;
-        if (!blob) {
-          fallBack();
-          return;
-        }
-        try {
-          audio = sharedAudio ?? new Audio();
-          url = URL.createObjectURL(blob);
-          audio.src = url;
-          audio.onended = () => {
-            if (ended) return;
-            cleanup();
-            run.end();
-          };
-          audio.onerror = () => {
-            if (!ended) fallBack();
-          };
-          audio.play().then(
-            () => {
-              if (!ended) hooks.onStart?.('aura');
-            },
-            () => {
-              if (!ended) fallBack();
-            }
-          );
-        } catch {
-          if (!ended) fallBack();
-        }
-      },
-      () => {
-        if (!ended) fallBack();
-      }
-    );
-  };
-
-  if (mode === 'aura' && hooks.fetchAudio && clean.length <= AURA_MAX_CHARS) {
-    startAura(hooks.fetchAudio);
-  } else {
-    startBrowser();
-  }
+/**
+ * Play server audio we already have. Call it straight from the tap: play() is reached before
+ * this returns, so iOS still counts the tap as the gesture, and what the tap unlocks (the shared
+ * element) stays unlocked for the replies that follow.
+ */
+export function speakBlob(blob: Blob, hooks: SpeakHooks = {}): void {
+  stopSpeaking();
+  playBlob(newRun(hooks), blob, hooks);
 }

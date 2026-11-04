@@ -603,3 +603,53 @@ describe('LeadForm', () => {
     );
   });
 });
+
+describe('LeadForm with the email required (opened for the read-aloud bonus)', () => {
+  it('labels it "Email", not "(optional)", and marks it required', () => {
+    setup({ emailRequired: true });
+    const email = screen.getByLabelText('Email');
+    expect(email).toHaveAttribute('aria-required', 'true');
+    expect(screen.queryByLabelText('Email (optional)')).not.toBeInTheDocument();
+  });
+
+  it('is unchanged otherwise: optional, and not marked required', () => {
+    setup();
+    expect(screen.getByLabelText('Email (optional)')).not.toHaveAttribute('aria-required');
+  });
+
+  it('will not send without an email, says why next to the field, and moves focus to it', async () => {
+    const { onSubmit, user } = setup({ emailRequired: true });
+    await fillValid(user);
+    await submit(user);
+    expect(onSubmit).not.toHaveBeenCalled();
+    const email = screen.getByLabelText('Email');
+    expect(screen.getByText('Enter your email so we can add your replies')).toBeInTheDocument();
+    expect(email).toHaveAttribute('aria-invalid', 'true');
+    expect(email).toHaveFocus();
+  });
+
+  it('sends once the email is there, and the lead carries it', async () => {
+    const { onSubmit, user } = setup({ emailRequired: true });
+    await fillValid(user);
+    await user.type(screen.getByLabelText('Email'), 'jane@doe.example');
+    await submit(user);
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({ email: 'jane@doe.example' });
+  });
+
+  it('clears the message when the visitor starts typing the email', async () => {
+    const { user } = setup({ emailRequired: true });
+    await fillValid(user);
+    await submit(user);
+    await user.type(screen.getByLabelText('Email'), 'j');
+    expect(screen.queryByText('Enter your email so we can add your replies')).not.toBeInTheDocument();
+  });
+
+  it('starts with focus on the email when name and phone are already filled in', () => {
+    setup({
+      emailRequired: true,
+      prefill: { ...EMPTY_LEAD_DRAFT, name: 'Jane Doe', phone: '7705551234' },
+    });
+    expect(screen.getByLabelText('Email')).toHaveFocus();
+  });
+});

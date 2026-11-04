@@ -11,7 +11,14 @@ import { TOO_LONG } from './copy';
 import MicButton from './MicButton';
 import type { VoiceState } from './useConcierge';
 import { LIMITS } from './validation';
-import { VOICE_DISCLOSURE, VOICE_ENDING_SOON, VOICE_LISTENING, VOICE_TRANSCRIBING } from './voice/copy';
+import {
+  VOICE_DISCLOSURE,
+  VOICE_ENDING_SOON,
+  VOICE_LISTENING,
+  VOICE_SHARE_DETAILS,
+  VOICE_SPOKEN_LIMIT_BONUS,
+  VOICE_TRANSCRIBING,
+} from './voice/copy';
 
 /** Push-to-talk, as the composer needs it. Leave out (or state 'off') for a text-only composer. */
 export type ComposerVoice = {
@@ -39,6 +46,11 @@ type Props = {
   notice?: string | null;
   textareaRef?: RefObject<HTMLTextAreaElement | null>;
   voice?: ComposerVoice;
+  /**
+   * Read-aloud is paused and sharing details would add more: the notice and a chip that opens
+   * the lead form. It stays up (unlike a notice) until the details are shared.
+   */
+  readAloudBonus?: { onShare: () => void };
 };
 
 const MAX_ROWS_PX = 4 * 22 + 20; // four lines of 22px plus vertical padding
@@ -53,6 +65,7 @@ export default function Composer({
   notice,
   textareaRef,
   voice,
+  readAloudBonus,
 }: Props) {
   const [value, setValue] = useState('');
   const ownRef = useRef<HTMLTextAreaElement>(null);
@@ -171,6 +184,14 @@ export default function Composer({
           </span>
         )}
       </div>
+      {readAloudBonus && (
+        <div className="thg-cc-readaloud" role="status">
+          <p className="thg-cc-readaloud-text">{VOICE_SPOKEN_LIMIT_BONUS}</p>
+          <button type="button" className="thg-cc-chip" onClick={readAloudBonus.onShare}>
+            {VOICE_SHARE_DETAILS}
+          </button>
+        </div>
+      )}
       {micOn && voice.disclosed && (
         <p id={noteId} className="thg-cc-voice-note">
           {VOICE_DISCLOSURE}

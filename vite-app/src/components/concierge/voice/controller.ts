@@ -16,6 +16,8 @@ import {
   VOICE_HOLD_HINT,
   VOICE_NO_MIC,
   VOICE_OFF,
+  VOICE_SOUND_OFF_HINT,
+  VOICE_SPOKEN_LIMIT_DONE,
 } from './copy';
 import { loadVoicePrefs, saveVoicePrefs, type VoicePrefs } from './prefs';
 import {
@@ -29,9 +31,9 @@ import {
 import {
   isSpeechSupported,
   speak,
+  speakBlob,
   stopSpeaking as stopReading,
   unlockSpeech,
-  type SpeechMode,
 } from './speech';
 
 /**
@@ -51,7 +53,14 @@ export type VoiceHost = {
 /** The voice part of the chat state, as it starts out. */
 export function initialVoiceState(): Pick<
   ConciergeState,
-  'voice' | 'voiceEnding' | 'voiceNotice' | 'speakEnabled' | 'speakAvailable' | 'voiceDisclosed'
+  | 'voice'
+  | 'voiceEnding'
+  | 'voiceNotice'
+  | 'speakEnabled'
+  | 'speakAvailable'
+  | 'voiceDisclosed'
+  | 'blockedReplyId'
+  | 'readAloudBonus'
 > {
   return {
     voice: 'off',
@@ -60,14 +69,18 @@ export function initialVoiceState(): Pick<
     speakEnabled: loadVoicePrefs().speak ?? false,
     speakAvailable: false,
     voiceDisclosed: false,
+    blockedReplyId: null,
+    readAloudBonus: false,
   };
 }
 
 export function createVoiceController({ get, patch, send }: VoiceHost) {
   let prefs: VoicePrefs = loadVoicePrefs();
 
-  /** Which voice reads replies; /health decides. */
-  let ttsMode: SpeechMode = 'browser';
+  /** What reads replies aloud; /health decides. 'none' is text only. */
+  let ttsMode: 'browser' | 'server' | 'none' = 'browser';
+  /** The reply audio the browser would not start, kept so that a tap can play it (no second request). */
+  let held: { blob: Blob; messageId: string } | null = null;
   let checked = false;
   /** Voice gave up for this session (budget spent, no microphone); a late /health cannot revive it. */
   let blocked = prefs.blocked;
@@ -89,6 +102,11 @@ export function createVoiceController({ get, patch, send }: VoiceHost) {
     };
   };
 
+  /** Replies can be read aloud: something can do it, and the day's allowance is not used up. */
+  const canSpeak = (): boolean =>
+    !prefs.spokenLimit &&
+    (ttsMode === 'server' || (ttsMode === 'browser' && isSpeechSupported()));
+
   /** Ask the Worker once whether voice is on. Browsers that cannot record never ask. */
   const checkVoice = async (): Promise<void> => {
     if (checked || blocked || !isRecordingSupported()) return;
@@ -102,7 +120,12 @@ export function createVoiceController({ get, patch, send }: VoiceHost) {
     if (!caps || blocked) return;
     ttsMode = caps.tts;
     if (get().voice === 'off') {
-      patch({ voice: 'idle', speakAvailable: ttsMode === 'aura' || isSpeechSupported() });
+      patch({
+        voice: 'idle',
+        speakAvailable: canSpeak(),
+        // The cap and the bonus on offer outlive a reload in the same tab.
+        readAloudBonus: ttsMode === 'server' && prefs.spokenLimit && prefs.bonusOffer && !prefs.bonusUsed,
+      });
     }
   };
 
@@ -254,7 +277,7 @@ export function createVoiceController({ get, patch, send }: VoiceHost) {
     if (get().status !== 'idle') return;
 
     stopSpeaking();
-    unlockSpeech(ttsMode);
+    unlock();
     patch({ voice: 'recording', voiceEnding: false, voiceNotice: null });
 
     pressId += 1;
@@ -320,36 +343,104 @@ export function createVoiceController({ get, patch, send }: VoiceHost) {
   };
 
   /** Inside a tap on the mic or the speaker toggle: let iOS know speech is wanted. */
-  const unlock = () => unlockSpeech(ttsMode);
+  const unlock = () => {
+    if (ttsMode !== 'none') unlockSpeech(ttsMode);
+  };
+
+  /** Forget the reply that is waiting for a tap (a newer reply, or sound turned off, replaces it). */
+  const clearBlocked = () => {
+    held = null;
+    if (get().blockedReplyId !== null) patch({ blockedReplyId: null });
+  };
 
   const setSpeakEnabled = (on: boolean) => {
-    if (on) unlockSpeech(ttsMode);
-    else stopSpeaking();
+    if (on) unlock();
+    else {
+      stopSpeaking();
+      clearBlocked();
+    }
     prefs = { ...prefs, speak: on };
     saveVoicePrefs(prefs);
     patch({ speakEnabled: on });
   };
 
-  const speakReply = (text: string) => {
+  /** The day's allowance of spoken replies is used up: text only from here, until a bonus is granted. */
+  const limitReached = (bonusAvailable: boolean) => {
+    if (prefs.spokenLimit) return; // one report is enough
+    const offer = bonusAvailable && !prefs.bonusUsed && !get().leadDone;
+    prefs = { ...prefs, spokenLimit: true, bonusOffer: offer };
+    saveVoicePrefs(prefs);
+    clearBlocked();
+    track('concierge_voice_error', { reason: 'budget' });
+    patch({
+      speakAvailable: false,
+      readAloudBonus: offer,
+      // With a bonus on offer the notice (and its chip) stay up; otherwise one line, once.
+      voiceNotice: offer ? null : VOICE_SPOKEN_LIMIT_DONE,
+    });
+  };
+
+  /** A lead with an email was sent: if that is the bonus on offer, spoken replies resume. */
+  const noteLeadSubmitted = () => {
+    if (!prefs.spokenLimit || !prefs.bonusOffer) return;
+    prefs = { ...prefs, spokenLimit: false, bonusOffer: false, bonusUsed: true };
+    saveVoicePrefs(prefs);
+    patch({ readAloudBonus: false, speakAvailable: canSpeak() });
+  };
+
+  /** The browser would not start this reply's audio: offer a tap, once explain why. */
+  const audioBlocked = (blob: Blob, messageId: string | undefined) => {
+    if (!messageId) return;
+    held = { blob, messageId };
+    const notice: Partial<ConciergeState> = { blockedReplyId: messageId };
+    if (!prefs.soundHint) {
+      prefs = { ...prefs, soundHint: true };
+      saveVoicePrefs(prefs);
+      notice.voiceNotice = VOICE_SOUND_OFF_HINT;
+    }
+    patch(notice);
+  };
+
+  const onSpeechStart = (mode: 'browser' | 'server') => {
+    held = null;
+    patch({
+      blockedReplyId: null,
+      ...(get().voice === 'idle' ? { voice: 'speaking' as const } : {}),
+      // Once audio is playing, "Sound is off until you tap." is no longer true.
+      ...(get().voiceNotice === VOICE_SOUND_OFF_HINT ? { voiceNotice: null } : {}),
+    });
+    track('concierge_voice_reply_spoken', { mode });
+  };
+
+  const onSpeechEnd = () => {
+    if (get().voice === 'speaking') patch({ voice: 'idle' });
+  };
+
+  const speakReply = (text: string, messageId?: string) => {
+    clearBlocked(); // a newer reply replaces whatever was waiting for a tap
     const { speakEnabled, voice } = get();
-    if (!active || !speakEnabled) return;
+    if (!active || !speakEnabled || !canSpeak()) return;
     if (voice === 'off' || voice === 'recording' || voice === 'transcribing') return;
-    if (ttsMode !== 'aura' && !isSpeechSupported()) return;
+    if (ttsMode === 'none') return;
     speak(text, ttsMode, {
-      fetchAudio:
-        ttsMode === 'aura'
-          ? async (t) => {
-              const res = await fetchTts(t, get().sessionId);
-              return res.kind === 'ok' ? res.blob : null;
-            }
-          : undefined,
-      onStart: (mode) => {
-        if (get().voice === 'idle') patch({ voice: 'speaking' });
-        track('concierge_voice_reply_spoken', { mode });
-      },
-      onEnd: () => {
-        if (get().voice === 'speaking') patch({ voice: 'idle' });
-      },
+      fetchAudio: ttsMode === 'server' ? (t) => fetchTts(t, get().sessionId) : undefined,
+      onStart: onSpeechStart,
+      onEnd: onSpeechEnd,
+      onLimit: limitReached,
+      onBlocked: (blob) => audioBlocked(blob, messageId),
+    });
+  };
+
+  /** The "Tap to hear replies" pill was tapped: play the reply that was waiting, inside this tap. */
+  const playBlocked = () => {
+    const pending = held;
+    const { voice } = get();
+    if (!pending || voice === 'recording' || voice === 'transcribing') return;
+    speakBlob(pending.blob, {
+      onStart: onSpeechStart,
+      onEnd: onSpeechEnd,
+      // Even the tap was refused: the pill stays, with the same audio.
+      onBlocked: (blob) => audioBlocked(blob, pending.messageId),
     });
   };
 
@@ -364,6 +455,8 @@ export function createVoiceController({ get, patch, send }: VoiceHost) {
     stopSpeaking,
     setSpeakEnabled,
     speakReply,
+    playBlocked,
+    noteLeadSubmitted,
     unlock,
     subscribeLevel,
   };

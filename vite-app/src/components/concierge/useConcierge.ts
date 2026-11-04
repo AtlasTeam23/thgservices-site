@@ -42,6 +42,7 @@ import type {
 } from './types';
 import { buildTranscript, FORM_FIELDS, LIMITS } from './validation';
 import { makeMessage, TURNSTILE_AFTER_TURN } from './thread';
+import { VOICE_BONUS_FORM_HEADING } from './voice/copy';
 import { createVoiceController, initialVoiceState, type VoiceState } from './voice/controller';
 
 export type ConciergeStatus = 'idle' | 'sending' | 'leadOnly' | 'ended';
@@ -67,6 +68,8 @@ export type ConciergeState = {
   gatheredLead: LeadDraft;
   /** One line shown above the form when the helper opened it itself (null otherwise). */
   leadHeading: string | null;
+  /** The form was opened for the read-aloud bonus: the email is required this time. */
+  leadEmailRequired: boolean;
   /** Inline message for the composer (for example TOO_LONG). */
   composerError: string | null;
   /**
@@ -82,8 +85,12 @@ export type ConciergeState = {
   voiceEnding: boolean;
   /** Read each new reply aloud. */
   speakEnabled: boolean;
-  /** Something can read replies aloud (the browser's own voice, or the premium one). */
+  /** Something can read replies aloud, and today's allowance is not used up (drives the speaker toggle). */
   speakAvailable: boolean;
+  /** The reply whose audio the browser would not start: it shows a "Tap to hear replies" pill. */
+  blockedReplyId: string | null;
+  /** Spoken replies are paused and sharing details would add more: show that notice with its chip. */
+  readAloudBonus: boolean;
   /** Show the microphone line under the composer (from the first voice use until the panel closes). */
   voiceDisclosed: boolean;
 };
@@ -171,6 +178,7 @@ function createController() {
     // even after dismissing it a "Request a callback" comes up pre-filled.
     gatheredLead: { ...EMPTY_LEAD_DRAFT, ...stored.leadDraft },
     leadHeading: resumeReadyForm ? LEAD_FORM_HEADING : null,
+    leadEmailRequired: false,
     composerError: null,
     sessionId: stored.sessionId,
     turn: stored.messages.filter((m) => m.role === 'user' && !m.greeting).length,
@@ -217,7 +225,7 @@ function createController() {
       .slice(fromIndex)
       .filter((m) => m.role === 'assistant' && !m.greeting)
       .at(-1);
-    if (reply) voice.speakReply(reply.content);
+    if (reply) voice.speakReply(reply.content, reply.id);
   };
 
   const openCallbackForm = (label: string) => {
@@ -235,6 +243,26 @@ function createController() {
       ],
       showLeadForm: true,
       leadHeading: null,
+      leadEmailRequired: false,
+      leadError: false,
+      chips: [],
+    });
+    track('concierge_lead_form_shown');
+  };
+
+  /**
+   * "Share my details" (read-aloud paused, a bonus on offer): the same lead form, pre-filled from
+   * the conversation, with the email required this time. No chat messages: it is not a question.
+   */
+  const shareDetails = () => {
+    if (state.leadDone || state.showLeadForm || state.status === 'ended') return;
+    clearDismissal();
+    voice.cancelVoice();
+    voice.stopSpeaking();
+    set({
+      showLeadForm: true,
+      leadHeading: VOICE_BONUS_FORM_HEADING,
+      leadEmailRequired: true,
       leadError: false,
       chips: [],
     });
@@ -442,11 +470,14 @@ function createController() {
         delivery: res.delivery,
       });
       track('concierge_lead');
+      // A lead with an email is what earns the read-aloud bonus, if one is on offer.
+      if (input.email) voice.noteLeadSubmitted();
       const first = input.name.split(/\s+/)[0];
       openFormAfterId = undefined; // sent: nothing left to resume after a reload
       push(makeMessage('assistant', CONFIRM(first, WINDOWS[input.callbackWindow])), {
         showLeadForm: false,
         leadHeading: null,
+        leadEmailRequired: false,
         leadDone: true,
         leadSending: false,
         leadError: false,
@@ -511,6 +542,7 @@ function createController() {
     set({
       showLeadForm: false,
       leadHeading: null,
+      leadEmailRequired: false,
       leadError: false,
       leadErrorMessage: null,
       composerError: null,
@@ -542,6 +574,8 @@ function createController() {
       setActive: voice.setActive,
       stopSpeaking: voice.stopSpeaking,
       setSpeakEnabled: voice.setSpeakEnabled,
+      playBlocked: voice.playBlocked,
+      shareDetails,
       unlockSpeech: voice.unlock,
       subscribeLevel: voice.subscribeLevel,
     },

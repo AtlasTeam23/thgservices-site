@@ -70,7 +70,15 @@ export type LeadValidation =
   | { ok: true; value: LeadInput }
   | { ok: false; fields: FieldErrors };
 
-export function validateLead(values: LeadFormValues): LeadValidation {
+/**
+ * `emailRequiredMessage`: when given, the email may not be empty and this is what the field
+ * says if it is (the form opened for the read-aloud bonus). It is passed in, not imported, so
+ * this always-loaded module does not carry voice copy.
+ */
+export function validateLead(
+  values: LeadFormValues,
+  options: { emailRequiredMessage?: string } = {}
+): LeadValidation {
   const fields: FieldErrors = {};
 
   const name = values.name.trim();
@@ -82,7 +90,8 @@ export function validateLead(values: LeadFormValues): LeadValidation {
   if (!phone) fields.phone = 'Enter a 10-digit US phone number';
 
   const email = values.email.trim();
-  if (email && !EMAIL_RE.test(email)) fields.email = 'Enter a valid email address';
+  if (!email && options.emailRequiredMessage) fields.email = options.emailRequiredMessage;
+  else if (email && !EMAIL_RE.test(email)) fields.email = 'Enter a valid email address';
 
   const business = values.business.trim();
   if (business.length < 1) fields.business = 'Enter your business name';

@@ -227,6 +227,97 @@
   background: var(--cc-surface);
 }
 
+/* On touch screens the toggle says "Sound on" / "Sound off" in words, not just with an icon. */
+.thg-cc-speak--labelled {
+  width: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px 0 10px;
+  border-radius: 22px;
+  font-family: 'Outfit', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+/* The header is full when the equalizer shows next to the labelled toggle: on short screens
+   (keyboard up, where the call link joins the header) the toggle goes back to its icon, and on
+   very narrow phones the title gives way (an ellipsis) rather than push the close button out. */
+.thg-cc-panel[data-short] .thg-cc-speak--labelled {
+  width: 44px;
+  padding: 0;
+  justify-content: center;
+}
+
+.thg-cc-panel[data-short] .thg-cc-speak-label {
+  display: none;
+}
+
+.thg-cc-panel .thg-cc-heading {
+  flex: 0 1 auto;
+}
+
+.thg-cc-panel .thg-cc-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.thg-cc-panel .thg-cc-badge {
+  flex: none;
+}
+
+/* "Tap to hear replies": under a reply whose audio the browser would not start. Filled brand
+   blue (white on #2563eb is 5.17:1), 44px tall, so it is hard to miss. */
+.thg-cc-sound-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  margin-top: 8px;
+  padding: 0 18px 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: #2563eb;
+  color: #fff;
+  font-family: 'Outfit', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35);
+  transition: background-color 0.15s ease;
+}
+
+.thg-cc-sound-pill:hover {
+  background: #1e40af;
+}
+
+.thg-cc-sound-pill:focus-visible {
+  outline: 2px solid var(--cc-focus);
+  outline-offset: 2px;
+}
+
+/* Read-aloud paused, with a bonus on offer: the notice and its chip, under the composer. */
+.thg-cc-readaloud {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  padding: 0 4px 8px;
+}
+
+.thg-cc-readaloud-text {
+  flex: 1 1 100%;
+  margin: 0;
+  color: var(--cc-fg-2);
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
 /* The mic sits between the text box and Send: 44px, outlined until it is recording. */
 .thg-cc-mic {
   position: relative;
@@ -712,6 +803,7 @@
   .thg-cc-panel,
   .thg-cc-dots i,
   .thg-cc-mic,
+  .thg-cc-sound-pill,
   .thg-cc-ring circle {
     animation: none !important;
     transition: none !important;

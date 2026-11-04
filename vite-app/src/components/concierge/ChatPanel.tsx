@@ -166,7 +166,11 @@ export default function ChatPanel({ open, request, onClose, returnFocusRef }: Ch
           />
         )}
         {voice !== 'off' && chat.speakAvailable && (
-          <SpeakToggle pressed={chat.speakEnabled} onToggle={() => chat.setSpeakEnabled(!chat.speakEnabled)} />
+          <SpeakToggle
+            pressed={chat.speakEnabled}
+            onToggle={() => chat.setSpeakEnabled(!chat.speakEnabled)}
+            showLabel={touch}
+          />
         )}
         {/* Shown only on short screens, where the footer's call link is dropped to save a line. */}
         <a
@@ -197,6 +201,8 @@ export default function ChatPanel({ open, request, onClose, returnFocusRef }: Ch
         messages={chat.messages}
         typing={status === 'sending'}
         formVisible={showLeadForm}
+        blockedReplyId={chat.blockedReplyId}
+        onPlayBlocked={chat.playBlocked}
       >
         {showLeadForm && (
           <LeadForm
@@ -208,6 +214,7 @@ export default function ChatPanel({ open, request, onClose, returnFocusRef }: Ch
             heading={chat.leadHeading}
             // Lead-only mode has nothing to go back to, so no "keep chatting" there.
             onDismiss={status === 'idle' ? chat.dismissLeadForm : undefined}
+            emailRequired={chat.leadEmailRequired}
           />
         )}
       </MessageList>
@@ -226,6 +233,9 @@ export default function ChatPanel({ open, request, onClose, returnFocusRef }: Ch
           disabled={status === 'ended'}
           error={chat.composerError}
           notice={chat.voiceNotice}
+          readAloudBonus={
+            voice !== 'off' && chat.readAloudBonus ? { onShare: chat.shareDetails } : undefined
+          }
           voice={{
             state: voice,
             ending: chat.voiceEnding,

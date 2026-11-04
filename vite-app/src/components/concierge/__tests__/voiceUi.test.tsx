@@ -23,6 +23,7 @@ vi.mock('../voice/recorder', async (importOriginal) => ({
 vi.mock('../voice/speech', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../voice/speech')>()),
   speak: vi.fn(),
+  speakBlob: vi.fn(),
   stopSpeaking: vi.fn(),
   unlockSpeech: vi.fn(),
   isSpeechSupported: vi.fn(),
@@ -32,20 +33,23 @@ import ChatPanel, { type OpenRequest } from '../ChatPanel';
 import Composer from '../Composer';
 import Equalizer from '../Equalizer';
 import MicButton from '../MicButton';
-import { fetchVoiceCaps, postChat, postStt } from '../api';
+import { fetchVoiceCaps, postChat, postLead, postStt } from '../api';
 import { getToken } from '../turnstile';
 import { track } from '../../../lib/track';
 import { isRecordingSupported, startRecording, VoiceError } from '../voice/recorder';
-import { isSpeechSupported, speak, stopSpeaking, unlockSpeech } from '../voice/speech';
+import { isSpeechSupported, speak, speakBlob, stopSpeaking, unlockSpeech } from '../voice/speech';
 import { EMPTY_LEAD_DRAFT } from '../leadDraft';
 import { VOICE_PREFS_KEY } from '../voice/prefs';
 import * as vc from '../voice/copy';
+import * as copy from '../copy';
 
 const supportedMock = vi.mocked(isRecordingSupported);
 const startRecordingMock = vi.mocked(startRecording);
 const speakMock = vi.mocked(speak);
 const stopSpeakingMock = vi.mocked(stopSpeaking);
 const unlockMock = vi.mocked(unlockSpeech);
+const speakBlobMock = vi.mocked(speakBlob);
+const postLeadMock = vi.mocked(postLead);
 const postSttMock = vi.mocked(postStt);
 const postChatMock = vi.mocked(postChat);
 const trackMock = vi.mocked(track);
@@ -886,10 +890,215 @@ describe('ChatPanel voice: the speaker toggle', () => {
     expect(speakerToggle()).not.toBeInTheDocument();
   });
 
-  it('is shown with the premium voice even where the browser cannot speak', async () => {
+  it('is shown with the server voice even where the browser cannot speak', async () => {
     vi.mocked(isSpeechSupported).mockReturnValue(false);
-    vi.mocked(fetchVoiceCaps).mockResolvedValue({ tts: 'aura' });
+    vi.mocked(fetchVoiceCaps).mockResolvedValue({ tts: 'server' });
     await renderPanel();
     expect(speakerToggle()).toBeInTheDocument();
+  });
+});
+
+// ---- The speaker toggle's label on touch devices -----------------------------
+
+describe('ChatPanel voice: the speaker toggle', () => {
+  it('shows "Sound off" / "Sound on" as text on a touch screen, and the name says the same', async () => {
+    const user = userEvent.setup();
+    stubMatchMedia(['pointer: coarse']);
+    await renderPanel();
+    let toggle = screen.getByRole('button', { name: 'Sound off, read replies aloud' });
+    expect(toggle).toHaveTextContent('Sound off');
+    expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    expect(toggle.querySelector('.thg-cc-speak-label')).toBeVisible();
+
+    await user.click(toggle);
+    toggle = screen.getByRole('button', { name: 'Sound on, read replies aloud' });
+    expect(toggle).toHaveTextContent('Sound on');
+    expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('stays icon-only with a pointer, as before', async () => {
+    await renderPanel();
+    const toggle = speakerToggle()!;
+    expect(toggle).toHaveAccessibleName(vc.VOICE_SPEAK_TOGGLE);
+    expect(toggle.querySelector('.thg-cc-speak-label')).toBeNull();
+    expect(screen.queryByText('Sound off')).not.toBeInTheDocument();
+  });
+
+  it('the labels are the copy the plan asked for', () => {
+    expect(vc.VOICE_SOUND_ON).toBe('Sound on');
+    expect(vc.VOICE_SOUND_OFF).toBe('Sound off');
+  });
+});
+
+// ---- Audio the browser blocks: the pill --------------------------------------
+
+describe('ChatPanel voice: "Tap to hear replies"', () => {
+  const blob = () => new Blob([new Uint8Array(3)], { type: 'audio/mpeg' });
+
+  const serverPanel = async () => {
+    vi.mocked(fetchVoiceCaps).mockResolvedValue({ tts: 'server' });
+    window.sessionStorage.setItem(VOICE_PREFS_KEY, JSON.stringify({ speak: true, disclosed: true }));
+    return renderPanel();
+  };
+
+  const blockedReply = async () => {
+    await typeAndSend('hello');
+    await settle();
+    const hooks = speakMock.mock.calls.at(-1)![2]!;
+    act(() => hooks.onBlocked?.(blob()));
+    await settle();
+    return hooks;
+  };
+
+  it('appears under the reply that could not be played, as a blue 44 px button with the label and a speaker icon', async () => {
+    await serverPanel();
+    await blockedReply();
+    const pill = screen.getByRole('button', { name: 'Tap to hear replies' });
+    expect(pill).toHaveClass('thg-cc-sound-pill');
+    expect(pill.closest('li')).toHaveTextContent('We help local businesses save time.');
+    expect(pill.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
+    expect(pill).toHaveAttribute('type', 'button');
+    // Only the latest reply has one.
+    expect(screen.getAllByRole('button', { name: 'Tap to hear replies' })).toHaveLength(1);
+  });
+
+  it('comes with the one-time "Sound is off until you tap." line under the composer', async () => {
+    await serverPanel();
+    await blockedReply();
+    expect(screen.getByRole('alert')).toHaveTextContent('Sound is off until you tap.');
+  });
+
+  it('a tap plays that reply (synchronously, inside the tap) and the pill goes once it is playing', async () => {
+    const user = userEvent.setup();
+    await serverPanel();
+    await blockedReply();
+    await user.click(screen.getByRole('button', { name: 'Tap to hear replies' }));
+    expect(speakBlobMock).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: 'Tap to hear replies' })).toBeInTheDocument(); // not yet playing
+    act(() => speakBlobMock.mock.calls[0][1]!.onStart?.('server'));
+    await settle();
+    expect(screen.queryByRole('button', { name: 'Tap to hear replies' })).not.toBeInTheDocument();
+    expect(screen.getByRole('alert')).toBeEmptyDOMElement(); // "Sound is off until you tap." is over
+    // Focus did not fall to the page when the button it was on went away.
+    expect(document.activeElement).not.toBe(document.body);
+  });
+
+  it('is keyboard-operable like any button', async () => {
+    const user = userEvent.setup();
+    await serverPanel();
+    await blockedReply();
+    screen.getByRole('button', { name: 'Tap to hear replies' }).focus();
+    await user.keyboard('{Enter}');
+    expect(speakBlobMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('typing instead of tapping leaves the pill only on the newest reply', async () => {
+    await serverPanel();
+    const first = await blockedReply();
+    expect(first).toBeDefined();
+    postChatMock.mockResolvedValueOnce(okChat('A newer reply.'));
+    await typeAndSend('typed instead');
+    await settle();
+    expect(screen.queryByRole('button', { name: 'Tap to hear replies' })).not.toBeInTheDocument();
+    act(() => speakMock.mock.calls.at(-1)![2]!.onBlocked?.(blob()));
+    await settle();
+    const pill = screen.getByRole('button', { name: 'Tap to hear replies' });
+    expect(pill.closest('li')).toHaveTextContent('A newer reply.');
+    expect(screen.getAllByRole('button', { name: 'Tap to hear replies' })).toHaveLength(1);
+  });
+});
+
+// ---- The cap on spoken replies -----------------------------------------------
+
+describe('ChatPanel voice: the cap on spoken replies', () => {
+  const serverPanel = async () => {
+    vi.mocked(fetchVoiceCaps).mockResolvedValue({ tts: 'server' });
+    window.sessionStorage.setItem(VOICE_PREFS_KEY, JSON.stringify({ speak: true, disclosed: true }));
+    return renderPanel();
+  };
+
+  const hitCap = async (bonusAvailable: boolean) => {
+    await typeAndSend('hello');
+    await settle();
+    act(() => speakMock.mock.calls.at(-1)![2]!.onLimit?.(bonusAvailable));
+    await settle();
+  };
+
+  it('with no bonus: one "done for today" notice, no chip, no speaker toggle, and the mic stays', async () => {
+    await serverPanel();
+    expect(speakerToggle()).toBeInTheDocument();
+    await hitCap(false);
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Read-aloud is done for today. You can keep chatting here.'
+    );
+    expect(screen.queryByRole('button', { name: 'Share my details' })).not.toBeInTheDocument();
+    expect(speakerToggle()).not.toBeInTheDocument();
+    expect(mic()).toBeInTheDocument();
+    expect(trackMock).toHaveBeenCalledWith('concierge_voice_error', { reason: 'budget' });
+  });
+
+  it('with a bonus: the paused notice and a "Share my details" chip stay under the composer while the visitor types', async () => {
+    const user = userEvent.setup();
+    await serverPanel();
+    await hitCap(true);
+    expect(
+      screen.getByText("Read-aloud is paused. Share your name, email and number and we'll add 5 more today.")
+    ).toBeInTheDocument();
+    const chip = screen.getByRole('button', { name: 'Share my details' });
+    expect(chip).toHaveClass('thg-cc-chip');
+    expect(speakerToggle()).not.toBeInTheDocument();
+
+    await user.type(screen.getByRole('textbox', { name: 'Message' }), 'a');
+    expect(screen.getByRole('button', { name: 'Share my details' })).toBeInTheDocument();
+  });
+
+  it('the chip opens the lead form with the email required; sending it brings spoken replies back', async () => {
+    const user = userEvent.setup();
+    postLeadMock.mockResolvedValue({ kind: 'ok', delivery: 'email' });
+    await serverPanel();
+    await hitCap(true);
+
+    await user.click(screen.getByRole('button', { name: 'Share my details' }));
+    const form = screen.getByRole('form', { name: 'Callback request' });
+    expect(within(form).getByText("Add your email and we'll add 5 more spoken replies today.")).toBeInTheDocument();
+    expect(within(form).getByLabelText('Email')).toHaveAttribute('aria-required', 'true');
+    expect(within(form).queryByLabelText('Email (optional)')).not.toBeInTheDocument();
+    // The chat's own box and the notice are out of the way while the form is up.
+    expect(screen.queryByRole('textbox', { name: 'Message' })).not.toBeInTheDocument();
+
+    // Without an email it will not go.
+    await user.type(within(form).getByLabelText('Name'), 'Jane Doe');
+    await user.type(within(form).getByLabelText('Phone'), '(770) 555-1234');
+    await user.type(within(form).getByLabelText('Business name'), 'Doe Plumbing');
+    await user.selectOptions(within(form).getByLabelText('Best callback window'), 'afternoon_1_3');
+    await user.click(within(form).getByLabelText(copy.CONSENT));
+    await user.click(within(form).getByRole('button', { name: /request my callback/i }));
+    expect(postLeadMock).not.toHaveBeenCalled();
+    expect(within(form).getByText('Enter your email so we can add your replies')).toBeInTheDocument();
+
+    await user.type(within(form).getByLabelText('Email'), 'jane@doe.example');
+    await user.click(within(form).getByRole('button', { name: /request my callback/i }));
+    await settle();
+    expect(postLeadMock).toHaveBeenCalledTimes(1);
+
+    // The notice and chip are gone, the toggle is back, and the next reply is requested and spoken.
+    expect(screen.queryByRole('button', { name: 'Share my details' })).not.toBeInTheDocument();
+    expect(speakerToggle()).toBeInTheDocument();
+    speakMock.mockClear();
+    postChatMock.mockResolvedValueOnce(okChat('Spoken again.'));
+    await typeAndSend('one more');
+    await settle();
+    expect(speakMock).toHaveBeenCalledTimes(1);
+    expect(speakMock.mock.calls[0][0]).toBe('Spoken again.');
+  });
+
+  it('"Not now, keep chatting" brings the composer back and the notice with it', async () => {
+    const user = userEvent.setup();
+    await serverPanel();
+    await hitCap(true);
+    await user.click(screen.getByRole('button', { name: 'Share my details' }));
+    await user.click(screen.getByRole('button', { name: copy.LEAD_FORM_DISMISS }));
+    expect(screen.getByRole('textbox', { name: 'Message' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Share my details' })).toBeInTheDocument();
   });
 });

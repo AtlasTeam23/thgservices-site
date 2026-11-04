@@ -29,5 +29,26 @@ export const VOICE_ERROR = "Voice didn't work that time. Try again or type your 
 /** A press-and-hold that was released at once. */
 export const VOICE_HOLD_HINT = 'Hold the button while you talk.';
 
+/** The header speaker toggle's visible label on touch screens (icon-only elsewhere). */
+export const VOICE_SOUND_ON = 'Sound on';
+export const VOICE_SOUND_OFF = 'Sound off';
+
+/** Under a reply whose audio the browser would not start: a tap plays it. */
+export const VOICE_TAP_TO_HEAR = 'Tap to hear replies';
+/** Shown once, under the composer, the first time that happens. */
+export const VOICE_SOUND_OFF_HINT = 'Sound is off until you tap.';
+
+/** The visitor's daily allowance of spoken replies is used up, and nothing more is on offer. */
+export const VOICE_SPOKEN_LIMIT_DONE = 'Read-aloud is done for today. You can keep chatting here.';
+/** ...and sharing contact details would add more. */
+export const VOICE_SPOKEN_LIMIT_BONUS =
+  "Read-aloud is paused. Share your name, email and number and we'll add 5 more today.";
+/** The chip next to that notice: opens the lead form. */
+export const VOICE_SHARE_DETAILS = 'Share my details';
+/** The line above the lead form when it was opened from that chip. */
+export const VOICE_BONUS_FORM_HEADING = "Add your email and we'll add 5 more spoken replies today.";
+/** The email field's error when the form was opened for the bonus and it is empty. */
+export const VOICE_EMAIL_FOR_BONUS = 'Enter your email so we can add your replies';
+
 /** Text equivalent of the countdown ring in the last 5 seconds of a recording. */
 export const VOICE_ENDING_SOON = 'Ending soon';

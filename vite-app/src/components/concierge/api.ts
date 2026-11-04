@@ -54,11 +54,22 @@ export type SttResult =
   | { kind: 'voice_unavailable'; reason: 'budget' | 'server' }
   | { kind: 'error'; reason: 'network' | 'timeout' | 'server' };
 
-/** Anything but audio is "unavailable": the browser voice reads the reply instead. */
-export type TtsResult = { kind: 'ok'; blob: Blob } | { kind: 'unavailable' };
+/**
+ * `limit`: the visitor's daily allowance of spoken replies is used up (429 tts_limit);
+ * `bonusAvailable` says whether sharing contact details would add more. Anything else that
+ * is not audio is `unavailable`, and that reply simply stays text.
+ */
+export type TtsResult =
+  | { kind: 'ok'; blob: Blob }
+  | { kind: 'limit'; bonusAvailable: boolean }
+  | { kind: 'unavailable' };
 
-/** What the Worker says it can do (GET /health), given that it offers speech to text at all. */
-export type VoiceCaps = { tts: 'browser' | 'aura' };
+/**
+ * What reads replies aloud (GET /health), given that the Worker offers speech to text at all:
+ * the browser's own voice, a voice fetched from the Worker (whichever provider it uses; the
+ * widget does not care which), or nothing (text only).
+ */
+export type VoiceCaps = { tts: 'browser' | 'server' | 'none' };
 
 export type LeadResult =
   | { kind: 'ok'; delivery: LeadDelivery }
@@ -265,7 +276,7 @@ export async function postStt(
   return { kind: 'error', reason: 'server' };
 }
 
-/** Premium server voice (only called when /health says `tts: 'aura'`). */
+/** The server voice (only called when /health says the voice is not the browser's). */
 export async function fetchTts(text: string, sessionId: string): Promise<TtsResult> {
   const res = await call<Blob | Body | null>(
     '/tts',
@@ -278,9 +289,14 @@ export async function fetchTts(text: string, sessionId: string): Promise<TtsResu
     async (r) => (r.status === 200 ? r.blob() : readJson(r)),
     null
   );
-  return res.ok && res.status === 200 && isBlob(res.body) && res.body.size > 0
-    ? { kind: 'ok', blob: res.body }
-    : { kind: 'unavailable' };
+  if (!res.ok) return { kind: 'unavailable' };
+  if (res.status === 200 && isBlob(res.body) && res.body.size > 0) {
+    return { kind: 'ok', blob: res.body };
+  }
+  if (res.status === 429 && !isBlob(res.body) && res.body?.error === 'tts_limit') {
+    return { kind: 'limit', bonusAvailable: res.body.bonusAvailable === true };
+  }
+  return { kind: 'unavailable' };
 }
 
 /**
@@ -296,7 +312,11 @@ export async function fetchVoiceCaps(): Promise<VoiceCaps | null> {
     if (res.status !== 200) return null;
     const voice = asBody(res.body?.voice);
     if (!voice || voice.stt !== true) return null;
-    return { tts: voice.tts === 'aura' ? 'aura' : 'browser' };
+    // Anything that is not "browser" (the new "server", the older "aura", whatever comes next)
+    // means: fetch the audio from /tts. A server voice that is not configured is text only.
+    const server = typeof voice.tts === 'string' && voice.tts !== '' && voice.tts !== 'browser';
+    if (server) return { tts: voice.configured === false ? 'none' : 'server' };
+    return { tts: 'browser' };
   }
   return null;
 }

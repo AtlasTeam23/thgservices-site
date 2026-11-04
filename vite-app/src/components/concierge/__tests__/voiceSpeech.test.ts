@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  AURA_MAX_CHARS,
   heldUtteranceCount,
   isSpeechSupported,
   pickVoice,
   resetSpeech,
+  SERVER_MAX_CHARS,
   speak,
+  speakBlob,
   splitForSpeech,
   stopSpeaking,
   unlockSpeech,
@@ -332,23 +333,27 @@ describe('unlockSpeech', () => {
     expect(() => unlockSpeech()).not.toThrow();
   });
 
-  it('also plays a silent clip on the shared audio element when the premium voice is on', () => {
-    unlockSpeech('aura');
+  it('with the server voice, primes the shared audio element and leaves the browser voice out of it', () => {
+    unlockSpeech('server');
     expect(FakeAudio.instances).toHaveLength(1);
     expect(FakeAudio.instances[0].play).toHaveBeenCalled();
+    expect(synth.speak).not.toHaveBeenCalled();
+    expect(synth.getVoices).not.toHaveBeenCalled();
   });
 });
 
-// ---- Premium voice -----------------------------------------------------------
+// ---- Server voice ------------------------------------------------------------
 
-describe('speak (aura voice)', () => {
+describe('speak (server voice)', () => {
   const clip = () => new Blob([new Uint8Array([1, 2, 3])], { type: 'audio/mpeg' });
+  const ok = () => ({ kind: 'ok' as const, blob: clip() });
+  const notAllowed = () => new DOMException('The request is not allowed', 'NotAllowedError');
 
-  it('plays the fetched audio, reports the start as "aura" and the end when it finishes', async () => {
-    const fetchAudio = vi.fn(async () => clip());
+  it('plays the fetched audio, reports the start as "server" and the end when it finishes', async () => {
+    const fetchAudio = vi.fn(async () => ok());
     const onStart = vi.fn();
     const onEnd = vi.fn();
-    speak('Hello there.', 'aura', { fetchAudio, onStart, onEnd });
+    speak('Hello there.', 'server', { fetchAudio, onStart, onEnd });
     await flush();
 
     expect(fetchAudio).toHaveBeenCalledWith('Hello there.');
@@ -356,7 +361,7 @@ describe('speak (aura voice)', () => {
     const audio = FakeAudio.instances.at(-1)!;
     expect(audio.src).toBe('blob:fake');
     expect(audio.play).toHaveBeenCalled();
-    expect(onStart).toHaveBeenCalledWith('aura');
+    expect(onStart).toHaveBeenCalledWith('server');
     expect(onEnd).not.toHaveBeenCalled();
 
     audio.onended?.();
@@ -366,7 +371,7 @@ describe('speak (aura voice)', () => {
 
   it('stopSpeaking() pauses the audio and ends at once', async () => {
     const onEnd = vi.fn();
-    speak('Hello there.', 'aura', { fetchAudio: async () => clip(), onEnd });
+    speak('Hello there.', 'server', { fetchAudio: async () => ok(), onEnd });
     await flush();
     stopSpeaking();
     expect(FakeAudio.instances.at(-1)!.pause).toHaveBeenCalled();
@@ -375,90 +380,223 @@ describe('speak (aura voice)', () => {
   });
 
   it('stopSpeaking() before the audio arrives means it never plays', async () => {
-    let resolve!: (b: Blob) => void;
-    const pending = new Promise<Blob>((r) => {
+    let resolve!: (r: ReturnType<typeof ok>) => void;
+    const pending = new Promise<ReturnType<typeof ok>>((r) => {
       resolve = r;
     });
     const onStart = vi.fn();
-    speak('Hello there.', 'aura', { fetchAudio: () => pending, onStart });
+    speak('Hello there.', 'server', { fetchAudio: () => pending, onStart });
     stopSpeaking();
-    resolve(clip());
+    resolve(ok());
     await flush();
     expect(onStart).not.toHaveBeenCalled();
     expect(FakeAudio.instances.every((a) => a.play.mock.calls.length === 0)).toBe(true);
   });
 
-  it('falls back to the browser voice when the premium voice is unavailable', async () => {
-    const onStart = vi.fn();
-    speak('Hello there.', 'aura', { fetchAudio: async () => null, onStart });
-    await flush();
-    expect(spoken.map((u) => u.text)).toEqual(['Hello there.']);
-    spoken[0].onstart?.();
-    expect(onStart).toHaveBeenCalledWith('browser');
-  });
-
-  it('falls back when the fetch throws or the browser refuses to play the audio', async () => {
-    speak('Hello there.', 'aura', {
-      fetchAudio: async () => {
-        throw new Error('network');
-      },
-    });
-    await flush();
-    expect(spoken).toHaveLength(1);
-
-    spoken.length = 0;
-    FakeAudio.playImpl = async () => {
-      throw new DOMException('blocked', 'NotAllowedError');
-    };
-    speak('Second reply.', 'aura', { fetchAudio: async () => clip() });
-    await flush();
-    expect(spoken.map((u) => u.text)).toEqual(['Second reply.']);
-  });
-
-  it('sends a long but allowed reply (700 characters) to the premium voice', async () => {
-    expect(AURA_MAX_CHARS).toBe(1000);
-    const fetchAudio = vi.fn(async () => clip());
+  it('sends a long but allowed reply (700 characters) to the server voice', async () => {
+    expect(SERVER_MAX_CHARS).toBe(1000);
+    const fetchAudio = vi.fn(async () => ok());
     const text = `${'word '.repeat(139)}ends.`; // 700 characters
     expect(text.length).toBe(700);
-    speak(text, 'aura', { fetchAudio });
+    speak(text, 'server', { fetchAudio });
     await flush();
     expect(fetchAudio).toHaveBeenCalledTimes(1);
     expect(FakeAudio.instances.at(-1)!.play).toHaveBeenCalled();
-    expect(synth.speak).not.toHaveBeenCalled();
   });
 
-  it('frees the audio URL when the audio fails to decode, then reads the reply with the browser voice', async () => {
-    const onStart = vi.fn();
-    speak('Hello there.', 'aura', { fetchAudio: async () => clip(), onStart });
-    await flush();
-    const audio = FakeAudio.instances.at(-1)!;
-    audio.onerror?.();
-    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:fake');
-    expect(spoken.map((u) => u.text)).toEqual(['Hello there.']);
-  });
-
-  it('frees the audio URL when the browser refuses to play it', async () => {
-    FakeAudio.playImpl = async () => {
-      throw new DOMException('blocked', 'NotAllowedError');
+  describe('when the server voice cannot deliver, the reply stays text: the browser voice never steps in', () => {
+    const textOnly = async (
+      fetchAudio: ((text: string) => Promise<never>) | undefined,
+      text = 'Hello there.'
+    ) => {
+      const onStart = vi.fn();
+      const onEnd = vi.fn();
+      speak(text, 'server', { fetchAudio: fetchAudio as never, onStart, onEnd });
+      await flush();
+      expect(synth.speak, 'no browser speech').not.toHaveBeenCalled();
+      expect(synth.cancel).not.toHaveBeenCalled();
+      expect(onStart).not.toHaveBeenCalled();
+      expect(onEnd).toHaveBeenCalledTimes(1);
     };
-    speak('Hello there.', 'aura', { fetchAudio: async () => clip() });
+
+    it('the server has no audio for it, or the request fails', async () => {
+      await textOnly((async () => ({ kind: 'unavailable' })) as never);
+    });
+
+    it('the fetch throws', async () => {
+      await textOnly(async () => {
+        throw new Error('network');
+      });
+    });
+
+    it('the reply is over the server limit (it is not sent, and not spoken another way)', async () => {
+      const fetchAudio = vi.fn();
+      await textOnly(fetchAudio as never, 'x'.repeat(SERVER_MAX_CHARS + 1));
+      expect(fetchAudio).not.toHaveBeenCalled();
+    });
+
+    it('there is no way to fetch audio at all', async () => {
+      await textOnly(undefined);
+    });
+
+    it('the audio fails to decode: the URL is freed and that is the end of it', async () => {
+      const onEnd = vi.fn();
+      speak('Hello there.', 'server', { fetchAudio: async () => ok(), onEnd });
+      await flush();
+      FakeAudio.instances.at(-1)!.onerror?.();
+      expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:fake');
+      expect(synth.speak).not.toHaveBeenCalled();
+      expect(onEnd).toHaveBeenCalledTimes(1);
+    });
+
+    it('the browser refuses to play it for a reason other than needing a tap', async () => {
+      FakeAudio.playImpl = async () => {
+        throw new DOMException('cannot decode', 'NotSupportedError');
+      };
+      const onBlocked = vi.fn();
+      const onEnd = vi.fn();
+      speak('Hello there.', 'server', { fetchAudio: async () => ok(), onBlocked, onEnd });
+      await flush();
+      expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:fake');
+      expect(onBlocked).not.toHaveBeenCalled();
+      expect(synth.speak).not.toHaveBeenCalled();
+      expect(onEnd).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('the daily cap', () => {
+    it('reports it, with the bonus flag, and ends: no sound and no browser voice', async () => {
+      for (const bonusAvailable of [true, false]) {
+        const onLimit = vi.fn();
+        const onStart = vi.fn();
+        const onEnd = vi.fn();
+        speak('Hello there.', 'server', {
+          fetchAudio: async () => ({ kind: 'limit', bonusAvailable }),
+          onLimit,
+          onStart,
+          onEnd,
+        });
+        await flush();
+        expect(onLimit).toHaveBeenCalledWith(bonusAvailable);
+        expect(onStart).not.toHaveBeenCalled();
+        expect(onEnd).toHaveBeenCalledTimes(1);
+      }
+      expect(synth.speak).not.toHaveBeenCalled();
+      expect(FakeAudio.instances.every((a) => a.play.mock.calls.length === 0)).toBe(true);
+    });
+
+    it('does not report it for a reply that was stopped meanwhile', async () => {
+      let resolve!: (r: { kind: 'limit'; bonusAvailable: boolean }) => void;
+      const pending = new Promise<{ kind: 'limit'; bonusAvailable: boolean }>((r) => {
+        resolve = r;
+      });
+      const onLimit = vi.fn();
+      speak('Hello there.', 'server', { fetchAudio: () => pending, onLimit });
+      stopSpeaking();
+      resolve({ kind: 'limit', bonusAvailable: true });
+      await flush();
+      expect(onLimit).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('when the browser blocks playback until the visitor taps', () => {
+    it('hands the audio over instead of failing quietly, frees the URL, and ends', async () => {
+      FakeAudio.playImpl = async () => {
+        throw notAllowed();
+      };
+      const blob = clip();
+      const onBlocked = vi.fn();
+      const onStart = vi.fn();
+      const onEnd = vi.fn();
+      speak('Hello there.', 'server', {
+        fetchAudio: async () => ({ kind: 'ok', blob }),
+        onBlocked,
+        onStart,
+        onEnd,
+      });
+      await flush();
+      expect(onBlocked).toHaveBeenCalledWith(blob);
+      expect(onStart).not.toHaveBeenCalled();
+      expect(onEnd).toHaveBeenCalledTimes(1);
+      expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:fake');
+      expect(synth.speak).not.toHaveBeenCalled();
+    });
+
+    it('without anyone to hand it to, it is just text', async () => {
+      FakeAudio.playImpl = async () => {
+        throw notAllowed();
+      };
+      const onEnd = vi.fn();
+      speak('Hello there.', 'server', { fetchAudio: async () => ok(), onEnd });
+      await flush();
+      expect(onEnd).toHaveBeenCalledTimes(1);
+      expect(synth.speak).not.toHaveBeenCalled();
+    });
+
+    it('a stopped reply does not report a block', async () => {
+      FakeAudio.playImpl = () =>
+        new Promise((_resolve, reject) => setTimeout(() => reject(notAllowed()), 0));
+      const onBlocked = vi.fn();
+      speak('Hello there.', 'server', { fetchAudio: async () => ok(), onBlocked });
+      await new Promise((r) => setTimeout(r, 0));
+      stopSpeaking();
+      await flush();
+      expect(onBlocked).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe('speakBlob (playing audio we already have, from inside a tap)', () => {
+  const clip = () => new Blob([new Uint8Array([1, 2, 3])], { type: 'audio/mpeg' });
+
+  it('calls play() before it returns, so the tap still counts as the gesture', () => {
+    const onStart = vi.fn();
+    speakBlob(clip(), { onStart });
+    const audio = FakeAudio.instances.at(-1)!;
+    expect(audio.play).toHaveBeenCalledTimes(1);
+    expect(audio.src).toBe('blob:fake');
+  });
+
+  it('reports the start as "server" once playing, and the end when it finishes', async () => {
+    const onStart = vi.fn();
+    const onEnd = vi.fn();
+    speakBlob(clip(), { onStart, onEnd });
     await flush();
+    expect(onStart).toHaveBeenCalledWith('server');
+    FakeAudio.instances.at(-1)!.onended?.();
+    expect(onEnd).toHaveBeenCalledTimes(1);
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:fake');
-    expect(spoken).toHaveLength(1);
   });
 
-  it('uses the browser voice for a reply over the server limit, without calling the server', async () => {
-    const fetchAudio = vi.fn(async () => clip());
-    const text = 'x'.repeat(AURA_MAX_CHARS + 1);
-    speak(text, 'aura', { fetchAudio });
+  it('reports a block again if even the tap is refused', async () => {
+    FakeAudio.playImpl = async () => {
+      throw new DOMException('no', 'NotAllowedError');
+    };
+    const blob = clip();
+    const onBlocked = vi.fn();
+    speakBlob(blob, { onBlocked });
     await flush();
-    expect(fetchAudio).not.toHaveBeenCalled();
-    expect(spoken.length).toBeGreaterThan(0);
+    expect(onBlocked).toHaveBeenCalledWith(blob);
   });
 
-  it('uses the browser voice when no fetcher is given', async () => {
-    speak('Hello there.', 'aura');
+  it('replaces anything being read', async () => {
+    const first = { onEnd: vi.fn() };
+    speak('First.', 'browser', first);
+    speakBlob(clip(), {});
+    expect(first.onEnd).toHaveBeenCalledTimes(1);
+    expect(synth.cancel).toHaveBeenCalled();
+  });
+
+  it('plays on the one shared audio element, so what the tap unlocked stays unlocked for later replies', async () => {
+    speakBlob(clip(), {});
     await flush();
-    expect(spoken).toHaveLength(1);
+    const element = FakeAudio.instances[0];
+    expect(FakeAudio.instances).toHaveLength(1);
+    element.onended?.();
+
+    speak('Next reply.', 'server', { fetchAudio: async () => ({ kind: 'ok', blob: clip() }) });
+    await flush();
+    expect(FakeAudio.instances).toHaveLength(1); // no second element for iOS to lock out
+    expect(element.play.mock.calls.length).toBe(2);
   });
 });

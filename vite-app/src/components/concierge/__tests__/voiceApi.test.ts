@@ -201,7 +201,24 @@ describe('voice api', () => {
       }
     });
 
-    it('every way of not getting audio is simply "unavailable" (the browser voice takes over)', async () => {
+    it('429 tts_limit is the daily spoken-reply cap, and says whether a bonus is on offer', async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse(429, { error: 'tts_limit', bonusAvailable: true }));
+      expect(await fetchTts('Hi', SESSION)).toEqual({ kind: 'limit', bonusAvailable: true });
+      fetchMock.mockResolvedValueOnce(jsonResponse(429, { error: 'tts_limit', bonusAvailable: false }));
+      expect(await fetchTts('Hi', SESSION)).toEqual({ kind: 'limit', bonusAvailable: false });
+      // Anything that is not exactly `true` is no bonus.
+      fetchMock.mockResolvedValueOnce(jsonResponse(429, { error: 'tts_limit' }));
+      expect(await fetchTts('Hi', SESSION)).toEqual({ kind: 'limit', bonusAvailable: false });
+      fetchMock.mockResolvedValueOnce(jsonResponse(429, { error: 'tts_limit', bonusAvailable: 'yes' }));
+      expect(await fetchTts('Hi', SESSION)).toEqual({ kind: 'limit', bonusAvailable: false });
+    });
+
+    it('any other 429 (an ordinary rate limit) is just "unavailable"', async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse(429, { error: 'rate_limited' }));
+      expect(await fetchTts('Hi', SESSION)).toEqual({ kind: 'unavailable' });
+    });
+
+    it('every other way of not getting audio is simply "unavailable"', async () => {
       fetchMock.mockResolvedValueOnce(jsonResponse(503, { error: 'voice_unavailable' }));
       expect(await fetchTts('Hi', SESSION)).toEqual({ kind: 'unavailable' });
       fetchMock.mockResolvedValueOnce(jsonResponse(404, { error: 'not_found' }));
@@ -243,10 +260,44 @@ describe('voice api', () => {
       expect(init.credentials).toBe('omit');
     });
 
-    it('accepts the aura voice and treats any other tts value as browser', async () => {
+    it('reads the new shape: tts "server" plus a provider, whichever provider it is', async () => {
+      for (const provider of ['elevenlabs', 'aura']) {
+        fetchMock.mockResolvedValueOnce(
+          jsonResponse(200, { voice: { stt: true, tts: 'server', provider, configured: true } })
+        );
+        expect(await fetchVoiceCaps(), provider).toEqual({ tts: 'server' });
+      }
+    });
+
+    it('still accepts the older "aura" value, and any other non-browser value, as the server voice', async () => {
       fetchMock.mockResolvedValueOnce(jsonResponse(200, { voice: { stt: true, tts: 'aura' } }));
-      expect(await fetchVoiceCaps()).toEqual({ tts: 'aura' });
-      fetchMock.mockResolvedValueOnce(jsonResponse(200, { voice: { stt: true, tts: 'weird' } }));
+      expect(await fetchVoiceCaps()).toEqual({ tts: 'server' });
+      fetchMock.mockResolvedValueOnce(jsonResponse(200, { voice: { stt: true, tts: 'whatever' } }));
+      expect(await fetchVoiceCaps()).toEqual({ tts: 'server' });
+    });
+
+    it('a Worker that says nothing about tts (or says "browser") means the browser voice', async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse(200, { voice: { stt: true } }));
+      expect(await fetchVoiceCaps()).toEqual({ tts: 'browser' });
+      fetchMock.mockResolvedValueOnce(jsonResponse(200, { voice: { stt: true, tts: 'browser', provider: 'none' } }));
+      expect(await fetchVoiceCaps()).toEqual({ tts: 'browser' });
+      fetchMock.mockResolvedValueOnce(jsonResponse(200, { voice: { stt: true, tts: false } }));
+      expect(await fetchVoiceCaps()).toEqual({ tts: 'browser' });
+    });
+
+    it('a server voice that is not configured means text only: no audio of any kind', async () => {
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse(200, { voice: { stt: true, tts: 'server', provider: 'elevenlabs', configured: false } })
+      );
+      expect(await fetchVoiceCaps()).toEqual({ tts: 'none' });
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse(200, { voice: { stt: true, tts: 'aura', configured: false } })
+      );
+      expect(await fetchVoiceCaps()).toEqual({ tts: 'none' });
+      // "configured" is about the server voice: it does not switch the browser voice off.
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse(200, { voice: { stt: true, tts: 'browser', configured: false } })
+      );
       expect(await fetchVoiceCaps()).toEqual({ tts: 'browser' });
     });
 
@@ -274,7 +325,7 @@ describe('voice api', () => {
       fetchMock.mockClear();
       fetchMock.mockResolvedValueOnce(jsonResponse(502, { error: 'bad_gateway' }));
       fetchMock.mockResolvedValueOnce(jsonResponse(200, { voice: { stt: true, tts: 'aura' } }));
-      expect(await fetchVoiceCaps()).toEqual({ tts: 'aura' });
+      expect(await fetchVoiceCaps()).toEqual({ tts: 'server' });
       expect(fetchMock).toHaveBeenCalledTimes(2);
     });
 

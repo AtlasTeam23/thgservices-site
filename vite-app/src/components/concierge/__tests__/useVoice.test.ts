@@ -21,15 +21,16 @@ vi.mock('../voice/speech', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../voice/speech')>()),
   speak: vi.fn(),
   stopSpeaking: vi.fn(),
+  speakBlob: vi.fn(),
   unlockSpeech: vi.fn(),
   isSpeechSupported: vi.fn(),
 }));
 
-import { fetchTts, fetchVoiceCaps, postChat, postStt } from '../api';
+import { fetchTts, fetchVoiceCaps, postChat, postLead, postStt } from '../api';
 import { getToken } from '../turnstile';
 import { track } from '../../../lib/track';
 import { isRecordingSupported, startRecording, VoiceError } from '../voice/recorder';
-import { isSpeechSupported, speak, stopSpeaking, unlockSpeech } from '../voice/speech';
+import { isSpeechSupported, speak, speakBlob, stopSpeaking, unlockSpeech } from '../voice/speech';
 import { useConcierge } from '../useConcierge';
 import { EMPTY_LEAD_DRAFT } from '../leadDraft';
 import { STORAGE_KEY } from '../storage';
@@ -46,6 +47,8 @@ const trackMock = vi.mocked(track);
 const supportedMock = vi.mocked(isRecordingSupported);
 const startRecordingMock = vi.mocked(startRecording);
 const speakMock = vi.mocked(speak);
+const speakBlobMock = vi.mocked(speakBlob);
+const postLeadMock = vi.mocked(postLead);
 const stopSpeakingMock = vi.mocked(stopSpeaking);
 const unlockMock = vi.mocked(unlockSpeech);
 const speechSupportedMock = vi.mocked(isSpeechSupported);
@@ -98,7 +101,7 @@ const open = async (result: Hook) => {
 };
 
 /** Open the chat on a browser where voice works. */
-const openWithVoice = async (tts: 'browser' | 'aura' = 'browser') => {
+const openWithVoice = async (tts: 'browser' | 'server' | 'none' = 'browser') => {
   supportedMock.mockReturnValue(true);
   fetchCapsMock.mockResolvedValue({ tts });
   const hook = setup();
@@ -911,23 +914,26 @@ describe('voice: reading replies aloud', () => {
     expect(stopSpeakingMock).not.toHaveBeenCalled();
   });
 
-  it('uses the premium voice when /health says aura, fetching the audio with the session id', async () => {
-    const { result } = await openWithVoice('aura');
+  it('uses the server voice when /health says so, fetching the audio with the session id and passing every answer on', async () => {
+    const { result } = await openWithVoice('server');
     act(() => result.current.setSpeakEnabled(true));
-    expect(unlockMock).toHaveBeenLastCalledWith('aura');
+    expect(unlockMock).toHaveBeenLastCalledWith('server');
     await act(async () => {
       await result.current.send('hello');
     });
     const [text, mode, hooks] = speakMock.mock.calls[0];
-    expect(mode).toBe('aura');
+    expect(mode).toBe('server');
 
     const blob = new Blob([new Uint8Array(3)], { type: 'audio/mpeg' });
-    fetchTtsMock.mockResolvedValueOnce({ kind: 'ok', blob });
-    expect(await hooks!.fetchAudio!(text)).toBe(blob);
+    for (const answer of [
+      { kind: 'ok', blob },
+      { kind: 'limit', bonusAvailable: true },
+      { kind: 'unavailable' },
+    ] as const) {
+      fetchTtsMock.mockResolvedValueOnce(answer);
+      expect(await hooks!.fetchAudio!(text)).toEqual(answer);
+    }
     expect(fetchTtsMock).toHaveBeenCalledWith(text, result.current.sessionId);
-
-    fetchTtsMock.mockResolvedValueOnce({ kind: 'unavailable' });
-    expect(await hooks!.fetchAudio!(text)).toBeNull();
   });
 
   it('the browser voice never asks the Worker for audio', async () => {
@@ -1140,9 +1146,9 @@ describe('voice: whether the speaker toggle has anything to do', () => {
     expect(result.current.speakAvailable).toBe(false);
   });
 
-  it('is, with the premium voice on, even where the browser cannot speak', async () => {
+  it('is, with the server voice on, even where the browser cannot speak', async () => {
     speechSupportedMock.mockReturnValue(false);
-    const { result } = await openWithVoice('aura');
+    const { result } = await openWithVoice('server');
     expect(result.current.speakAvailable).toBe(true);
   });
 
@@ -1198,5 +1204,448 @@ describe('voice: analytics event names', () => {
         .map(([, params]) => (params as { reason: string }).reason)
     );
     expect([...reasons].sort()).toEqual(['budget', 'permission', 'server', 'unsupported']);
+  });
+});
+
+// ---- Text only: no audio of any kind -----------------------------------------
+
+describe('voice: a server voice that is not configured', () => {
+  it('means text only: no toggle, nothing spoken, nothing unlocked, and the mic still works', async () => {
+    const { result } = await openWithVoice('none');
+    expect(result.current.voice).toBe('idle');
+    expect(result.current.speakAvailable).toBe(false);
+
+    unlockMock.mockClear();
+    startRecordingMock.mockResolvedValue(fakeRecording().recording);
+    await press(result);
+    expect(result.current.voice).toBe('recording');
+    expect(unlockMock).not.toHaveBeenCalled();
+    await act(async () => {
+      result.current.stopVoice();
+    });
+    await settle();
+    expect(postChatMock).toHaveBeenCalledTimes(1);
+
+    act(() => result.current.setSpeakEnabled(true));
+    await act(async () => {
+      await result.current.send('another question');
+    });
+    expect(speakMock).not.toHaveBeenCalled();
+    expect(fetchTtsMock).not.toHaveBeenCalled();
+  });
+});
+
+// ---- The daily cap on spoken replies -----------------------------------------
+
+describe('voice: the cap on spoken replies', () => {
+  const sendAndGetHooks = async (result: Hook, text = 'hello') => {
+    speakMock.mockClear();
+    await act(async () => {
+      await result.current.send(text);
+    });
+    return speakMock.mock.calls.at(-1)![2]!;
+  };
+
+  const serverWithSpeech = async () => {
+    const hook = await openWithVoice('server');
+    act(() => hook.result.current.setSpeakEnabled(true));
+    return hook;
+  };
+
+  describe('no bonus on offer', () => {
+    it('shows the "done for today" notice, hides the toggle, stops asking for audio, and says so to analytics once', async () => {
+      const { result } = await serverWithSpeech();
+      expect(result.current.speakAvailable).toBe(true);
+      const hooks = await sendAndGetHooks(result);
+
+      act(() => hooks.onLimit?.(false));
+      expect(result.current.voiceNotice).toBe(voiceCopy.VOICE_SPOKEN_LIMIT_DONE);
+      expect(voiceCopy.VOICE_SPOKEN_LIMIT_DONE).toBe(
+        'Read-aloud is done for today. You can keep chatting here.'
+      );
+      expect(result.current.speakAvailable).toBe(false);
+      expect(result.current.readAloudBonus).toBe(false);
+      expect(trackMock.mock.calls.filter(([n, p]) => n === 'concierge_voice_error' && (p as { reason: string }).reason === 'budget')).toHaveLength(1);
+
+      // A second report of the same cap (an in-flight reply) is not a second event or notice.
+      act(() => result.current.clearComposerError());
+      act(() => hooks.onLimit?.(false));
+      expect(result.current.voiceNotice).toBeNull();
+      expect(trackMock.mock.calls.filter(([n]) => n === 'concierge_voice_error')).toHaveLength(1);
+
+      // From now on replies are text only: nothing is spoken, nothing is requested.
+      speakMock.mockClear();
+      postChatMock.mockResolvedValueOnce(okChat('Another reply.'));
+      await act(async () => {
+        await result.current.send('and another');
+      });
+      expect(speakMock).not.toHaveBeenCalled();
+      expect(fetchTtsMock).not.toHaveBeenCalled();
+    });
+
+    it('is remembered for the tab: the stored flag, no toggle after a reload, no second notice, and still no audio', async () => {
+      const { result } = await serverWithSpeech();
+      const hooks = await sendAndGetHooks(result);
+      act(() => hooks.onLimit?.(false));
+      expect(storedPrefs()).toMatchObject({ spokenLimit: true });
+      expect(storedPrefs()?.bonusOffer).toBeUndefined();
+
+      speakMock.mockClear();
+      const again = await openWithVoice('server');
+      expect(again.result.current.voice).toBe('idle');
+      expect(again.result.current.speakAvailable).toBe(false);
+      expect(again.result.current.voiceNotice).toBeNull();
+      expect(again.result.current.readAloudBonus).toBe(false);
+      await act(async () => {
+        await again.result.current.send('hello again');
+      });
+      expect(speakMock).not.toHaveBeenCalled();
+    });
+
+    it('does not take the mic away: asking by voice still works', async () => {
+      const { result } = await serverWithSpeech();
+      act(() => (void 0, speakMock.mockClear()));
+      const hooks = await sendAndGetHooks(result);
+      act(() => hooks.onLimit?.(false));
+      expect(result.current.voice).toBe('idle');
+      startRecordingMock.mockResolvedValue(fakeRecording().recording);
+      await press(result);
+      expect(result.current.voice).toBe('recording');
+    });
+
+    it('is not offered a bonus even if the Worker says so, once details have been shared', async () => {
+      window.sessionStorage.setItem(
+        VOICE_PREFS_KEY,
+        JSON.stringify({ speak: true, disclosed: true, bonusUsed: true })
+      );
+      const { result } = await openWithVoice('server');
+      const hooks = await sendAndGetHooks(result);
+      act(() => hooks.onLimit?.(true));
+      expect(result.current.readAloudBonus).toBe(false);
+      expect(result.current.voiceNotice).toBe(voiceCopy.VOICE_SPOKEN_LIMIT_DONE);
+    });
+
+    it('is not offered a bonus once a lead has been sent (there is nothing more to share)', async () => {
+      window.sessionStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({
+          sessionId: '11111111-1111-4111-8111-111111111111',
+          messages: [],
+          leadSubmitted: true,
+          ended: false,
+          utm: {},
+        })
+      );
+      window.sessionStorage.setItem(VOICE_PREFS_KEY, JSON.stringify({ speak: true, disclosed: true }));
+      const { result } = await openWithVoice('server');
+      const hooks = await sendAndGetHooks(result);
+      act(() => hooks.onLimit?.(true));
+      expect(result.current.readAloudBonus).toBe(false);
+      expect(result.current.voiceNotice).toBe(voiceCopy.VOICE_SPOKEN_LIMIT_DONE);
+    });
+  });
+
+  describe('a bonus on offer', () => {
+    it('keeps the paused notice (with its chip) up instead of the transient one, and remembers the offer', async () => {
+      const { result } = await serverWithSpeech();
+      const hooks = await sendAndGetHooks(result);
+      act(() => hooks.onLimit?.(true));
+      expect(result.current.readAloudBonus).toBe(true);
+      expect(result.current.voiceNotice).toBeNull();
+      expect(result.current.speakAvailable).toBe(false);
+      expect(voiceCopy.VOICE_SPOKEN_LIMIT_BONUS).toBe(
+        "Read-aloud is paused. Share your name, email and number and we'll add 5 more today."
+      );
+      expect(voiceCopy.VOICE_SHARE_DETAILS).toBe('Share my details');
+      expect(storedPrefs()).toMatchObject({ spokenLimit: true, bonusOffer: true });
+      expect(trackMock).toHaveBeenCalledWith('concierge_voice_error', { reason: 'budget' });
+
+      // Typing does not make the offer go away.
+      act(() => result.current.clearComposerError());
+      expect(result.current.readAloudBonus).toBe(true);
+
+      // Nor does a reload in the same tab.
+      const again = await openWithVoice('server');
+      expect(again.result.current.readAloudBonus).toBe(true);
+      expect(again.result.current.speakAvailable).toBe(false);
+    });
+
+    it('resumes spoken replies after a lead with an email is sent, clearing the cap and the notice', async () => {
+      postLeadMock.mockResolvedValue({ kind: 'ok', delivery: 'email' });
+      const { result } = await serverWithSpeech();
+      const hooks = await sendAndGetHooks(result);
+      act(() => hooks.onLimit?.(true));
+
+      await act(async () => {
+        await result.current.submitLead({
+          name: 'Jane Doe',
+          phone: '7705551234',
+          email: 'jane@doe.example',
+          business: 'Doe Plumbing',
+          callbackWindow: 'midday_11_1',
+          consent: true,
+        });
+      });
+      expect(result.current.readAloudBonus).toBe(false);
+      expect(result.current.speakAvailable).toBe(true);
+      expect(storedPrefs()?.spokenLimit).toBeUndefined();
+      expect(storedPrefs()).toMatchObject({ bonusUsed: true });
+
+      // The next reply is requested and spoken again.
+      speakMock.mockClear();
+      postChatMock.mockResolvedValueOnce(okChat('Spoken again.'));
+      await act(async () => {
+        await result.current.send('more please');
+      });
+      expect(speakMock).toHaveBeenCalledTimes(1);
+      expect(speakMock.mock.calls[0][0]).toBe('Spoken again.');
+      expect(speakMock.mock.calls[0][1]).toBe('server');
+    });
+
+    it('a lead without an email does not lift the cap', async () => {
+      postLeadMock.mockResolvedValue({ kind: 'ok', delivery: 'email' });
+      const { result } = await serverWithSpeech();
+      const hooks = await sendAndGetHooks(result);
+      act(() => hooks.onLimit?.(true));
+      await act(async () => {
+        await result.current.submitLead({
+          name: 'Jane Doe',
+          phone: '7705551234',
+          business: 'Doe Plumbing',
+          callbackWindow: 'midday_11_1',
+          consent: true,
+        });
+      });
+      expect(result.current.readAloudBonus).toBe(true);
+      expect(result.current.speakAvailable).toBe(false);
+      expect(storedPrefs()).toMatchObject({ spokenLimit: true, bonusOffer: true });
+    });
+
+    it('a failed lead does not lift the cap either', async () => {
+      postLeadMock.mockResolvedValue({ kind: 'delivery_failed' });
+      const { result } = await serverWithSpeech();
+      const hooks = await sendAndGetHooks(result);
+      act(() => hooks.onLimit?.(true));
+      await act(async () => {
+        await result.current.submitLead({
+          name: 'Jane Doe',
+          phone: '7705551234',
+          email: 'jane@doe.example',
+          business: 'Doe Plumbing',
+          callbackWindow: 'midday_11_1',
+          consent: true,
+        });
+      });
+      expect(result.current.readAloudBonus).toBe(true);
+      expect(result.current.speakAvailable).toBe(false);
+    });
+
+    it('after the bonus is used up too, the cap is final: the "done" notice and no second offer', async () => {
+      postLeadMock.mockResolvedValue({ kind: 'ok', delivery: 'email' });
+      const { result } = await serverWithSpeech();
+      let hooks = await sendAndGetHooks(result);
+      act(() => hooks.onLimit?.(true));
+      await act(async () => {
+        await result.current.submitLead({
+          name: 'Jane Doe',
+          phone: '7705551234',
+          email: 'jane@doe.example',
+          business: 'Doe Plumbing',
+          callbackWindow: 'midday_11_1',
+          consent: true,
+        });
+      });
+      postChatMock.mockResolvedValueOnce(okChat('Spoken again.'));
+      hooks = await sendAndGetHooks(result, 'one more');
+      act(() => hooks.onLimit?.(true)); // the Worker, asked again, says the day's replies are gone
+      expect(result.current.readAloudBonus).toBe(false);
+      expect(result.current.voiceNotice).toBe(voiceCopy.VOICE_SPOKEN_LIMIT_DONE);
+      expect(result.current.speakAvailable).toBe(false);
+    });
+  });
+});
+
+// ---- Opening the lead form for the bonus -------------------------------------
+
+describe('voice: sharing details for the bonus', () => {
+  it('opens the lead form pre-filled, asking for the email, without adding messages to the chat', async () => {
+    const { result } = await openWithVoice('server');
+    await act(async () => {
+      await result.current.send('hello');
+    });
+    const before = result.current.messages.length;
+    act(() => result.current.shareDetails());
+    expect(result.current.showLeadForm).toBe(true);
+    expect(result.current.leadEmailRequired).toBe(true);
+    expect(result.current.leadHeading).toBe(voiceCopy.VOICE_BONUS_FORM_HEADING);
+    expect(result.current.messages).toHaveLength(before);
+    expect(trackMock).toHaveBeenCalledWith('concierge_lead_form_shown');
+  });
+
+  it('the email is no longer required once the form is dismissed or sent, or when the callback chip opens it', async () => {
+    postLeadMock.mockResolvedValue({ kind: 'ok', delivery: 'email' });
+    const { result } = await openWithVoice('server');
+    act(() => result.current.shareDetails());
+    act(() => result.current.dismissLeadForm());
+    expect(result.current.showLeadForm).toBe(false);
+    expect(result.current.leadEmailRequired).toBe(false);
+
+    await act(async () => {
+      await result.current.chip('Request a callback');
+    });
+    expect(result.current.showLeadForm).toBe(true);
+    expect(result.current.leadEmailRequired).toBe(false);
+  });
+
+  it('clears the requirement when the lead is sent', async () => {
+    postLeadMock.mockResolvedValue({ kind: 'ok', delivery: 'email' });
+    const { result } = await openWithVoice('server');
+    act(() => result.current.shareDetails());
+    await act(async () => {
+      await result.current.submitLead({
+        name: 'Jane Doe',
+        phone: '7705551234',
+        email: 'jane@doe.example',
+        business: 'Doe Plumbing',
+        callbackWindow: 'midday_11_1',
+        consent: true,
+      });
+    });
+    expect(result.current.leadEmailRequired).toBe(false);
+    expect(result.current.showLeadForm).toBe(false);
+  });
+
+  it('does nothing when the form is already open', async () => {
+    const { result } = await openWithVoice('server');
+    act(() => result.current.shareDetails());
+    trackMock.mockClear();
+    act(() => result.current.shareDetails());
+    expect(trackMock).not.toHaveBeenCalledWith('concierge_lead_form_shown');
+  });
+});
+
+// ---- Playback the browser blocks ---------------------------------------------
+
+describe('voice: audio the browser will not start without a tap', () => {
+  const blob = () => new Blob([new Uint8Array(3)], { type: 'audio/mpeg' });
+
+  const blockedReply = async (result: Hook, text = 'hello') => {
+    speakMock.mockClear();
+    await act(async () => {
+      await result.current.send(text);
+    });
+    const hooks = speakMock.mock.calls.at(-1)![2]!;
+    const replyId = result.current.messages.at(-1)!.id;
+    const audio = blob();
+    act(() => hooks.onBlocked?.(audio));
+    return { hooks, replyId, audio };
+  };
+
+  const serverWithSpeech = async () => {
+    const hook = await openWithVoice('server');
+    act(() => hook.result.current.setSpeakEnabled(true));
+    return hook;
+  };
+
+  it('marks that reply as waiting for a tap, with one "Sound is off until you tap." line, the first time only', async () => {
+    const { result } = await serverWithSpeech();
+    const first = await blockedReply(result);
+    expect(result.current.blockedReplyId).toBe(first.replyId);
+    expect(result.current.voiceNotice).toBe(voiceCopy.VOICE_SOUND_OFF_HINT);
+    expect(voiceCopy.VOICE_SOUND_OFF_HINT).toBe('Sound is off until you tap.');
+    expect(storedPrefs()).toMatchObject({ soundHint: true });
+
+    act(() => result.current.clearComposerError());
+    postChatMock.mockResolvedValueOnce(okChat('A second reply.'));
+    const second = await blockedReply(result, 'again');
+    expect(result.current.blockedReplyId).toBe(second.replyId);
+    expect(result.current.voiceNotice).toBeNull(); // not shown a second time
+  });
+
+  it('keeps the pill on the latest reply only: a new reply that is also blocked moves it, one that plays removes it', async () => {
+    const { result } = await serverWithSpeech();
+    const first = await blockedReply(result);
+    expect(result.current.blockedReplyId).toBe(first.replyId);
+
+    postChatMock.mockResolvedValueOnce(okChat('Second.'));
+    await act(async () => {
+      await result.current.send('typed instead of tapping');
+    });
+    // The new reply is being fetched: the old pill no longer stands for the latest reply.
+    expect(result.current.blockedReplyId).toBeNull();
+    const hooks = speakMock.mock.calls.at(-1)![2]!;
+    const secondId = result.current.messages.at(-1)!.id;
+    act(() => hooks.onBlocked?.(blob()));
+    expect(result.current.blockedReplyId).toBe(secondId);
+
+    postChatMock.mockResolvedValueOnce(okChat('Third.'));
+    await act(async () => {
+      await result.current.send('and again');
+    });
+    act(() => speakMock.mock.calls.at(-1)![2]!.onStart?.('server'));
+    expect(result.current.blockedReplyId).toBeNull();
+  });
+
+  it('playBlocked plays that reply inside the tap, then the pill goes and later replies are not held back', async () => {
+    const { result } = await serverWithSpeech();
+    const { audio, replyId } = await blockedReply(result);
+
+    act(() => result.current.playBlocked());
+    expect(speakBlobMock).toHaveBeenCalledTimes(1);
+    expect(speakBlobMock.mock.calls[0][0]).toBe(audio); // the audio already fetched: no second request
+    expect(fetchTtsMock).not.toHaveBeenCalled();
+    expect(result.current.blockedReplyId).toBe(replyId); // until it actually plays
+
+    const hooks = speakBlobMock.mock.calls[0][1]!;
+    expect(result.current.voiceNotice).toBe(voiceCopy.VOICE_SOUND_OFF_HINT);
+    act(() => hooks.onStart?.('server'));
+    expect(result.current.blockedReplyId).toBeNull();
+    // "Sound is off until you tap." is no longer true once it is playing.
+    expect(result.current.voiceNotice).toBeNull();
+    expect(result.current.voice).toBe('speaking');
+    expect(trackMock).toHaveBeenCalledWith('concierge_voice_reply_spoken', { mode: 'server' });
+    act(() => hooks.onEnd?.());
+    expect(result.current.voice).toBe('idle');
+
+    // The next reply is simply requested and played like any other.
+    speakMock.mockClear();
+    postChatMock.mockResolvedValueOnce(okChat('Next.'));
+    await act(async () => {
+      await result.current.send('next');
+    });
+    expect(speakMock).toHaveBeenCalledTimes(1);
+    expect(speakMock.mock.calls[0][1]).toBe('server');
+  });
+
+  it('if even the tap is refused the pill stays, with the same audio', async () => {
+    const { result } = await serverWithSpeech();
+    const { audio, replyId } = await blockedReply(result);
+    act(() => result.current.playBlocked());
+    act(() => speakBlobMock.mock.calls[0][1]!.onBlocked?.(audio));
+    expect(result.current.blockedReplyId).toBe(replyId);
+    act(() => result.current.playBlocked());
+    expect(speakBlobMock).toHaveBeenCalledTimes(2);
+    expect(speakBlobMock.mock.calls[1][0]).toBe(audio);
+  });
+
+  it('turning sound off removes the pill', async () => {
+    const { result } = await serverWithSpeech();
+    await blockedReply(result);
+    act(() => result.current.setSpeakEnabled(false));
+    expect(result.current.blockedReplyId).toBeNull();
+    act(() => result.current.playBlocked());
+    expect(speakBlobMock).not.toHaveBeenCalled();
+  });
+
+  it('does nothing when there is nothing held, or while recording', async () => {
+    const { result } = await serverWithSpeech();
+    act(() => result.current.playBlocked());
+    expect(speakBlobMock).not.toHaveBeenCalled();
+
+    await blockedReply(result);
+    startRecordingMock.mockResolvedValue(fakeRecording().recording);
+    await press(result);
+    act(() => result.current.playBlocked());
+    expect(speakBlobMock).not.toHaveBeenCalled();
   });
 });
