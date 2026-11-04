@@ -377,21 +377,21 @@ describe('POST /tts request checks', () => {
 });
 
 describe('POST /tts limits', () => {
-  it('counts characters against the day: 25,000 by default, then stops with 503 and reason "budget"', async () => {
+  it('counts characters against the day: 50,000 by default, then stops with 503 and reason "budget"', async () => {
     const stub = aiStub(speech);
     const env = auraEnv(stub.ai, { VOICE_DAILY_TTS_CHARS: undefined });
     const full = 'a'.repeat(1000);
-    for (let i = 0; i < 24; i += 1) {
-      expect((await post(body(full), { env, ip: randomIp() })).status, `request ${i + 1}`).toBe(200); // 24,000
+    for (let i = 0; i < 49; i += 1) {
+      expect((await post(body(full), { env, ip: randomIp() })).status, `request ${i + 1}`).toBe(200); // 49,000
     }
-    expect(await fixedCount(env, globalTtsName())).toBe(24_000);
+    expect(await fixedCount(env, globalTtsName())).toBe(49_000);
     expect((await post(body('a'.repeat(1000) + 'b'), { env, ip: randomIp() })).status).toBe(400); // over the text cap, not the budget
-    expect((await post(body('a'.repeat(1000)), { env, ip: randomIp() })).status).toBe(200); // exactly 25,000
+    expect((await post(body('a'.repeat(1000)), { env, ip: randomIp() })).status).toBe(200); // exactly 50,000
     const spent = await post(body('b'), { env, ip: randomIp() });
     expect(spent.status).toBe(503);
     expect(await spent.json()).toEqual({ error: 'voice_unavailable', reason: 'budget' });
-    expect(stub.run).toHaveBeenCalledTimes(25);
-  });
+    expect(stub.run).toHaveBeenCalledTimes(50);
+  }, 30_000); // fifty requests: slow on a busy machine
 
   it('uses VOICE_DAILY_TTS_CHARS and counts the sanitized length', async () => {
     const stub = aiStub(speech);

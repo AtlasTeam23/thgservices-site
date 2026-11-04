@@ -121,11 +121,11 @@ export const dailySttSeconds = (env: Env): number => wholeNumber(env.VOICE_DAILY
 export const sessionVoiceSeconds = (env: Env): number => wholeNumber(env.VOICE_SESSION_SECONDS, 180);
 
 /**
- * Characters of paid text-to-speech per Eastern-time day, all visitors together (default 25000, the same as
- * wrangler.jsonc: about 80 replies of 330 characters, at most about $1 a day on ElevenLabs Flash at $0.04 per
+ * Characters of paid text-to-speech per Eastern-time day, all visitors together (default 50000, the same as
+ * wrangler.jsonc: about 150 replies of 330 characters, at most about $2 a day on ElevenLabs Flash at $0.04 per
  * 1,000). 0 uses up the day's budget at once.
  */
-export const dailyTtsChars = (env: Env): number => wholeNumber(env.VOICE_DAILY_TTS_CHARS, 25_000);
+export const dailyTtsChars = (env: Env): number => wholeNumber(env.VOICE_DAILY_TTS_CHARS, 50_000);
 
 export type TtsProvider = 'browser' | 'aura' | 'elevenlabs';
 

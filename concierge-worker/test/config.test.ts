@@ -87,7 +87,7 @@ describe('wrangler.jsonc', () => {
       VOICE_TTS_BONUS: '5',
       VOICE_DAILY_STT_SECONDS: '9000',
       VOICE_SESSION_SECONDS: '180',
-      VOICE_DAILY_TTS_CHARS: '25000',
+      VOICE_DAILY_TTS_CHARS: '50000',
     });
   });
 

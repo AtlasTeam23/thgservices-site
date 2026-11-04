@@ -88,7 +88,7 @@ describe('voice budgets', () => {
   const cases = [
     ['dailySttSeconds', dailySttSeconds, 'VOICE_DAILY_STT_SECONDS', 9000],
     ['sessionVoiceSeconds', sessionVoiceSeconds, 'VOICE_SESSION_SECONDS', 180],
-    ['dailyTtsChars', dailyTtsChars, 'VOICE_DAILY_TTS_CHARS', 25000],
+    ['dailyTtsChars', dailyTtsChars, 'VOICE_DAILY_TTS_CHARS', 50000],
   ] as const;
 
   describe.each(cases)('%s', (_name, read, key, fallback) => {

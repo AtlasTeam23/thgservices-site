@@ -53,9 +53,9 @@
     "VOICE_DAILY_STT_SECONDS": "9000",
     "VOICE_SESSION_SECONDS": "180",
     // Characters of paid text-to-speech per Eastern-time day, all visitors together (VOICE_TTS "aura" or
-    // "elevenlabs"). 25000 is at most about $1 a day on ElevenLabs Flash ($0.04 per 1,000 characters), roughly
-    // 80 spoken replies; Aura-1 would be $0.375 and Aura-2 $0.75 for the same characters.
-    "VOICE_DAILY_TTS_CHARS": "25000"
+    // "elevenlabs"). 50000 is at most about $2 a day on ElevenLabs Flash ($0.04 per 1,000 characters), roughly
+    // 150 spoken replies; Aura-1 would be $0.75 and Aura-2 $1.50 for the same characters.
+    "VOICE_DAILY_TTS_CHARS": "50000"
   },
 
   // Workers AI: Whisper for POST /stt and, only when VOICE_TTS is "aura", Aura-1 for POST /tts.
