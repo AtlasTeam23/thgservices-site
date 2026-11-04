@@ -40,7 +40,7 @@ describe('the page-load /health read', () => {
 
   it('is not known until it has been asked', async () => {
     expect(voiceHealth()).toBe('unknown');
-    expect(await sharedVoiceCaps()).toBeNull();
+    expect(await sharedVoiceCaps()).toBeUndefined(); // nothing to reuse: the panel asks for itself
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -84,29 +84,103 @@ describe('the page-load /health read', () => {
     expect(voiceHealth()).toBe('server');
   });
 
-  it('a failed request leaves it unknown, with nothing for the panel to reuse, and the next ask tries again', async () => {
-    fetchMock.mockRejectedValue(new TypeError('offline'));
-    prefetchVoiceCaps();
-    await flush();
-    expect(fetchMock).toHaveBeenCalledTimes(2); // the request and its one retry
-    expect(voiceHealth()).toBe('unknown');
-    expect(await sharedVoiceCaps()).toBeNull();
+  describe('a Worker that answered "no voice" is an answer, and nothing asks it again', () => {
+    for (const [label, response] of [
+      ['stt is off', () => new Response(JSON.stringify({ voice: { stt: false, tts: 'browser' } }), { status: 200 })],
+      ['there is no voice block', () => new Response(JSON.stringify({ ok: true }), { status: 200 })],
+      ['the voice block is not an object', () => new Response(JSON.stringify({ voice: 'on' }), { status: 200 })],
+      ['the JSON is not even an object', () => new Response('null', { status: 200 })],
+      ['the server voice is not configured', () => answer('server', { configured: false })],
+      ['replies are not read aloud', () => answer('browser')],
+      ['it says 404', () => new Response('{}', { status: 404 })],
+      ['it says 403', () => new Response('{}', { status: 403 })],
+    ] as const) {
+      it(`when ${label}: "none", one request, no retry, and not asked again`, async () => {
+        fetchMock.mockImplementation(async () => response());
+        prefetchVoiceCaps();
+        await flush();
+        expect(voiceHealth()).toBe('none');
+        expect(fetchMock).toHaveBeenCalledTimes(1);
 
-    fetchMock.mockReset();
-    fetchMock.mockResolvedValue(answer('server'));
-    prefetchVoiceCaps();
-    await flush();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(voiceHealth()).toBe('server');
+        prefetchVoiceCaps(); // what a click does when it finds no answer: there is one
+        prefetchVoiceCaps();
+        await flush();
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+      });
+    }
+
+    it('and the panel is told it as it is: no voice (null), not "ask for yourself" (undefined)', async () => {
+      fetchMock.mockResolvedValue(new Response(JSON.stringify({ voice: { stt: false } }), { status: 200 }));
+      prefetchVoiceCaps();
+      await flush();
+      expect(await sharedVoiceCaps()).toBeNull();
+    });
+
+    it('while a text-only voice (stt on, replies not read aloud) is still caps for the panel', async () => {
+      fetchMock.mockResolvedValue(answer('none'));
+      prefetchVoiceCaps();
+      await flush();
+      expect(voiceHealth()).toBe('none');
+      expect(await sharedVoiceCaps()).toEqual({ tts: 'none' });
+    });
   });
 
-  it('a Worker with no speech to text is "unknown", never a server voice', async () => {
-    fetchMock.mockResolvedValue(
-      new Response(JSON.stringify({ voice: { stt: false, tts: 'server' } }), { status: 200 })
-    );
-    prefetchVoiceCaps();
-    await flush();
-    expect(voiceHealth()).toBe('unknown');
+  describe('a failure is not an answer, and the next ask tries again', () => {
+    const failures: Array<[string, () => Promise<Response>, number]> = [
+      ['the network is down', () => Promise.reject(new TypeError('offline')), 2],
+      ['the Worker errors (5xx)', async () => new Response('{}', { status: 502 }), 2],
+      ['the answer is not JSON', async () => new Response('<html>', { status: 200 }), 1],
+    ];
+    for (const [label, respond, requests] of failures) {
+      it(`when ${label}: unknown, nothing for the panel to reuse, and asked again`, async () => {
+        fetchMock.mockImplementation(respond);
+        prefetchVoiceCaps();
+        await flush();
+        expect(fetchMock).toHaveBeenCalledTimes(requests);
+        expect(voiceHealth()).toBe('unknown');
+        expect(await sharedVoiceCaps()).toBeUndefined();
+
+        fetchMock.mockReset();
+        fetchMock.mockResolvedValue(answer('server'));
+        prefetchVoiceCaps();
+        await flush();
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+        expect(voiceHealth()).toBe('server');
+        expect(await sharedVoiceCaps()).toEqual({ tts: 'server' });
+      });
+    }
+
+    it('when it times out: unknown too', async () => {
+      vi.useFakeTimers();
+      try {
+        fetchMock.mockImplementation(
+          (_url: string, init: RequestInit) =>
+            new Promise((_resolve, reject) => {
+              init.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+            })
+        );
+        prefetchVoiceCaps();
+        await vi.advanceTimersByTimeAsync(5001);
+        await vi.advanceTimersByTimeAsync(5001);
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+        expect(voiceHealth()).toBe('unknown');
+        expect(await sharedVoiceCaps()).toBeUndefined();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('a failure after a success never undoes it', async () => {
+      fetchMock.mockResolvedValue(answer('server'));
+      prefetchVoiceCaps();
+      await flush();
+      fetchMock.mockReset();
+      fetchMock.mockRejectedValue(new TypeError('offline'));
+      prefetchVoiceCaps();
+      await flush();
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(voiceHealth()).toBe('server');
+    });
   });
 
   it('does nothing in a browser that cannot record: no mic, no voice, nothing to ask about', async () => {

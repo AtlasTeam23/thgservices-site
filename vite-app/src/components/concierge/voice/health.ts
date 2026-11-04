@@ -22,25 +22,29 @@ const asBody = (v: unknown): Record<string, unknown> | null =>
   v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
 
 /**
- * Whether the Worker offers speech to text, and whether replies are read aloud. Null for
- * anything else (no voice block, `stt: false`, a 4xx, unreachable): the widget then shows
- * no voice controls at all. One more try after a network failure, a timeout or a 5xx, since
- * a single dropped request should not cost the visitor the mic for the whole visit. Each try
- * is limited to HEALTH_TIMEOUT_MS, body included.
+ * What the Worker said about voice, or `undefined` when it said nothing usable. Three outcomes:
+ *  - the voice caps: it offers speech to text, and `tts` says whether replies can be read aloud;
+ *  - null: it ANSWERED, and the answer is no voice (a 2xx whose voice block is absent or has `stt` off, or a 4xx).
+ *    Asking again would get the same answer, so nobody should;
+ *  - undefined: a failure (unreachable, a timeout, a 5xx, or a 2xx that is not JSON), which is worth asking about
+ *    again later.
+ * One more try after a network failure, a timeout or a 5xx, since a single dropped request should not cost
+ * the visitor the mic for the whole visit. Each try is limited to HEALTH_TIMEOUT_MS, body included.
  */
-export async function fetchVoiceCaps(): Promise<VoiceCaps | null> {
+async function askHealth(): Promise<VoiceCaps | null | undefined> {
   for (let attempt = 0; attempt < 2; attempt++) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), HEALTH_TIMEOUT_MS);
     try {
       const res = await fetch(`${apiBase()}/health`, { signal: controller.signal, credentials: 'omit' });
       if (res.status >= 500) continue;
-      if (res.status !== 200) return null;
-      let voice: Record<string, unknown> | null = null;
+      if (!res.ok) return null;
+      let voice: Record<string, unknown> | null;
       try {
         voice = asBody((await res.json())?.voice);
       } catch {
         if (controller.signal.aborted) continue; // it was the timeout that cut the body short
+        return undefined; // answered, but not with JSON: not a Worker's answer, and not worth a second try now
       }
       if (!voice || voice.stt !== true) return null;
       // An allow-list: the server voice is on only for exactly "server", and not when the Worker
@@ -53,36 +57,46 @@ export async function fetchVoiceCaps(): Promise<VoiceCaps | null> {
       clearTimeout(timer);
     }
   }
-  return null;
+  return undefined;
+}
+
+/**
+ * Whether the Worker offers speech to text, and whether replies are read aloud. Null for anything else
+ * (no voice block, `stt: false`, a 4xx, unreachable): the widget then shows no voice controls at all.
+ */
+export async function fetchVoiceCaps(): Promise<VoiceCaps | null> {
+  return (await askHealth()) ?? null;
 }
 
 // ---- The page-load answer ----------------------------------------------------------
 
-/** What the page-load request found: not known (not asked, in flight, or it failed), a server voice, or none. */
-let health: 'unknown' | 'server' | 'none' = 'unknown';
+/**
+ * What the page-load request found: `undefined` while it is not known (not asked, in flight, or it failed),
+ * null for a definitive "no voice" answer, otherwise the caps.
+ */
+let answer: VoiceCaps | null | undefined;
 /** The page-load request, while it is in flight. */
-let inFlight: Promise<VoiceCaps | null> | null = null;
+let inFlight: Promise<void> | null = null;
 
-export const voiceHealth = (): 'unknown' | 'server' | 'none' => health;
+/** What a click needs to know: not known yet, a server voice, or no server voice (an answer that will not change). */
+export const voiceHealth = (): 'unknown' | 'server' | 'none' =>
+  answer === undefined ? 'unknown' : answer?.tts === 'server' ? 'server' : 'none';
 
 /**
- * Ask the Worker once whether it has a server voice, so a click can read the answer. fetchVoiceCaps()
- * has its own timeout (5 s per try, one retry); until it answers the greeting simply does not play.
- * Does nothing in a browser that cannot record (no mic, no spoken replies: nothing to ask about), when
- * the answer is already known, or while a request is in flight. A failed request leaves the answer
- * "unknown", so asking again later (the next click) tries again.
+ * Ask the Worker once whether it has a server voice, so a click can read the answer. The request has its own
+ * timeout (5 s per try, one retry); until it answers the greeting simply does not play. Does nothing in a
+ * browser that cannot record (no mic, no spoken replies: nothing to ask about), when the Worker has already
+ * answered (including "no voice", which no click should ask about again), or while a request is in flight.
+ * A request that failed leaves the answer unknown, so the next click asks again.
  */
 export function prefetchVoiceCaps(): void {
-  if (inFlight || health !== 'unknown' || !isRecordingSupported()) return;
-  const request = (inFlight = (async (): Promise<VoiceCaps | null> => {
-    let caps: VoiceCaps | null = null;
+  if (inFlight || answer !== undefined || !isRecordingSupported()) return;
+  const request = (inFlight = (async () => {
     try {
-      caps = await fetchVoiceCaps();
+      answer = await askHealth();
     } catch {
-      // treated as "no answer"
+      // no answer
     }
-    if (caps) health = caps.tts;
-    return caps;
   })());
   void request.finally(() => {
     if (inFlight === request) inFlight = null;
@@ -90,17 +104,17 @@ export function prefetchVoiceCaps(): void {
 }
 
 /**
- * The page-load answer for the voice controller's own check, so the Worker is not asked a second time:
- * the request in flight, or the answer it brought, or null when there is none to reuse (nothing was asked,
- * or it failed). The controller then asks for itself.
+ * The page-load answer for the voice controller's own check, so the Worker is not asked a second time: the
+ * caps, or null for a definitive "no voice", or undefined when there is nothing to reuse (nothing was asked,
+ * or it failed) and the controller must ask for itself. Waits for a request that is in flight.
  */
-export async function sharedVoiceCaps(): Promise<VoiceCaps | null> {
-  if (inFlight) return inFlight;
-  return health === 'unknown' ? null : { tts: health };
+export async function sharedVoiceCaps(): Promise<VoiceCaps | null | undefined> {
+  if (inFlight) await inFlight;
+  return answer;
 }
 
 /** Forget the answer, as if the page had just loaded. For tests. */
 export function resetVoiceHealth(): void {
-  health = 'unknown';
+  answer = undefined;
   inFlight = null;
 }

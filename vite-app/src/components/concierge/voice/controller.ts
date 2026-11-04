@@ -142,7 +142,9 @@ export function createVoiceController({ get, patch, send }: VoiceHost) {
     checked = true;
     let caps: VoiceCaps | null = null;
     try {
-      caps = (await sharedVoiceCaps()) ?? (await fetchVoiceCaps());
+      // The page-load answer, when there is one (null in it is a definitive "no voice"); otherwise ask.
+      const shared = await sharedVoiceCaps();
+      caps = shared === undefined ? await fetchVoiceCaps() : shared;
     } catch {
       // treated as "no voice"
     }

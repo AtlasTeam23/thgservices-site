@@ -17,7 +17,7 @@
 // Everything this file imports is small on purpose: it is part of the main bundle.
 
 import { track } from '../../../lib/track';
-import { isFreshThread, STORAGE_KEY } from '../storage';
+import { isFreshThread, loadState } from '../storage';
 import { spokenCapInForce, VOICE_PREFS_KEY } from './cap';
 import { prefetchVoiceCaps, resetVoiceHealth, voiceHealth } from './health';
 import { speakUrl } from './playback';
@@ -55,21 +55,6 @@ function storedPrefs(): Record<string, unknown> {
 }
 
 /**
- * Nothing has been said in the stored chat yet: no messages, or only the local greeting. Reads the stored
- * thread directly (same key as loadState() in storage.ts) so that all of that parsing stays out of the
- * main bundle. A thread that cannot be read counts as fresh, as it does for the panel.
- */
-function storedThreadIsFresh(): boolean {
-  try {
-    const raw = window.sessionStorage.getItem(STORAGE_KEY);
-    const messages: unknown = raw && JSON.parse(raw)?.messages;
-    return !Array.isArray(messages) || isFreshThread(messages);
-  } catch {
-    return true;
-  }
-}
-
-/**
  * Call this from inside the click (or tap) that opens the chat, before anything is awaited. Plays the
  * greeting when all of these hold, all decided right here from module state and sessionStorage:
  * this browser can record (so the mic, the speaker toggle and spoken replies exist at all), /health said
@@ -86,7 +71,8 @@ export function playGreetingOnOpen(): void {
     const health = voiceHealth();
     if (health === 'unknown') {
       // The answer is not in (the page was just loaded, or the request failed): ask again now, so
-      // that a later open can play it. This click goes without.
+      // that a later open can play it. This click goes without. (A Worker that answered "no voice" is
+      // not "unknown": nothing asks it again.)
       prefetchVoiceCaps();
       return;
     }
@@ -97,7 +83,7 @@ export function playGreetingOnOpen(): void {
       spokenLimitAt: typeof prefs.spokenLimitAt === 'number' ? prefs.spokenLimitAt : null,
     };
     if (prefs.greeted === true || prefs.speak === false || prefs.blocked === true) return;
-    if (spokenCapInForce(cap, Date.now()) || !storedThreadIsFresh()) return;
+    if (spokenCapInForce(cap, Date.now()) || !isFreshThread(loadState().messages)) return;
 
     started = true;
     const first = { ...prefs, speak: true, disclosed: true, greeted: true };

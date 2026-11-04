@@ -78,6 +78,7 @@ const healthOf = (tts: string, extra: Record<string, unknown> = {}) => ({
   ok: true,
   json: async () => ({ ok: true, voice: { stt: true, tts, configured: true, ...extra } }),
 });
+const answerOf = (status: number, body: unknown) => ({ status, ok: status >= 200 && status < 300, json: async () => body });
 const fileOf = () => ({ ok: true, blob: async () => new Blob([new Uint8Array([1, 2, 3])]) });
 
 const okChat = (reply: string): ChatResult => ({
@@ -450,6 +451,43 @@ describe('the greeting does not play', () => {
     expect(screen.getAllByText(copy.GREETING)).toHaveLength(1);
   });
 
+  describe('junk entries in the stored thread are ignored, the way the chat itself ignores them', () => {
+    const seedRaw = (messages: unknown[]) =>
+      window.sessionStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({ sessionId: crypto.randomUUID(), messages, leadSubmitted: false, ended: false, utm: {} })
+      );
+
+    for (const [label, junk] of [
+      ['[{}]', [{}]],
+      ['[null]', [null]],
+      ['a mix of junk', [null, {}, 'text', 7, { id: 1, role: 'user', content: 'x', at: 'now' }]],
+    ] as const) {
+      it(`${label} is a fresh thread: the greeting plays, and the chat shows just its own greeting`, async () => {
+        seedRaw([...junk]);
+        await loadPage();
+        clickBubble();
+        expect(audio().play).toHaveBeenCalledTimes(1);
+        await screen.findByRole('dialog');
+        await settle();
+        expect(screen.getAllByText(copy.GREETING)).toHaveLength(1);
+      });
+    }
+
+    it('junk beside the greeting message is still just the greeting', async () => {
+      seedRaw([null, message('assistant', copy.GREETING, true), {}]);
+      await loadPage();
+      clickBubble();
+      expect(audio().play).toHaveBeenCalledTimes(1);
+    });
+
+    it('junk beside a real visitor message is not a fresh thread', async () => {
+      seedRaw([null, {}, message('user', 'hi')]);
+      await loadPage();
+      await opensQuietly();
+    });
+  });
+
   it('but does when the stored thread cannot be read (the chat starts fresh then, too)', async () => {
     window.sessionStorage.setItem(STORAGE_KEY, '{not json');
     await loadPage();
@@ -529,8 +567,8 @@ describe('the greeting does not play', () => {
     await opensQuietly();
   });
 
-  it('when /health failed', async () => {
-    net.health = () => Promise.resolve({ status: 404, ok: false, json: async () => ({}) });
+  it('when /health said 404', async () => {
+    net.health = () => Promise.resolve(answerOf(404, {}));
     await loadPage();
     await opensQuietly();
   });
@@ -539,6 +577,50 @@ describe('the greeting does not play', () => {
     net.health = () => Promise.reject(new TypeError('offline'));
     await loadPage();
     await opensQuietly();
+  });
+});
+
+describe('a Worker that answered "no voice" is not asked again by every click', () => {
+  const noVoiceAnswers: Array<[string, () => unknown]> = [
+    ['speech to text is off', () => answerOf(200, { ok: true, voice: { stt: false, tts: 'browser' } })],
+    ['there is no voice block', () => answerOf(200, { ok: true })],
+    ['it says 404', () => answerOf(404, {})],
+    ['it says 403', () => answerOf(403, {})],
+  ];
+  for (const [label, answer] of noVoiceAnswers) {
+    it(`when ${label}: one request for the page, however many times the chat is opened; no greeting, no voice controls`, async () => {
+      net.health = () => Promise.resolve(answer());
+      const user = userEvent.setup();
+      await loadPage();
+      expect(net.healthCalls).toBe(1);
+
+      for (let open = 0; open < 3; open += 1) {
+        clickBubble();
+        await screen.findByRole('dialog');
+        await settle();
+        await user.keyboard('{Escape}');
+      }
+      expect(net.healthCalls).toBe(1); // nothing retried it
+      expect(FakeAudio.instances).toHaveLength(0);
+      expect(storedPrefs()).toBeNull();
+      // The panel took the same answer instead of asking for itself: no voice controls at all.
+      expect(fetchVoiceCaps).not.toHaveBeenCalled();
+      clickBubble();
+      await screen.findByRole('dialog');
+      expect(screen.queryByRole('button', { name: vc.VOICE_BUTTON_DESKTOP })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: vc.VOICE_SPEAK_TOGGLE })).not.toBeInTheDocument();
+    });
+  }
+
+  it('but a Worker that could not be reached is asked again, by the next click, and the panel asks for itself', async () => {
+    net.health = () => Promise.resolve(answerOf(503, {}));
+    await loadPage();
+    expect(net.healthCalls).toBe(2); // the request and its one retry
+    clickBubble();
+    await screen.findByRole('dialog');
+    await settle();
+    expect(net.healthCalls).toBe(4); // the click asked again (a request and its retry)
+    expect(fetchVoiceCaps).toHaveBeenCalledTimes(1); // there was no answer to reuse, so the panel asked too
   });
 });
 

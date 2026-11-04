@@ -424,6 +424,7 @@ describe('voice api', () => {
       fetchMock.mockImplementationOnce((_url: string, init: RequestInit) =>
         Promise.resolve({
           status: 200,
+          ok: true,
           // headers arrived, but the body never does: only the timeout ends this
           json: () =>
             new Promise((_resolve, reject) => {
