@@ -25,6 +25,10 @@ const PREVIEW_QUESTION = 'What do you do?';
 const PREVIEW_ANSWER =
   'We sit down with local business owners, learn how your day actually runs, and fix the busywork with the right mix of software and AI tools. Want me to have someone call you?';
 
+// "Try it now" and the preview card ask for exactly the same thing.
+const TRY_REQUEST = { source: 'section_cta', quickReply: 'Try the AI Concierge' } as const;
+const openTryChat = () => openConcierge(TRY_REQUEST);
+
 const buttonBase: React.CSSProperties = {
   display: 'inline-flex',
   alignItems: 'center',
@@ -43,6 +47,8 @@ const buttonBase: React.CSSProperties = {
 };
 
 export default function AiConcierge() {
+  // False only in a production build with no Worker URL (see components/concierge/config.ts).
+  const enabled = isConciergeEnabled();
   const sectionRef = useRef<HTMLElement>(null);
   const copyRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
@@ -107,6 +113,59 @@ export default function AiConcierge() {
       cardSt.kill();
     };
   }, []);
+
+  const previewContent = (
+    <>
+      <span className="thg-cc-header">
+        <span className="thg-cc-heading">
+          <span className="thg-cc-title">{PANEL_TITLE}</span>
+          <span className="thg-cc-badge">AI</span>
+        </span>
+      </span>
+      <span className="thg-cc-disclosure">{DISCLOSURE}</span>
+      <span className="thg-cc-scroll">
+        <span className="thg-cc-list">
+          <span className="thg-cc-row thg-cc-row--assistant">
+            <span className="thg-cc-msg thg-cc-msg--assistant">{GREETING}</span>
+          </span>
+          <span className="thg-cc-row thg-cc-row--user">
+            <span className="thg-cc-msg thg-cc-msg--user">{PREVIEW_QUESTION}</span>
+          </span>
+          <span className="thg-cc-row thg-cc-row--assistant">
+            <span className="thg-cc-msg thg-cc-msg--assistant">{PREVIEW_ANSWER}</span>
+          </span>
+        </span>
+      </span>
+      <span className="thg-cc-chips">
+        {OFFER_CHIPS.map((chip) => (
+          <span key={chip} className="thg-cc-chip">
+            {chip}
+          </span>
+        ))}
+      </span>
+      <span className="thg-cc-composer">
+        <span className="thg-cc-composer-row">
+          <span className="thg-cc-input thg-cc-fake-input">Type your question…</span>
+          <span className="thg-cc-send">
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M12 19V5" />
+              <path d="m5 12 7-7 7 7" />
+            </svg>
+          </span>
+        </span>
+        <span className="thg-cc-meta" />
+      </span>
+    </>
+  );
 
   return (
     <section
@@ -209,12 +268,10 @@ export default function AiConcierge() {
                 marginTop: '36px',
               }}
             >
-              {isConciergeEnabled() && (
+              {enabled && (
                 <button
                   type="button"
-                  onClick={() =>
-                    openConcierge({ source: 'section_cta', quickReply: 'Try the AI Concierge' })
-                  }
+                  onClick={openTryChat}
                   style={{
                     ...buttonBase,
                     border: 'none',
@@ -266,58 +323,28 @@ export default function AiConcierge() {
             </p>
           </div>
 
-          {/* Static preview of the real widget, built from the same .thg-cc-* styles. */}
-          <div ref={cardRef} style={{ opacity: 0, minWidth: 0 }} aria-hidden="true">
-            <div className="thg-cc-card thg-cc-surface aic-card">
-              <div className="thg-cc-header">
-                <div className="thg-cc-heading">
-                  <span className="thg-cc-title">{PANEL_TITLE}</span>
-                  <span className="thg-cc-badge">AI</span>
-                </div>
-              </div>
-              <p className="thg-cc-disclosure">{DISCLOSURE}</p>
-              <div className="thg-cc-scroll">
-                <ol className="thg-cc-list">
-                  <li className="thg-cc-row thg-cc-row--assistant">
-                    <div className="thg-cc-msg thg-cc-msg--assistant">{GREETING}</div>
-                  </li>
-                  <li className="thg-cc-row thg-cc-row--user">
-                    <div className="thg-cc-msg thg-cc-msg--user">{PREVIEW_QUESTION}</div>
-                  </li>
-                  <li className="thg-cc-row thg-cc-row--assistant">
-                    <div className="thg-cc-msg thg-cc-msg--assistant">{PREVIEW_ANSWER}</div>
-                  </li>
-                </ol>
-              </div>
-              <div className="thg-cc-chips">
-                {OFFER_CHIPS.map((chip) => (
-                  <span key={chip} className="thg-cc-chip">
-                    {chip}
-                  </span>
-                ))}
-              </div>
-              <div className="thg-cc-composer">
-                <div className="thg-cc-composer-row">
-                  <div className="thg-cc-input thg-cc-fake-input">Type your question…</div>
-                  <span className="thg-cc-send">
-                    <svg
-                      width="18"
-                      height="18"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2.2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M12 19V5" />
-                      <path d="m5 12 7-7 7 7" />
-                    </svg>
-                  </span>
-                </div>
-                <div className="thg-cc-meta" />
-              </div>
-            </div>
+          {/* Static preview of the real widget, built from the same .thg-cc-* styles. When the
+              chat is live it is one big button that opens it; otherwise it is decoration.
+              Everything inside is a span (valid inside a button) and hidden from assistive
+              tech, so a screen reader gets a single, clearly named control. */}
+          <div ref={cardRef} style={{ opacity: 0, minWidth: 0 }} aria-hidden={enabled ? undefined : 'true'}>
+            {enabled ? (
+              <button
+                type="button"
+                className="thg-cc-card-button aic-card"
+                aria-label="Try the AI Website Concierge"
+                onClick={openTryChat}
+              >
+                <span className="thg-cc-card thg-cc-surface" aria-hidden="true">
+                  {previewContent}
+                </span>
+                <span className="thg-cc-card-pill" aria-hidden="true">
+                  Click to try it
+                </span>
+              </button>
+            ) : (
+              <div className="thg-cc-card thg-cc-surface aic-card">{previewContent}</div>
+            )}
           </div>
         </div>
       </div>
