@@ -9,6 +9,7 @@ import { Concierge } from '../index';
 import { initAnalytics } from '../../../lib/analytics';
 import { postChat } from '../api';
 import * as copy from '../copy';
+import { EMPTY_LEAD_DRAFT } from '../leadDraft';
 
 // The real track() -> trackEvent() chain, observed where gtag.js would see it.
 function sent(): unknown[][] {
@@ -36,7 +37,13 @@ beforeEach(() => {
   window.dataLayer?.splice(0, window.dataLayer.length);
   vi.mocked(postChat).mockResolvedValue({
     kind: 'ok',
-    data: { reply: 'Here to help.', intent: 'answer', offerCallback: false },
+    data: {
+      reply: 'Here to help.',
+      intent: 'answer',
+      offerCallback: false,
+      readyToConfirm: false,
+      lead: EMPTY_LEAD_DRAFT,
+    },
   });
 });
 
