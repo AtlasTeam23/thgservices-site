@@ -6,3 +6,8 @@ vite-app/dist/
 .DS_Store
 .vscode/
 *.log
+
+# AI concierge Worker (see concierge-worker/README.md)
+concierge-worker/node_modules/
+concierge-worker/.dev.vars
+concierge-worker/.wrangler/

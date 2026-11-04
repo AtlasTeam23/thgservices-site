@@ -1,0 +1,41 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "thg-concierge",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-03",
+  "compatibility_flags": ["nodejs_compat"],
+  // Keep application logs (the counters the Worker writes with console.log). Turn off
+  // invocation logs: Cloudflare would otherwise record a line per request that includes the
+  // client IP, which the privacy statement says this service does not keep.
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "enabled": true,
+      "invocation_logs": false
+    }
+  },
+
+  // Public, non-secret settings. Secrets (LLM_API_KEY, RESEND_API_KEY,
+  // TURNSTILE_SECRET_KEY, LEADQUIK_WEBHOOK_URL) are set with
+  // `npx wrangler secret put <NAME>` and never live in this file.
+  "vars": {
+    "ALLOWED_ORIGINS": "https://thgservices.io,https://www.thgservices.io,http://localhost:3000,http://localhost:4173",
+    "MODEL": "claude-haiku-5-5",
+    "DAILY_LLM_CAP": "2000",
+    "LEAD_TO_EMAIL": "developer@leadquik.com",
+    "LEAD_FROM_EMAIL": "THG AI Services <concierge@leadquik.com>",
+    // Used only to hash client IPs into Durable Object names. Not a secret.
+    "RATE_SALT": "92fc073eb83ffe453544cd5c7fdcfa7c",
+    // `.dev.vars` and the test config override this with "mock".
+    "LLM_PROVIDER": "anthropic"
+  },
+
+  "durable_objects": {
+    "bindings": [{ "name": "LIMITER", "class_name": "Limiter" }]
+  },
+  // SQLite-backed classes are what the Workers free plan allows.
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Limiter"] }],
+
+  // Import knowledge.md and system-prompt.md as plain text strings.
+  "rules": [{ "type": "Text", "globs": ["**/*.md"], "fallthrough": true }]
+}
