@@ -15,14 +15,18 @@
 // with the same body the Worker sends for a spoken reply (src/elevenlabs.ts): text, model_id, the four voice settings
 // and apply_text_normalization "auto". The key travels only in the `xi-api-key` header.
 //
-// Writes --out (default ../vite-app/public/concierge/greeting.mp3 in this repo) and, next to it, a file with the same
-// name and a .json ending: { text, voiceId, modelId, format, generatedAt }, which the tests compare with the widget's
-// text and with wrangler.jsonc. Exits non-zero, with a plain message, if anything is missing or the call fails.
+// Writes --out (default ../vite-app/public/concierge/greeting.mp3 in this repo; it must end in .mp3) and, next to it, a
+// file with the same name and a .json ending: { text, voiceId, modelId, format, generatedAt }, which the tests compare
+// with the widget's text and with wrangler.jsonc. Both files are written to temporary names first and only then moved
+// into place, so a failure never leaves a half-written file, and the recording is replaced before its description:
+// if the second move failed, the old description would no longer match the new text and the widget's test would say
+// so, instead of passing with a stale recording. Exits non-zero, with a plain message, if anything is missing or the
+// call fails.
 //
 // --env-file, --wrangler-file and --base-url exist so the script can be tested against fixture files and a local stub;
 // you should not need them. --base-url is where the key is sent, so it must be https:// (or http:// for localhost or
 // 127.0.0.1 only), and the script never follows a redirect.
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { isAllowedBaseUrl, parseDevVars, ScriptError } from './eleven-voices.mjs';
@@ -43,6 +47,8 @@ const MAX_AUDIO_BYTES = 5 * 1024 * 1024;
 const VOICE_ID = /^[A-Za-z0-9_-]{8,64}$/;
 const MODEL_ID = /^[A-Za-z0-9_.-]{1,64}$/;
 const MP3_FORMAT = /^mp3_[0-9]+_[0-9]+$/;
+/** --out names an MP3 file: something before the .mp3, and nothing after it. */
+const OUT_PATH = /[^/\\]\.mp3$/i;
 
 /**
  * Voice settings, sent with every request so the voice's stored defaults cannot change how it sounds. These MUST be
@@ -178,7 +184,7 @@ VOICE_ELEVEN_MODEL, VOICE_ELEVEN_FORMAT), using ELEVENLABS_API_KEY from .dev.var
 .json file next to it that says what was recorded.
 
   --text   the exact text of GREETING in vite-app/src/components/concierge/copy.ts (required, at most ${MAX_CHARS} characters)
-  --out    where to write the MP3 (default: vite-app/public/concierge/greeting.mp3 in this repo)
+  --out    where to write the MP3, a path ending in .mp3 (default: vite-app/public/concierge/greeting.mp3 in this repo)
 `;
 
 const parseArgs = (argv) => {
@@ -191,7 +197,10 @@ const parseArgs = (argv) => {
       const value = inline ?? argv[++i];
       if (value === undefined || value === '') return { error: `Option ${flag} needs a value.` };
       if (flag === '--text') options.text = value;
-      else if (flag === '--out') options.out = resolve(value);
+      else if (flag === '--out') {
+        if (!OUT_PATH.test(value)) return { error: '--out must be a file name ending in .mp3: the widget plays it as an MP3.' };
+        options.out = resolve(value);
+      }
       else if (flag === '--env-file') options.envFile = value;
       else if (flag === '--wrangler-file') options.wranglerFile = value;
       else if (isAllowedBaseUrl(value)) options.baseUrl = value;
@@ -212,6 +221,7 @@ export const run = async ({
   stderr = process.stderr,
   fetchImpl = fetch,
   readFileImpl = readFile,
+  fsImpl = { mkdir, writeFile, rename, rm },
   now = () => new Date(),
 } = {}) => {
   const options = parseArgs(argv);
@@ -274,15 +284,28 @@ export const run = async ({
     format: voice.format,
     generatedAt: now().toISOString(),
   };
+  const partialAudio = `${options.out}.partial`;
+  const partialJson = `${jsonPath}.partial`;
+  let replaced = false;
   try {
-    await mkdir(dirname(options.out), { recursive: true });
-    // Written beside the target first, then moved into place, so a failure never leaves half an MP3 behind.
-    const partial = `${options.out}.partial`;
-    await writeFile(partial, audio);
-    await rename(partial, options.out);
-    await writeFile(jsonPath, `${JSON.stringify(sidecar, null, 2)}\n`);
+    await fsImpl.mkdir(dirname(options.out), { recursive: true });
+    // Both files are written under temporary names before either is put in place.
+    await fsImpl.writeFile(partialAudio, audio);
+    await fsImpl.writeFile(partialJson, `${JSON.stringify(sidecar, null, 2)}\n`);
+    await fsImpl.rename(partialAudio, options.out);
+    replaced = true;
+    await fsImpl.rename(partialJson, jsonPath);
   } catch (error) {
-    stderr.write(scrub(`Could not write ${options.out} (${error?.code ?? error?.message ?? 'unknown error'}).\n`));
+    // Whatever went wrong, no temporary file is left behind (and a failure to clean up is not worth a message).
+    await Promise.allSettled([fsImpl.rm(partialAudio, { force: true }), fsImpl.rm(partialJson, { force: true })]);
+    const reason = error?.code ?? error?.message ?? 'unknown error';
+    stderr.write(
+      scrub(
+        replaced
+          ? `Could not finish writing ${jsonPath} (${reason}). ${options.out} was already replaced, so the two no longer match: run this again.\n`
+          : `Could not write ${options.out} (${reason}). Nothing was changed.\n`,
+      ),
+    );
     return 1;
   }
 

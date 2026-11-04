@@ -2,10 +2,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ChatResult } from '../api';
+import type { Recording, RecordingResult } from '../voice/recorder';
+
+// One switch for "this browser can record", seen by every module that asks (the bubble's greeting, the
+// panel's controller).
+const mic = vi.hoisted(() => ({ supported: true }));
 
 // Everything real (the bubble, the lazy panel, the controller, the speech module, the storage) except the
 // network, the microphone, analytics and the <audio> element, which is a fake that records what was played.
-vi.mock('../api', () => ({
+// The page-load /health read is the real one, over a stubbed fetch; the mocked api.fetchVoiceCaps is only
+// what the panel's controller falls back on when the page-load answer cannot be reused.
+vi.mock('../api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../api')>()),
   postChat: vi.fn(),
   postLead: vi.fn(),
   postStt: vi.fn(),
@@ -17,8 +25,12 @@ vi.mock('../../../lib/track', () => ({ track: vi.fn() }));
 vi.mock('../../../hooks/useLenis', () => ({ getLenis: vi.fn() }));
 vi.mock('../voice/recorder', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../voice/recorder')>()),
-  isRecordingSupported: vi.fn(() => true),
+  isRecordingSupported: vi.fn(() => mic.supported),
   startRecording: vi.fn(),
+}));
+vi.mock('../voice/support', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../voice/support')>()),
+  isRecordingSupported: vi.fn(() => mic.supported),
 }));
 
 import ChatBubble from '../ChatBubble';
@@ -30,16 +42,22 @@ import { EMPTY_LEAD_DRAFT } from '../leadDraft';
 import { STORAGE_KEY } from '../storage';
 import { GREETING_URL, resetGreeting } from '../voice/greeting';
 import { VOICE_PREFS_KEY } from '../voice/prefs';
+import { startRecording } from '../voice/recorder';
 import { resetSpeech } from '../voice/speech';
 import * as vc from '../voice/copy';
 
 class FakeAudio {
   static instances: FakeAudio[] = [];
+  /** The source of every play() so far, in order. */
+  static played: string[] = [];
   static playImpl: (audio: FakeAudio) => Promise<void> = async () => {};
   src = '';
   onended: (() => void) | null = null;
   onerror: (() => void) | null = null;
-  play = vi.fn(() => FakeAudio.playImpl(this));
+  play = vi.fn(() => {
+    FakeAudio.played.push(this.src);
+    return FakeAudio.playImpl(this);
+  });
   pause = vi.fn();
   constructor() {
     FakeAudio.instances.push(this);
@@ -47,6 +65,20 @@ class FakeAudio {
 }
 
 const notAllowed = () => new DOMException('The request is not allowed', 'NotAllowedError');
+
+/** The network, as the page sees it: /health, and the greeting file (fetched only when playback is refused). */
+const net = {
+  healthCalls: 0,
+  fileCalls: 0,
+  health: (() => Promise.resolve(null)) as () => Promise<unknown>,
+  file: (() => Promise.resolve(null)) as () => Promise<unknown>,
+};
+const healthOf = (tts: string, extra: Record<string, unknown> = {}) => ({
+  status: 200,
+  ok: true,
+  json: async () => ({ ok: true, voice: { stt: true, tts, configured: true, ...extra } }),
+});
+const fileOf = () => ({ ok: true, blob: async () => new Blob([new Uint8Array([1, 2, 3])]) });
 
 const okChat = (reply: string): ChatResult => ({
   kind: 'ok',
@@ -95,15 +127,48 @@ const bubble = () => screen.getByRole('button', { name: copy.BUBBLE_LABEL });
 const clickBubble = () => fireEvent.click(bubble());
 const audio = () => FakeAudio.instances[0];
 const equalizer = () => screen.queryByRole('button', { name: vc.VOICE_STOP_SPEAKING });
+const spoken = (name: string) => vi.mocked(track).mock.calls.filter(([event]) => event === name);
+
+/** A recording the test finishes by hand. */
+function fakeRecording(durationMs = 3000, mime = 'audio/webm;codecs=opus') {
+  let resolve!: (value: RecordingResult | null) => void;
+  const result = new Promise<RecordingResult | null>((r) => {
+    resolve = r;
+  });
+  const blob = new Blob([new Uint8Array(4)], { type: mime });
+  const recording: Recording = {
+    result,
+    stop: vi.fn(() => resolve({ blob, mime, durationMs })),
+    cancel: vi.fn(() => resolve(null)),
+  };
+  return { recording, finish: resolve };
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
   resetSpeech();
   resetGreeting();
   window.sessionStorage.clear();
+  mic.supported = true;
   FakeAudio.instances = [];
+  FakeAudio.played = [];
   FakeAudio.playImpl = async () => {};
+  net.healthCalls = 0;
+  net.fileCalls = 0;
+  net.health = () => Promise.resolve(healthOf('server'));
+  net.file = () => Promise.resolve(fileOf());
   vi.stubGlobal('Audio', FakeAudio);
+  vi.stubGlobal(
+    'fetch',
+    vi.fn((url: string) => {
+      if (String(url).endsWith('/health')) {
+        net.healthCalls += 1;
+        return net.health();
+      }
+      net.fileCalls += 1;
+      return net.file();
+    })
+  );
   URL.createObjectURL = vi.fn(() => 'blob:fake');
   URL.revokeObjectURL = vi.fn();
   vi.mocked(fetchVoiceCaps).mockResolvedValue({ tts: 'server' });
@@ -115,6 +180,7 @@ afterEach(() => {
   resetSpeech();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+  Reflect.deleteProperty(document, 'readyState');
 });
 
 describe('the greeting plays when the chat is opened', () => {
@@ -163,24 +229,26 @@ describe('the greeting plays when the chat is opened', () => {
     expect(audio().pause).toHaveBeenCalled();
   });
 
-  it('reports it as a spoken reply of mode "greeting" once it really starts, and never calls /tts', async () => {
+  it('is reported as the greeting being played, not as a spoken reply, and never calls /tts', async () => {
     await loadPage();
     clickBubble();
     await screen.findByRole('dialog');
     await settle();
-    expect(track).toHaveBeenCalledWith('concierge_voice_reply_spoken', { mode: 'greeting' });
-    expect(vi.mocked(track).mock.calls.filter(([name]) => name === 'concierge_voice_reply_spoken')).toHaveLength(1);
+    expect(spoken('concierge_greeting_played')).toEqual([['concierge_greeting_played']]);
+    expect(spoken('concierge_voice_reply_spoken')).toHaveLength(0);
     expect(fetchTts).not.toHaveBeenCalled();
     expect(postChat).not.toHaveBeenCalled();
   });
 
-  it('asks /health once for the whole page load: the bubble at mount, and the panel reuses the answer', async () => {
+  it('asks /health once for the whole page load: the bubble after load, and the panel reuses the answer', async () => {
     await loadPage();
-    expect(fetchVoiceCaps).toHaveBeenCalledTimes(1);
+    expect(net.healthCalls).toBe(1);
     clickBubble();
     await screen.findByRole('dialog');
     await settle();
-    expect(fetchVoiceCaps).toHaveBeenCalledTimes(1);
+    expect(net.healthCalls).toBe(1);
+    expect(fetchVoiceCaps).not.toHaveBeenCalled(); // the panel's own check found an answer to reuse
+    expect(screen.getByRole('button', { name: vc.VOICE_SPEAK_TOGGLE })).toBeInTheDocument(); // ...and voice is on
   });
 
   it('shows the speaking state with the equalizer while it plays, and goes back to idle at the end', async () => {
@@ -196,7 +264,7 @@ describe('the greeting plays when the chat is opened', () => {
     expect(screen.getByRole('button', { name: vc.VOICE_SPEAK_TOGGLE })).toHaveAttribute('aria-pressed', 'true');
   });
 
-  it('stops when the visitor taps the equalizer, and when the speaker is switched off', async () => {
+  it('stops when the speaker is switched off', async () => {
     const user = userEvent.setup();
     await loadPage();
     clickBubble();
@@ -208,6 +276,17 @@ describe('the greeting plays when the chat is opened', () => {
     expect(equalizer()).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: vc.VOICE_SPEAK_TOGGLE })).toHaveAttribute('aria-pressed', 'false');
     expect(storedPrefs()).toMatchObject({ speak: false, greeted: true });
+  });
+
+  it('stops when the visitor taps the equalizer', async () => {
+    const user = userEvent.setup();
+    await loadPage();
+    clickBubble();
+    await screen.findByRole('dialog');
+    await settle();
+    await user.click(equalizer()!);
+    expect(audio().pause).toHaveBeenCalled();
+    expect(equalizer()).not.toBeInTheDocument();
   });
 
   it('stops when the chat is closed', async () => {
@@ -254,13 +333,21 @@ describe('the greeting plays when the chat is opened', () => {
     expect(fetchTts).toHaveBeenCalledTimes(1);
     expect(vi.mocked(fetchTts).mock.calls[0][0]).toBe('A reply to read aloud.');
     expect(audio().pause).toHaveBeenCalled(); // typing stopped the greeting before the reply came
+    // That one is a reply: counted as one, and the greeting event stays at one.
+    expect(spoken('concierge_voice_reply_spoken')).toEqual([['concierge_voice_reply_spoken', { mode: 'server' }]]);
+    expect(spoken('concierge_greeting_played')).toHaveLength(1);
   });
+});
 
-  it('is replaced by a reply that arrives while it is still playing (a section button asks a question at once)', async () => {
+describe('a section button opens the chat with a question already asked', () => {
+  const askWhileOpening = () =>
+    act(() => openConcierge({ source: 'section_cta', quickReply: 'Try the AI Concierge' }));
+
+  it('is replaced by a reply that arrives while the greeting is still playing, not cut off by the question', async () => {
     let answer!: (result: ChatResult) => void;
     vi.mocked(postChat).mockReturnValue(new Promise<ChatResult>((resolve) => (answer = resolve)));
     await loadPage();
-    act(() => openConcierge({ source: 'section_cta', quickReply: 'Try the AI Concierge' }));
+    askWhileOpening();
     await screen.findByRole('dialog');
     await settle();
 
@@ -277,58 +364,29 @@ describe('the greeting plays when the chat is opened', () => {
     expect(fetchTts).toHaveBeenCalledTimes(1);
     expect(vi.mocked(fetchTts).mock.calls[0][0]).toBe('Here is the answer.');
   });
-});
 
-describe('a greeting that starts on a later open, when the panel already exists', () => {
-  /** /health is slow: the first open finds no answer; the answer then arrives, and the chat is opened again. */
-  const firstOpenWithoutAnswer = async () => {
-    let answer!: (caps: { tts: 'server' | 'none' }) => void;
-    vi.mocked(fetchVoiceCaps).mockReturnValue(new Promise((resolve) => (answer = resolve)));
+  it('but a reply that is being read is stopped by it, like any new input', async () => {
     const user = userEvent.setup();
     await loadPage();
-    clickBubble();
+    clickBubble(); // the greeting
     await screen.findByRole('dialog');
     await settle();
-    expect(FakeAudio.instances).toHaveLength(0);
-    await user.keyboard('{Escape}');
-    answer({ tts: 'server' });
-    await settle();
-    return user;
-  };
+    act(() => audio().onended?.()); // ...which ends
 
-  it('takes it over: sound on, speaking, and the first-use preferences stay saved', async () => {
-    const user = await firstOpenWithoutAnswer();
-    clickBubble();
-    expect(audio().play).toHaveBeenCalledTimes(1);
+    await user.type(screen.getByRole('textbox', { name: 'Message' }), 'hello{Enter}');
     await settle();
+    expect(fetchTts).toHaveBeenCalledTimes(1); // a reply is being read now
     expect(equalizer()).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: vc.VOICE_SPEAK_TOGGLE })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByText(vc.VOICE_DISCLOSURE)).toBeInTheDocument();
-    expect(storedPrefs()).toEqual({ speak: true, disclosed: true, greeted: true });
+    expect(audio().src).toBe('blob:fake');
 
-    // Later changes made by the controller keep what the click saved.
-    await user.click(screen.getByRole('button', { name: vc.VOICE_SPEAK_TOGGLE }));
-    await user.click(screen.getByRole('button', { name: vc.VOICE_SPEAK_TOGGLE }));
-    expect(storedPrefs()).toEqual({ speak: true, disclosed: true, greeted: true });
-  });
-
-  it('and does not lose "greeted" when it has to offer the tap-to-hear pill', async () => {
-    const user = await firstOpenWithoutAnswer();
-    let plays = 0;
-    FakeAudio.playImpl = async () => {
-      plays += 1;
-      if (plays === 1) throw notAllowed();
-    };
-    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, blob: async () => new Blob([new Uint8Array([1])]) })));
-    clickBubble();
+    // The next answer will never come, so only the new question itself can stop the reading.
+    vi.mocked(postChat).mockReturnValue(new Promise(() => {}));
+    audio().pause.mockClear();
+    act(() => openConcierge({ source: 'section_cta', quickReply: 'What do you do?' }));
     await settle();
-    expect(await screen.findByRole('button', { name: vc.VOICE_TAP_TO_HEAR })).toBeInTheDocument();
-    expect(storedPrefs()).toEqual({ speak: true, disclosed: true, greeted: true, soundHint: true });
-
-    await user.keyboard('{Escape}');
-    clickBubble(); // a third open: once is enough
-    await settle();
-    expect(audio().play).toHaveBeenCalledTimes(1);
+    expect(postChat).toHaveBeenCalledTimes(2);
+    expect(audio().pause).toHaveBeenCalled();
+    expect(equalizer()).not.toBeInTheDocument();
   });
 });
 
@@ -339,7 +397,7 @@ describe('the greeting does not play', () => {
     await settle();
     expect(FakeAudio.instances).toHaveLength(0);
     expect(equalizer()).not.toBeInTheDocument();
-    expect(track).not.toHaveBeenCalledWith('concierge_voice_reply_spoken', expect.anything());
+    expect(spoken('concierge_greeting_played')).toHaveLength(0);
   };
 
   it('when the visitor turned sound off', async () => {
@@ -349,7 +407,7 @@ describe('the greeting does not play', () => {
     expect(storedPrefs()).toEqual({ speak: false, disclosed: true }); // nothing was written
   });
 
-  it('when today\'s allowance of spoken replies is used up', async () => {
+  it("when today's allowance of spoken replies is used up", async () => {
     setPrefs({ speak: true, disclosed: true, spokenLimit: true, spokenLimitAt: Date.now() });
     await loadPage();
     await opensQuietly();
@@ -390,6 +448,13 @@ describe('the greeting does not play', () => {
     await screen.findByRole('dialog');
     await settle();
     expect(screen.getAllByText(copy.GREETING)).toHaveLength(1);
+  });
+
+  it('but does when the stored thread cannot be read (the chat starts fresh then, too)', async () => {
+    window.sessionStorage.setItem(STORAGE_KEY, '{not json');
+    await loadPage();
+    clickBubble();
+    expect(audio().play).toHaveBeenCalledTimes(1);
   });
 
   it('a second time in the same session: closing and reopening does not repeat it', async () => {
@@ -444,7 +509,7 @@ describe('the greeting does not play', () => {
   });
 
   it('when /health has not answered yet (the chat itself opens as usual)', async () => {
-    vi.mocked(fetchVoiceCaps).mockReturnValue(new Promise(() => {}));
+    net.health = () => new Promise(() => {});
     await loadPage();
     await opensQuietly();
     expect(screen.getByText(copy.GREETING)).toBeInTheDocument();
@@ -452,22 +517,261 @@ describe('the greeting does not play', () => {
   });
 
   it('when /health said there is no server voice', async () => {
-    vi.mocked(fetchVoiceCaps).mockResolvedValue({ tts: 'none' });
+    net.health = () => Promise.resolve(healthOf('none'));
     await loadPage();
     await opensQuietly();
     expect(storedPrefs()).toBeNull();
   });
 
-  it('when /health failed', async () => {
-    vi.mocked(fetchVoiceCaps).mockResolvedValue(null);
+  it('when /health said the server voice is not configured', async () => {
+    net.health = () => Promise.resolve(healthOf('server', { configured: false }));
     await loadPage();
     await opensQuietly();
   });
 
-  it('when /health threw', async () => {
-    vi.mocked(fetchVoiceCaps).mockRejectedValue(new Error('network'));
+  it('when /health failed', async () => {
+    net.health = () => Promise.resolve({ status: 404, ok: false, json: async () => ({}) });
     await loadPage();
     await opensQuietly();
+  });
+
+  it('when /health could not be reached', async () => {
+    net.health = () => Promise.reject(new TypeError('offline'));
+    await loadPage();
+    await opensQuietly();
+  });
+});
+
+describe('a browser that cannot record has no voice at all', () => {
+  it('does not even ask /health, and the greeting does not play; the chat is just text', async () => {
+    mic.supported = false;
+    await loadPage();
+    expect(net.healthCalls).toBe(0);
+
+    clickBubble();
+    await screen.findByRole('dialog');
+    await settle();
+    expect(FakeAudio.instances).toHaveLength(0);
+    expect(net.healthCalls).toBe(0); // not even on a click
+    expect(storedPrefs()).toBeNull(); // no speak / disclosed / greeted written
+    expect(spoken('concierge_greeting_played')).toHaveLength(0);
+    expect(screen.getByText(copy.GREETING)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: vc.VOICE_SPEAK_TOGGLE })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: vc.VOICE_BUTTON_DESKTOP })).not.toBeInTheDocument();
+    expect(fetchVoiceCaps).not.toHaveBeenCalled();
+  });
+
+  it('is checked again at the click: support that is gone by then means no greeting', async () => {
+    await loadPage(); // supported while the page loaded and /health was read
+    expect(net.healthCalls).toBe(1);
+    mic.supported = false;
+    clickBubble();
+    await screen.findByRole('dialog');
+    await settle();
+    expect(FakeAudio.instances).toHaveLength(0);
+    expect(storedPrefs()).toBeNull();
+  });
+
+  it('typing still works as before: replies are not read aloud', async () => {
+    mic.supported = false;
+    const user = userEvent.setup();
+    await loadPage();
+    clickBubble();
+    await screen.findByRole('dialog');
+    await user.type(screen.getByRole('textbox', { name: 'Message' }), 'hello{Enter}');
+    await settle();
+    expect(screen.getByText('A reply to read aloud.')).toBeInTheDocument();
+    expect(fetchTts).not.toHaveBeenCalled();
+    expect(FakeAudio.instances).toHaveLength(0);
+  });
+});
+
+describe('asking /health', () => {
+  const setReadyState = (state: DocumentReadyState) =>
+    Object.defineProperty(document, 'readyState', { configurable: true, get: () => state });
+
+  it('waits for the page to finish loading, not the first paint', async () => {
+    setReadyState('loading');
+    render(<Concierge />);
+    await settle();
+    expect(net.healthCalls).toBe(0);
+
+    act(() => {
+      window.dispatchEvent(new Event('load'));
+    });
+    await settle();
+    expect(net.healthCalls).toBe(1);
+  });
+
+  it('then waits for an idle moment, with a timeout, where the browser has requestIdleCallback', async () => {
+    let idleTask: (() => void) | undefined;
+    const requestIdleCallback = vi.fn((cb: () => void) => {
+      idleTask = cb;
+      return 3;
+    });
+    vi.stubGlobal('requestIdleCallback', requestIdleCallback);
+    vi.stubGlobal('cancelIdleCallback', vi.fn());
+    const { unmount } = render(<Concierge />);
+    await settle();
+    expect(requestIdleCallback).toHaveBeenCalledWith(expect.any(Function), { timeout: 5000 });
+    expect(net.healthCalls).toBe(0);
+
+    act(() => idleTask?.());
+    await settle();
+    expect(net.healthCalls).toBe(1);
+    unmount(); // while the stubbed idle-callback globals still exist
+    Reflect.deleteProperty(window, 'requestIdleCallback');
+    Reflect.deleteProperty(window, 'cancelIdleCallback');
+  });
+
+  it('a click that comes before the answer asks for it itself (once), so that a later open can play', async () => {
+    let answer!: (value: unknown) => void;
+    net.health = () => new Promise((resolve) => (answer = resolve));
+    const user = userEvent.setup();
+    await loadPage();
+    expect(net.healthCalls).toBe(1); // in flight
+
+    clickBubble();
+    await screen.findByRole('dialog');
+    await settle();
+    expect(FakeAudio.instances).toHaveLength(0); // no answer yet: no greeting this time
+    expect(net.healthCalls).toBe(1); // nothing was asked twice
+
+    answer(healthOf('server'));
+    await settle();
+    await user.keyboard('{Escape}');
+    clickBubble();
+    expect(audio().play).toHaveBeenCalledTimes(1); // the later open plays it
+  });
+
+  it('a click after a failed request tries again, and the open after that plays', async () => {
+    net.health = () => Promise.reject(new TypeError('offline'));
+    const user = userEvent.setup();
+    await loadPage();
+    expect(net.healthCalls).toBe(2); // the request and its one retry
+
+    net.health = () => Promise.resolve(healthOf('server'));
+    clickBubble(); // still no answer: no greeting, but it asks again
+    await screen.findByRole('dialog');
+    await settle();
+    expect(FakeAudio.instances).toHaveLength(0);
+    expect(net.healthCalls).toBe(3);
+
+    await user.keyboard('{Escape}');
+    clickBubble();
+    expect(audio().play).toHaveBeenCalledTimes(1);
+    expect(net.healthCalls).toBe(3);
+  });
+});
+
+describe('a hidden tab', () => {
+  const hideTab = () => {
+    const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    return hidden;
+  };
+
+  it('stops the greeting even while the panel chunk is still on its way', async () => {
+    render(<ChatBubble panelLoader={() => new Promise(() => {})} />);
+    await settle();
+    clickBubble();
+    expect(audio().play).toHaveBeenCalledTimes(1);
+    expect(audio().pause).not.toHaveBeenCalled();
+
+    hideTab();
+    expect(audio().pause).toHaveBeenCalled();
+  });
+
+  it('does not leave the panel, which mounts afterwards, believing it is still speaking', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    render(
+      <ChatBubble
+        panelLoader={async () => {
+          await gate;
+          return import('../ChatPanel');
+        }}
+      />
+    );
+    await settle();
+    clickBubble();
+    hideTab();
+    release();
+    await screen.findByRole('dialog', { hidden: true });
+    await settle();
+    expect(equalizer()).not.toBeInTheDocument();
+  });
+
+  it('a tab that is not hidden is left alone', async () => {
+    render(<ChatBubble panelLoader={() => new Promise(() => {})} />);
+    await settle();
+    clickBubble();
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    expect(audio().pause).not.toHaveBeenCalled();
+  });
+});
+
+describe('the microphone during the greeting', () => {
+  const openAndHearGreeting = async () => {
+    const user = userEvent.setup();
+    await loadPage();
+    clickBubble();
+    await screen.findByRole('dialog');
+    await settle();
+    expect(equalizer()).toBeInTheDocument();
+    return user;
+  };
+
+  it('a mic press stops the greeting and starts the recording; nothing about voice is announced twice', async () => {
+    const rec = fakeRecording();
+    vi.mocked(startRecording).mockResolvedValue(rec.recording);
+    const user = await openAndHearGreeting();
+    expect(storedPrefs()).toEqual({ speak: true, disclosed: true, greeted: true });
+
+    const micButton = screen.getByRole('button', { name: vc.VOICE_BUTTON_DESKTOP });
+    await user.click(micButton);
+    await settle();
+    expect(audio().pause).toHaveBeenCalled(); // the greeting stopped
+    expect(startRecording).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('button', { name: vc.VOICE_STOP_SPEAKING })).not.toBeInTheDocument(); // not "speaking"
+    expect(micButton).toHaveAttribute('aria-pressed', 'true'); // recording
+    // The greeting already was the first use of voice: nothing new is saved or shown by the press.
+    expect(storedPrefs()).toEqual({ speak: true, disclosed: true, greeted: true });
+    expect(screen.getAllByText(vc.VOICE_DISCLOSURE)).toHaveLength(1);
+    expect(screen.getByRole('button', { name: vc.VOICE_SPEAK_TOGGLE })).toHaveAttribute('aria-pressed', 'true');
+    expect(spoken('concierge_greeting_played')).toHaveLength(1);
+    expect(FakeAudio.instances).toHaveLength(1); // one shared element throughout
+  });
+
+  it('a press and release with nothing said leaves the chat as it was, and the greeting does not come back', async () => {
+    const rec = fakeRecording(100); // too short to send
+    vi.mocked(startRecording).mockResolvedValue(rec.recording);
+    const user = await openAndHearGreeting();
+
+    await user.click(screen.getByRole('button', { name: vc.VOICE_BUTTON_DESKTOP }));
+    await settle();
+    await user.click(screen.getByRole('button', { name: vc.VOICE_BUTTON_DESKTOP })); // a second click stops it
+    await settle();
+    expect(screen.getByText(vc.VOICE_HEARD_NOTHING)).toBeInTheDocument();
+    expect(FakeAudio.played.filter((src) => src === GREETING_URL)).toHaveLength(1); // played once, and only once
+    expect(spoken('concierge_greeting_played')).toHaveLength(1);
+    expect(equalizer()).not.toBeInTheDocument();
+  });
+
+  it('a refused first press (microphone blocked) still leaves the greeting stopped, and sound on', async () => {
+    const { VoiceError } = await import('../voice/recorder');
+    vi.mocked(startRecording).mockRejectedValue(new VoiceError('permission'));
+    const user = await openAndHearGreeting();
+
+    await user.click(screen.getByRole('button', { name: vc.VOICE_BUTTON_DESKTOP }));
+    await settle();
+    expect(audio().pause).toHaveBeenCalled();
+    expect(screen.getByText(vc.VOICE_DENIED)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: vc.VOICE_SPEAK_TOGGLE })).toHaveAttribute('aria-pressed', 'true');
   });
 });
 
@@ -478,24 +782,21 @@ describe('when the browser will not play it without a tap', () => {
       plays += 1;
       if (plays === 1) throw notAllowed();
     };
-    const get = vi.fn(async () => ({ ok: true, blob: async () => new Blob([new Uint8Array([1, 2, 3])]) }));
-    vi.stubGlobal('fetch', get);
-    return get;
   };
 
   it('offers "Tap to hear replies" under the greeting message, and the tap plays it', async () => {
-    const fetchFile = refuseFirstPlay();
+    refuseFirstPlay();
     await loadPage();
     clickBubble();
     await screen.findByRole('dialog');
     await settle();
 
-    expect(fetchFile).toHaveBeenCalledWith(GREETING_URL, expect.anything());
+    expect(net.fileCalls).toBe(1);
     const pill = await screen.findByRole('button', { name: vc.VOICE_TAP_TO_HEAR });
     expect(pill.closest('li')).toHaveTextContent(copy.GREETING);
     expect(screen.getByText(vc.VOICE_SOUND_OFF_HINT)).toBeInTheDocument();
     expect(equalizer()).not.toBeInTheDocument();
-    expect(track).not.toHaveBeenCalledWith('concierge_voice_reply_spoken', expect.anything()); // nothing was heard yet
+    expect(spoken('concierge_greeting_played')).toHaveLength(0); // nothing was heard yet
 
     // The tap: play() is reached synchronously inside it, with the audio that was already fetched.
     fireEvent.click(pill);
@@ -505,7 +806,9 @@ describe('when the browser will not play it without a tap', () => {
     expect(screen.queryByRole('button', { name: vc.VOICE_TAP_TO_HEAR })).not.toBeInTheDocument();
     expect(screen.queryByText(vc.VOICE_SOUND_OFF_HINT)).not.toBeInTheDocument();
     expect(equalizer()).toBeInTheDocument();
-    expect(track).toHaveBeenCalledWith('concierge_voice_reply_spoken', { mode: 'greeting' });
+    // Once it really plays it is the greeting, not a reply.
+    expect(spoken('concierge_greeting_played')).toEqual([['concierge_greeting_played']]);
+    expect(spoken('concierge_voice_reply_spoken')).toHaveLength(0);
     expect(fetchTts).not.toHaveBeenCalled();
   });
 
@@ -535,17 +838,15 @@ describe('when the browser will not play it without a tap', () => {
     expect(audio().src).toBe('blob:fake');
   });
 
-  it('does nothing visible when the file cannot be fetched either, or fails to play for another reason', async () => {
+  it('does nothing visible when it fails to play for another reason', async () => {
     FakeAudio.playImpl = async () => {
       throw new DOMException('no source', 'NotSupportedError');
     };
-    const fetchFile = vi.fn();
-    vi.stubGlobal('fetch', fetchFile);
     await loadPage();
     clickBubble();
     await screen.findByRole('dialog');
     await settle();
-    expect(fetchFile).not.toHaveBeenCalled();
+    expect(net.fileCalls).toBe(0);
     expect(screen.queryByRole('button', { name: vc.VOICE_TAP_TO_HEAR })).not.toBeInTheDocument();
     expect(screen.queryByText(vc.VOICE_SOUND_OFF_HINT)).not.toBeInTheDocument();
     expect(equalizer()).not.toBeInTheDocument();
@@ -553,12 +854,8 @@ describe('when the browser will not play it without a tap', () => {
   });
 
   it('shows no pill if the file is missing from the server', async () => {
-    let plays = 0;
-    FakeAudio.playImpl = async () => {
-      plays += 1;
-      if (plays === 1) throw notAllowed();
-    };
-    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, blob: async () => new Blob([]) })));
+    refuseFirstPlay();
+    net.file = () => Promise.resolve({ ok: false, blob: async () => new Blob([]) });
     await loadPage();
     clickBubble();
     await screen.findByRole('dialog');
@@ -568,21 +865,69 @@ describe('when the browser will not play it without a tap', () => {
 
   it('shows no pill if the visitor turned sound off while the file was on its way', async () => {
     const user = userEvent.setup();
-    let plays = 0;
-    FakeAudio.playImpl = async () => {
-      plays += 1;
-      if (plays === 1) throw notAllowed();
-    };
+    refuseFirstPlay();
     let deliver!: (value: unknown) => void;
-    vi.stubGlobal('fetch', vi.fn(() => new Promise((resolve) => (deliver = resolve))));
+    net.file = () => new Promise((resolve) => (deliver = resolve));
     await loadPage();
     clickBubble();
     await screen.findByRole('dialog');
     await settle();
 
     await user.click(screen.getByRole('button', { name: vc.VOICE_SPEAK_TOGGLE })); // sound off
-    deliver({ ok: true, blob: async () => new Blob([new Uint8Array([1])]) });
+    deliver(fileOf());
     await settle();
     expect(screen.queryByRole('button', { name: vc.VOICE_TAP_TO_HEAR })).not.toBeInTheDocument();
+  });
+});
+
+describe('a greeting that starts on a later open, when the panel already exists', () => {
+  /** /health is slow: the first open finds no answer; the answer then arrives, and the chat is opened again. */
+  const firstOpenWithoutAnswer = async () => {
+    let answer!: (value: unknown) => void;
+    net.health = () => new Promise((resolve) => (answer = resolve));
+    const user = userEvent.setup();
+    await loadPage();
+    clickBubble();
+    await screen.findByRole('dialog');
+    await settle();
+    expect(FakeAudio.instances).toHaveLength(0);
+    await user.keyboard('{Escape}');
+    answer(healthOf('server'));
+    await settle();
+    return user;
+  };
+
+  it('takes it over: sound on, speaking, and the first-use preferences stay saved', async () => {
+    const user = await firstOpenWithoutAnswer();
+    clickBubble();
+    expect(audio().play).toHaveBeenCalledTimes(1);
+    await settle();
+    expect(equalizer()).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: vc.VOICE_SPEAK_TOGGLE })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText(vc.VOICE_DISCLOSURE)).toBeInTheDocument();
+    expect(storedPrefs()).toEqual({ speak: true, disclosed: true, greeted: true });
+
+    // Later changes made by the controller keep what the click saved.
+    await user.click(screen.getByRole('button', { name: vc.VOICE_SPEAK_TOGGLE }));
+    await user.click(screen.getByRole('button', { name: vc.VOICE_SPEAK_TOGGLE }));
+    expect(storedPrefs()).toEqual({ speak: true, disclosed: true, greeted: true });
+  });
+
+  it('and does not lose "greeted" when it has to offer the tap-to-hear pill', async () => {
+    const user = await firstOpenWithoutAnswer();
+    let plays = 0;
+    FakeAudio.playImpl = async () => {
+      plays += 1;
+      if (plays === 1) throw notAllowed();
+    };
+    clickBubble();
+    await settle();
+    expect(await screen.findByRole('button', { name: vc.VOICE_TAP_TO_HEAR })).toBeInTheDocument();
+    expect(storedPrefs()).toEqual({ speak: true, disclosed: true, greeted: true, soundHint: true });
+
+    await user.keyboard('{Escape}');
+    clickBubble(); // a third open: once is enough
+    await settle();
+    expect(audio().play).toHaveBeenCalledTimes(1);
   });
 });

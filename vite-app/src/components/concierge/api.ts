@@ -12,6 +12,9 @@ import type {
   LeadRequest,
 } from './types';
 
+// The /health read lives in voice/health.ts, which the always-loaded bubble also uses (see there).
+export { fetchVoiceCaps, HEALTH_TIMEOUT_MS, type VoiceCaps } from './voice/health';
+
 export const CHAT_TIMEOUT_MS = 15000;
 // A lead may wait on email delivery and one retry server-side.
 export const LEAD_TIMEOUT_MS = 30000;
@@ -21,8 +24,6 @@ export const LEAD_TIMEOUT_MS = 30000;
 export const STT_TIMEOUT_MS = 20000;
 // One 8 s model attempt; past that the browser voice reads the reply instead.
 export const TTS_TIMEOUT_MS = 8000;
-// Only decides whether to show the mic; never worth making the panel wait.
-export const HEALTH_TIMEOUT_MS = 5000;
 /** The Worker refuses longer clips; keep the figure we report inside its limit. */
 export const MAX_REPORTED_DURATION_MS = 20000;
 
@@ -64,13 +65,6 @@ export type TtsResult =
   | { kind: 'ok'; blob: Blob }
   | { kind: 'limit'; bonusAvailable: boolean; bonus?: number }
   | { kind: 'unavailable' };
-
-/**
- * What reads replies aloud (GET /health), given that the Worker offers speech to text at all:
- * audio fetched from the Worker's /tts (whichever provider it uses; the widget does not care
- * which), or nothing (text only). There is no browser voice.
- */
-export type VoiceCaps = { tts: 'server' | 'none' };
 
 /** How many spoken replies a bonus adds, if the Worker says: a whole number from 1 to 100. */
 const asBonusCount = (v: unknown): number | undefined =>
@@ -318,25 +312,4 @@ export async function fetchTts(
     };
   }
   return { kind: 'unavailable' };
-}
-
-/**
- * Whether the Worker offers speech to text, and whether replies are read aloud. Null for
- * anything else (no voice block, `stt: false`, a 4xx, unreachable): the widget then shows
- * no voice controls at all. One more try after a network failure, a timeout or a 5xx, since
- * a single dropped request should not cost the visitor the mic for the whole visit.
- */
-export async function fetchVoiceCaps(): Promise<VoiceCaps | null> {
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const res = await call('/health', { method: 'GET' }, HEALTH_TIMEOUT_MS, readJson, null);
-    if (!res.ok || res.status >= 500) continue;
-    if (res.status !== 200) return null;
-    const voice = asBody(res.body?.voice);
-    if (!voice || voice.stt !== true) return null;
-    // An allow-list: the server voice is on only for exactly "server", and not when the Worker
-    // says it is not configured. Anything else ("browser", "none", an older or unknown value,
-    // nothing at all) is text only.
-    return { tts: voice.tts === 'server' && voice.configured !== false ? 'server' : 'none' };
-  }
-  return null;
 }

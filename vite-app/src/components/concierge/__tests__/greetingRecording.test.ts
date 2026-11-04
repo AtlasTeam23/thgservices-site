@@ -50,14 +50,19 @@ describe('the recorded greeting', () => {
     expect(MP3.endsWith(join('public', GREETING_URL))).toBe(true);
   });
 
-  it('is mentioned in the privacy page: a recording served from this site, nothing sent anywhere', () => {
+  it('is explained in the privacy page, in the voice paragraph that names ElevenLabs', () => {
     const html = readFileSync(join(PUBLIC, 'privacy.html'), 'utf8');
-    const sentence =
-      'The greeting that plays when you open the chat is a recording served from this site, and nothing is sent anywhere to play it.';
-    expect(html.split(sentence)).toHaveLength(2);
-    // ...inside the voice paragraph that names ElevenLabs.
-    const paragraph = html.split('\n').find((line) => line.includes(sentence)) ?? '';
-    expect(paragraph).toContain('Voice (optional)');
+    const paragraph = html.split('\n').find((line) => line.includes('Voice (optional)')) ?? '';
     expect(paragraph).toContain('ElevenLabs');
+    for (const sentence of [
+      // opening the chat turns spoken replies on, so reply text goes to ElevenLabs even if the mic is never used
+      'Where spoken replies are available, opening the chat plays a short greeting and turns spoken replies on, whether or not you ever use the microphone.',
+      'The greeting is a recording served from this site, and nothing is sent anywhere to play it.',
+      'While spoken replies are on, the text of each reply is sent to ElevenLabs',
+      // the page-load /health request
+      'When the page loads, it also makes one small availability check to our chat service, to learn whether spoken replies are offered; the request contains nothing from the chat.',
+    ]) {
+      expect(paragraph.split(sentence), sentence).toHaveLength(2);
+    }
   });
 });

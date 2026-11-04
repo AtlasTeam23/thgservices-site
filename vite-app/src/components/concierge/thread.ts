@@ -17,7 +17,3 @@ export const makeMessage = (
   at: new Date().toISOString(),
   ...extra,
 });
-
-/** Nothing has been said yet apart from (at most) the local greeting message. */
-export const isFreshThread = (messages: readonly Message[]): boolean =>
-  messages.length === 0 || (messages.length === 1 && messages[0].greeting === true);

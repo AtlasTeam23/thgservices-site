@@ -4,7 +4,7 @@
 // and every output goes to the temp folder. The real API is never called here.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { access, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -55,8 +55,7 @@ const fixture = async (name, text) => {
 const exists = (path) => access(path).then(() => true, () => false);
 
 /** Runs the script's main function with captured output; files go to a new folder inside the temp one. */
-const runScript = async ({ envText = `ELEVENLABS_API_KEY=${KEY}\n`, wranglerText = WRANGLER, fetchImpl, args = ['--text', GREETING], now } = {}) => {
-  const out = join(fresh(), 'greeting.mp3');
+const runScript = async ({ envText = `ELEVENLABS_API_KEY=${KEY}\n`, wranglerText = WRANGLER, fetchImpl, args = ['--text', GREETING], now, fsImpl, out = join(fresh(), 'greeting.mp3') } = {}) => {
   const envFile = await fixture('.dev.vars', envText);
   const wranglerFile = await fixture('wrangler.jsonc', wranglerText);
   let stdout = '';
@@ -67,6 +66,7 @@ const runScript = async ({ envText = `ELEVENLABS_API_KEY=${KEY}\n`, wranglerText
     stderr: { write: (text) => (stderr += text) },
     fetchImpl,
     now,
+    ...(fsImpl ? { fsImpl } : {}),
   });
   return { code, stdout, stderr, out, envFile, wranglerFile };
 };
@@ -385,6 +385,119 @@ describe('run', () => {
         assert.ok(!stderr.includes(KEY));
       });
     }
+  });
+});
+
+describe('--out', () => {
+  for (const [label, value] of [
+    ['a .wav file', 'greeting.wav'],
+    ['no extension', 'greeting'],
+    ['something after .mp3', 'greeting.mp3.bak'],
+    ['nothing before .mp3', '.mp3'],
+    ['a folder', 'somewhere/'],
+  ]) {
+    test(`refuses ${label}: exit 2, nothing called, nothing written`, async () => {
+      const target = join(dir, 'refused', value);
+      const { code, stderr } = await runScript({ args: ['--text', GREETING, '--out', target], fetchImpl: async () => assert.fail('must not call the API') });
+      assert.equal(code, 2);
+      assert.match(stderr, /--out/);
+      assert.match(stderr, /\.mp3/);
+      assert.equal(await exists(join(dir, 'refused')), false);
+    });
+  }
+
+  for (const name of ['greeting.mp3', 'Greeting.MP3', 'a.b.mp3']) {
+    test(`accepts ${name}, and names the sidecar after it`, async () => {
+      const out = join(fresh(), name);
+      const { code, stderr } = await runScript({ args: ['--text', GREETING, '--out', out], fetchImpl: async () => audio() });
+      assert.equal(code, 0, stderr);
+      assert.ok(await exists(out));
+      assert.ok(await exists(sidecarPath(out)));
+    });
+  }
+});
+
+describe('writing the files', () => {
+  /** Real file operations, recorded, with one made to fail. `failOn` is the n-th call (1-based) of the named operation. */
+  const recordingFs = (failOn = {}) => {
+    const log = [];
+    const real = { mkdir, writeFile, rename, rm };
+    const wrap = (name) => async (...args) => {
+      log.push([name, String(args[0]).split('/').pop()]);
+      const count = log.filter(([op]) => op === name).length;
+      if (failOn[name] === count) throw Object.assign(new Error(`${name} failed (${KEY})`), { code: 'EIO' });
+      return real[name](...args);
+    };
+    return { log, fsImpl: { mkdir: wrap('mkdir'), writeFile: wrap('writeFile'), rename: wrap('rename'), rm: wrap('rm') } };
+  };
+
+  /** An earlier recording is already in place. */
+  const withEarlierRecording = async () => {
+    const out = join(fresh(), 'greeting.mp3');
+    await mkdir(join(out, '..'), { recursive: true });
+    await writeFile(out, 'old audio');
+    await writeFile(sidecarPath(out), '{"text":"old"}\n');
+    return out;
+  };
+  const leftovers = async (out) => (await readdir(join(out, '..'))).filter((name) => name.endsWith('.partial'));
+
+  test('writes both files under temporary names before either is moved into place, the MP3 first', async () => {
+    const { log, fsImpl } = recordingFs();
+    const { code, out } = await runScript({ fetchImpl: async () => audio(), fsImpl });
+    assert.equal(code, 0);
+    assert.deepEqual(log.filter(([op]) => op !== 'mkdir'), [
+      ['writeFile', 'greeting.mp3.partial'],
+      ['writeFile', 'greeting.json.partial'],
+      ['rename', 'greeting.mp3.partial'],
+      ['rename', 'greeting.json.partial'],
+    ]);
+    assert.deepEqual(await leftovers(out), []);
+  });
+
+  for (const [label, failOn, wordsInMessage] of [
+    ['creating the folder', { mkdir: 1 }, /Could not write .*greeting\.mp3 \(EIO\)/],
+    ['writing the MP3', { writeFile: 1 }, /Could not write .*greeting\.mp3 \(EIO\)/],
+    ['writing the sidecar', { writeFile: 2 }, /Could not write .*greeting\.mp3 \(EIO\)/],
+    ['putting the MP3 in place', { rename: 1 }, /Could not write .*greeting\.mp3 \(EIO\)/],
+  ]) {
+    test(`a failure ${label}: exit 1, no .partial file is left, and the earlier recording is untouched`, async () => {
+      const out = await withEarlierRecording();
+      const { fsImpl } = recordingFs(failOn);
+      const { code, stdout, stderr } = await runScript({ out, fetchImpl: async () => audio(mp3(3000)), fsImpl });
+      assert.equal(code, 1);
+      assert.equal(stdout, '');
+      assert.match(stderr, wordsInMessage);
+      assert.match(stderr, /Nothing was changed/);
+      assert.ok(!stderr.includes(KEY), 'the key must never be printed');
+      assert.deepEqual(await leftovers(out), []);
+      assert.equal(await readFile(out, 'utf8'), 'old audio');
+      assert.equal(await readFile(sidecarPath(out), 'utf8'), '{"text":"old"}\n');
+    });
+  }
+
+  test('a failure putting the sidecar in place, after the MP3 was: says the two no longer match, and leaves no .partial file', async () => {
+    const out = await withEarlierRecording();
+    const { fsImpl } = recordingFs({ rename: 2 });
+    const { code, stderr } = await runScript({ out, fetchImpl: async () => audio(mp3(3000)), fsImpl });
+    assert.equal(code, 1);
+    assert.match(stderr, /Could not finish writing .*greeting\.json \(EIO\)/);
+    assert.match(stderr, /already replaced/);
+    assert.match(stderr, /run this again/);
+    assert.deepEqual(await leftovers(out), []);
+    // The new recording is in place and the old description is not: a mismatch the widget's test will catch.
+    assert.equal((await readFile(out)).length, 3000);
+    assert.equal(await readFile(sidecarPath(out), 'utf8'), '{"text":"old"}\n');
+  });
+
+  test('a failure while cleaning up does not hide the real error', async () => {
+    const out = await withEarlierRecording();
+    const { fsImpl } = recordingFs({ writeFile: 2 });
+    fsImpl.rm = async () => {
+      throw new Error('cannot remove');
+    };
+    const { code, stderr } = await runScript({ out, fetchImpl: async () => audio(), fsImpl });
+    assert.equal(code, 1);
+    assert.match(stderr, /Could not write .*\(EIO\)/);
   });
 });
 

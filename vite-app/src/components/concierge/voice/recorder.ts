@@ -6,6 +6,11 @@
 // the microphone tracks and the AudioContext, so the browser's recording
 // indicator goes out the moment the visitor is done.
 
+import { hasGetUserMedia, pickMimeType } from './support';
+
+// Re-exported: callers (and the tests) have always found these here.
+export { isRecordingSupported, MIME_CANDIDATES, pickMimeType } from './support';
+
 /** The longest utterance the Worker accepts. */
 export const MAX_RECORDING_MS = 20_000;
 /** The countdown ring and the "N seconds left" text start this long before the cap. */
@@ -24,13 +29,6 @@ export const AUDIO_BITS_PER_SECOND = 32_000;
 const LEVEL_INTERVAL_MS = 50;
 /** Speech sits well under full scale; this makes ordinary talking fill most of the range. */
 const LEVEL_GAIN = 4;
-
-/** Best first. Only these are accepted by the Worker (webm, mp4, ogg). */
-export const MIME_CANDIDATES = [
-  'audio/webm;codecs=opus',
-  'audio/mp4',
-  'audio/ogg;codecs=opus',
-] as const;
 
 export type RecordingResult = {
   blob: Blob;
@@ -71,27 +69,6 @@ export type Recording = {
   /** Throw the audio away. */
   cancel: () => void;
 };
-
-const hasMediaRecorder = () =>
-  typeof MediaRecorder !== 'undefined' && typeof MediaRecorder.isTypeSupported === 'function';
-
-const hasGetUserMedia = () =>
-  typeof navigator !== 'undefined' && typeof navigator.mediaDevices?.getUserMedia === 'function';
-
-/** The first of MIME_CANDIDATES this browser can record, or null. */
-export function pickMimeType(): string | null {
-  if (!hasMediaRecorder()) return null;
-  for (const type of MIME_CANDIDATES) {
-    try {
-      if (MediaRecorder.isTypeSupported(type)) return type;
-    } catch {
-      // try the next one
-    }
-  }
-  return null;
-}
-
-export const isRecordingSupported = (): boolean => hasGetUserMedia() && pickMimeType() !== null;
 
 function reasonFor(error: unknown): VoiceErrorReason {
   const name = (error as { name?: string } | null)?.name;

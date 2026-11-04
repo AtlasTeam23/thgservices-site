@@ -4,7 +4,7 @@
 // limit and analytics rule that applies to typing applies to speaking too.
 
 import { track } from '../../../lib/track';
-import { fetchTts, postStt, type SttResult, type VoiceCaps } from '../api';
+import { fetchTts, fetchVoiceCaps, postStt, type SttResult, type VoiceCaps } from '../api';
 import { RATE_LIMITED } from '../copy';
 import { makeMessage, TURNSTILE_AFTER_TURN } from '../thread';
 import { getToken } from '../turnstile';
@@ -20,7 +20,8 @@ import {
   VOICE_SOUND_OFF_HINT,
   VOICE_SPOKEN_LIMIT_DONE,
 } from './copy';
-import { claimGreeting, voiceCapsOnce } from './greeting';
+import { claimGreeting } from './greeting';
+import { sharedVoiceCaps } from './health';
 import {
   loadVoicePrefs,
   saveVoicePrefs,
@@ -141,7 +142,7 @@ export function createVoiceController({ get, patch, send }: VoiceHost) {
     checked = true;
     let caps: VoiceCaps | null = null;
     try {
-      caps = await voiceCapsOnce();
+      caps = (await sharedVoiceCaps()) ?? (await fetchVoiceCaps());
     } catch {
       // treated as "no voice"
     }
@@ -460,7 +461,9 @@ export function createVoiceController({ get, patch, send }: VoiceHost) {
   const onSpeechStart = (mode: SpeechMode) => {
     held = null;
     markSpeaking();
-    track('concierge_voice_reply_spoken', { mode });
+    // The greeting (started here by a tap on its pill) is not a spoken reply: it has its own event.
+    if (mode === 'greeting') track('concierge_greeting_played');
+    else track('concierge_voice_reply_spoken', { mode });
   };
 
   const onSpeechEnd = () => {
@@ -506,8 +509,8 @@ export function createVoiceController({ get, patch, send }: VoiceHost) {
     const claim = claimGreeting((blob) => audioBlocked(blob, messageId, 'greeting'));
     if (!claim) return;
     // What the click saved goes into this controller's copy before anything here saves prefs again.
-    prefs = { ...prefs, speak: claim.speak, disclosed: true, greeted: true };
-    patch({ speakEnabled: claim.speak, voiceDisclosed: true });
+    prefs = { ...prefs, speak: true, disclosed: true, greeted: true };
+    patch({ speakEnabled: true, voiceDisclosed: true });
     // Already playing, or about to: show it like a spoken reply, and go back to idle at the end.
     watchSpeech({ onStart: markSpeaking, onEnd: onSpeechEnd }, 'greeting');
     if (claim.blob) audioBlocked(claim.blob, messageId, 'greeting');

@@ -13,104 +13,103 @@
 // and the controller takes the greeting over later through claimGreeting().
 //
 // "Is the server voice available?" cannot be asked at click time (a click cannot wait for the
-// network), so /health is fetched once when the bubble mounts and the answer is read from here.
+// network), so /health is read once after the page loads (health.ts) and the answer is read from there.
+// Everything this file imports is small on purpose: it is part of the main bundle.
 
 import { track } from '../../../lib/track';
-import { fetchVoiceCaps, type VoiceCaps } from '../api';
-import { loadState } from '../storage';
-import { isFreshThread } from '../thread';
-import { loadVoicePrefs, saveVoicePrefs, spokenCapInForce } from './prefs';
-import { speakUrl } from './speech';
+import { isFreshThread, STORAGE_KEY } from '../storage';
+import { spokenCapInForce, VOICE_PREFS_KEY } from './cap';
+import { prefetchVoiceCaps, resetVoiceHealth, voiceHealth } from './health';
+import { speakUrl } from './playback';
+import { isRecordingSupported } from './support';
 
 /** Where the recording is served from (the site's public/ folder). */
 export const GREETING_URL = `${import.meta.env.BASE_URL}concierge/greeting.mp3`;
 
-// ---- Is the server voice there? --------------------------------------------------
-
-/** What /health said about the voice: not in yet (or failed), a server voice, or none. */
-let health: 'unknown' | 'server' | 'none' = 'unknown';
-/** The one /health request of this page load, in flight or answered. */
-let capsRequest: Promise<VoiceCaps | null> | null = null;
-
-const loadCaps = async (): Promise<VoiceCaps | null> => {
-  let caps: VoiceCaps | null = null;
-  try {
-    caps = await fetchVoiceCaps();
-  } catch {
-    // treated as "no voice"
-  }
-  // A failure stays "unknown": the greeting only plays when the server voice is positively known.
-  if (caps) health = caps.tts;
-  return caps;
-};
-
-/**
- * Ask the Worker once, when the page loads, whether it has a server voice, so that a click can read
- * the answer. fetchVoiceCaps() has its own timeout (5 s, one retry); until it answers the greeting
- * simply does not play. Safe to call again: only the first call asks.
- */
-export function prefetchVoiceCaps(): void {
-  capsRequest ??= loadCaps();
-}
-
-/**
- * The voice controller's /health check. It reuses the page-load answer instead of asking a second
- * time, and asks for itself only when there is no answer to reuse (nothing was prefetched, or it failed).
- */
-export async function voiceCapsOnce(): Promise<VoiceCaps | null> {
-  if (capsRequest) {
-    const caps = await capsRequest;
-    if (caps) return caps;
-  }
-  return fetchVoiceCaps();
-}
-
-// ---- Playing it ------------------------------------------------------------------
-
 /** The greeting has been started in this page load (also covers storage that cannot remember `greeted`). */
 let started = false;
-/** Whether replies are read aloud, as the click that started the greeting saved it. */
-let speakChoice = true;
 /** The panel's controller has taken the greeting over (once). */
 let claimed = false;
-/** The greeting audio, when the browser refused to play it and nobody has claimed it yet. */
+/** The greeting audio, once the browser has refused to play it: parked until the controller claims it. */
 let parked: Blob | null = null;
-/** Where to send that audio, when the controller claimed the greeting first. */
-let waiting: ((blob: Blob) => void) | null = null;
+/** Where the audio goes if the controller claimed the greeting before the refusal came. */
+let deliver: ((blob: Blob) => void) | null = null;
 
 const park = (blob: Blob): void => {
-  if (waiting) {
-    const deliver = waiting;
-    waiting = null;
-    deliver(blob);
-  } else {
-    parked = blob;
-  }
+  if (deliver) deliver(blob);
+  else parked = blob;
 };
+
+/**
+ * The stored voice preferences as plain JSON, not sanitised: this file is part of the main bundle, where
+ * prefs.ts (reading and writing the whole set; it belongs to the panel chunk) must not be. The greeting reads
+ * the few flags it needs and writes back everything it found, plus its own three.
+ */
+function storedPrefs(): Record<string, unknown> {
+  try {
+    const parsed: unknown = JSON.parse(window.sessionStorage.getItem(VOICE_PREFS_KEY) ?? 'null');
+    return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Nothing has been said in the stored chat yet: no messages, or only the local greeting. Reads the stored
+ * thread directly (same key as loadState() in storage.ts) so that all of that parsing stays out of the
+ * main bundle. A thread that cannot be read counts as fresh, as it does for the panel.
+ */
+function storedThreadIsFresh(): boolean {
+  try {
+    const raw = window.sessionStorage.getItem(STORAGE_KEY);
+    const messages: unknown = raw && JSON.parse(raw)?.messages;
+    return !Array.isArray(messages) || isFreshThread(messages);
+  } catch {
+    return true;
+  }
+}
 
 /**
  * Call this from inside the click (or tap) that opens the chat, before anything is awaited. Plays the
  * greeting when all of these hold, all decided right here from module state and sessionStorage:
- * the server voice is known to be there, this tab has not heard the greeting, the visitor has not turned
- * sound off, today's allowance of spoken replies is not used up, voice has not given up for the
- * session, and nothing has been said in the chat yet. Otherwise it does nothing, silently.
+ * this browser can record (so the mic, the speaker toggle and spoken replies exist at all), /health said
+ * the server voice is there, this tab has not heard the greeting, the visitor has not turned sound off,
+ * today's allowance of spoken replies is not used up, voice has not given up for the session, and nothing
+ * has been said in the chat yet. Otherwise it does nothing, silently.
  *
  * Starting it is the visitor's first use of voice: replies are read aloud from here on (under the
  * usual per-visitor cap) and the microphone line is shown.
  */
 export function playGreetingOnOpen(): void {
   try {
-    if (started || health !== 'server' || typeof Audio === 'undefined') return;
-    const prefs = loadVoicePrefs();
-    if (prefs.greeted || prefs.speak === false || prefs.blocked || spokenCapInForce(prefs, Date.now())) return;
-    if (!isFreshThread(loadState().messages)) return;
+    if (started || typeof Audio === 'undefined' || !isRecordingSupported()) return;
+    const health = voiceHealth();
+    if (health === 'unknown') {
+      // The answer is not in (the page was just loaded, or the request failed): ask again now, so
+      // that a later open can play it. This click goes without.
+      prefetchVoiceCaps();
+      return;
+    }
+    if (health !== 'server') return;
+    const prefs = storedPrefs();
+    const cap = {
+      spokenLimit: prefs.spokenLimit === true,
+      spokenLimitAt: typeof prefs.spokenLimitAt === 'number' ? prefs.spokenLimitAt : null,
+    };
+    if (prefs.greeted === true || prefs.speak === false || prefs.blocked === true) return;
+    if (spokenCapInForce(cap, Date.now()) || !storedThreadIsFresh()) return;
 
     started = true;
-    speakChoice = prefs.speak ?? true;
-    saveVoicePrefs({ ...prefs, speak: speakChoice, disclosed: true, greeted: true });
+    const first = { ...prefs, speak: true, disclosed: true, greeted: true };
+    try {
+      window.sessionStorage.setItem(VOICE_PREFS_KEY, JSON.stringify(first));
+    } catch {
+      // storage disabled or full; `started` still keeps it from playing twice in this page load
+    }
     speakUrl(GREETING_URL, {
       mode: 'greeting',
-      onStart: (mode) => track('concierge_voice_reply_spoken', { mode }),
+      // Not a spoken reply: it has its own event, so reply counts stay replies.
+      onStart: () => track('concierge_greeting_played'),
       // Without a live gesture the browser said no: the file is kept for the "Tap to hear replies" pill.
       onBlocked: park,
     });
@@ -119,35 +118,27 @@ export function playGreetingOnOpen(): void {
   }
 }
 
-/** What the controller takes over: the sound choice the click saved, and the audio if it was refused. */
-export type GreetingClaim = {
-  /** Whether replies are read aloud (the click saved speak: this, disclosed: true, greeted: true). */
-  speak: boolean;
-  /** The greeting's audio, if the browser has already refused to play it (for the "Tap to hear" pill). */
-  blob: Blob | null;
-};
-
 /**
  * The panel's voice controller takes the greeting over, once it exists. Returns null when no greeting was
- * started in this page load (or it was taken already). If the browser refuses the audio later than this,
- * `onBlocked` receives it whenever it arrives.
+ * started in this page load (or it was taken already); otherwise an object holding the greeting's audio if the
+ * browser has already refused to play it (for the "Tap to hear" pill). If the refusal comes later than this,
+ * `onBlocked` receives the audio whenever it arrives. The click saved speak: true, disclosed: true and
+ * greeted: true, which the controller takes over too.
  */
-export function claimGreeting(onBlocked: (blob: Blob) => void): GreetingClaim | null {
+export function claimGreeting(onBlocked: (blob: Blob) => void): { blob: Blob | null } | null {
   if (!started || claimed) return null;
   claimed = true;
   const blob = parked;
   parked = null;
-  if (!blob) waiting = onBlocked;
-  return { speak: speakChoice, blob };
+  deliver = onBlocked;
+  return { blob };
 }
 
 /** Forget everything, as if the page had just loaded. For tests. */
 export function resetGreeting(): void {
-  health = 'unknown';
-  capsRequest = null;
   started = false;
-  speakChoice = true;
   claimed = false;
   parked = null;
-  waiting = null;
+  deliver = null;
+  resetVoiceHealth();
 }

@@ -3,6 +3,8 @@ import {
   STORAGE_KEY,
   captureLanding,
   captureUtm,
+  isFreshThread,
+  isOnlyGreeting,
   loadState,
   newId,
   saveState,
@@ -293,5 +295,30 @@ describe('storage', () => {
   it('falls back to a Math.random v4 id when crypto.randomUUID is missing', () => {
     vi.stubGlobal('crypto', {});
     expect(newId()).toMatch(UUID_V4);
+  });
+});
+
+describe('what counts as a fresh thread', () => {
+  const msg = (role: 'user' | 'assistant', greeting = false) => ({
+    id: newId(),
+    role,
+    content: 'text',
+    at: new Date().toISOString(),
+    ...(greeting ? { greeting: true } : {}),
+  });
+
+  it('is only the local greeting message, for the chat and for the greeting audio alike', () => {
+    expect(isOnlyGreeting([msg('assistant', true)])).toBe(true);
+    expect(isOnlyGreeting([])).toBe(false);
+    expect(isOnlyGreeting([msg('assistant')])).toBe(false);
+    expect(isOnlyGreeting([msg('assistant', true), msg('user')])).toBe(false);
+    expect(isOnlyGreeting([msg('user')])).toBe(false);
+  });
+
+  it('is fresh when there is nothing, or only the greeting', () => {
+    expect(isFreshThread([])).toBe(true);
+    expect(isFreshThread([msg('assistant', true)])).toBe(true);
+    expect(isFreshThread([msg('user')])).toBe(false);
+    expect(isFreshThread([msg('assistant', true), msg('user'), msg('assistant')])).toBe(false);
   });
 });

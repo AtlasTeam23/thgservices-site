@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as speech from '../voice/speech';
 import {
+  activeSpeechMode,
   resetSpeech,
   SERVER_MAX_CHARS,
   speak,
@@ -733,5 +734,35 @@ describe('watchSpeech (joining a run that began before you existed)', () => {
     await flush();
     FakeAudio.instances[0].onended?.();
     expect(watchSpeech({ onEnd: vi.fn() })).toBe(false);
+  });
+});
+
+describe('activeSpeechMode', () => {
+  const clip = () => new Blob([new Uint8Array([1, 2, 3])], { type: 'audio/mpeg' });
+
+  it('is null when nothing is being read', () => {
+    expect(activeSpeechMode()).toBeNull();
+  });
+
+  it('is "greeting" while the greeting plays and "server" while a reply does, and null again afterwards', async () => {
+    speakUrl('/g.mp3', { mode: 'greeting' });
+    await flush();
+    expect(activeSpeechMode()).toBe('greeting');
+    FakeAudio.instances[0].onended?.();
+    expect(activeSpeechMode()).toBeNull();
+
+    speak('A reply.', { fetchAudio: async () => ({ kind: 'ok', blob: clip() }) });
+    expect(activeSpeechMode()).toBe('server'); // while its audio is still being fetched
+    await flush();
+    expect(activeSpeechMode()).toBe('server');
+    stopSpeaking();
+    expect(activeSpeechMode()).toBeNull();
+  });
+
+  it('a reply that replaces the greeting makes it "server"', async () => {
+    speakUrl('/g.mp3', { mode: 'greeting' });
+    await flush();
+    speakBlob(clip(), {});
+    expect(activeSpeechMode()).toBe('server');
   });
 });

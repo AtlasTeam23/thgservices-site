@@ -3,7 +3,11 @@
 // text is ever kept here. Every access is wrapped: the widget must work with
 // storage disabled.
 
-export const VOICE_PREFS_KEY = 'thg-concierge-voice-v1';
+import { capExpired, VOICE_PREFS_KEY } from './cap';
+
+// The key and the cap tests live in cap.ts, which the always-loaded bubble also uses (the greeting needs
+// them before this file, a part of the panel chunk, has been downloaded). Re-exported: callers find them here.
+export { CAP_MAX_AGE_MS, capExpired, spokenCapInForce, VOICE_PREFS_KEY } from './cap';
 
 export type VoicePrefs = {
   /** Read replies aloud. Null until the visitor (or their first voice use) decides. */
@@ -40,24 +44,6 @@ const NONE: VoicePrefs = {
   soundHint: false,
   greeted: false,
 };
-
-/** How long a cap is believed: the Worker's allowance is per day, but a visitor may have been granted more. */
-export const CAP_MAX_AGE_MS = 60 * 60 * 1000;
-
-/** The cap has lapsed: older than an hour, from an earlier local calendar day, or of unknown age. */
-export function capExpired(prefs: VoicePrefs, now: number): boolean {
-  if (!prefs.spokenLimit) return false;
-  const at = prefs.spokenLimitAt;
-  if (at === null) return true;
-  return now - at > CAP_MAX_AGE_MS || new Date(at).toDateString() !== new Date(now).toDateString();
-}
-
-/**
- * The day's allowance of spoken replies is used up, and the cap has not lapsed: no audio is requested while this
- * holds. Pure; the voice controller (which also drops a lapsed cap) and the greeting both ask it.
- */
-export const spokenCapInForce = (prefs: VoicePrefs, now: number): boolean =>
-  prefs.spokenLimit && !capExpired(prefs, now);
 
 /** The same prefs with the cap (and the offer that went with it) cleared. */
 export const withoutCap = (prefs: VoicePrefs): VoicePrefs => ({

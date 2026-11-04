@@ -418,5 +418,24 @@ describe('voice api', () => {
       expect(await pending).toBeNull();
       expect(fetchMock).toHaveBeenCalledTimes(2);
     });
+
+    it('a timeout while the answer is still being read counts as trouble too: it is tried once more', async () => {
+      vi.useFakeTimers();
+      fetchMock.mockImplementationOnce((_url: string, init: RequestInit) =>
+        Promise.resolve({
+          status: 200,
+          // headers arrived, but the body never does: only the timeout ends this
+          json: () =>
+            new Promise((_resolve, reject) => {
+              init.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+            }),
+        })
+      );
+      fetchMock.mockResolvedValueOnce(jsonResponse(200, { voice: { stt: true, tts: 'server' } }));
+      const pending = fetchVoiceCaps();
+      await vi.advanceTimersByTimeAsync(HEALTH_TIMEOUT_MS + 1);
+      expect(await pending).toEqual({ tts: 'server' });
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
   });
 });

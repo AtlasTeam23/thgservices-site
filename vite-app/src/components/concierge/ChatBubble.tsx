@@ -20,8 +20,10 @@ import { BUBBLE_LABEL, ERROR } from './copy';
 import { onConciergeOpen, type OpenDetail } from './events';
 import PhoneText from './PhoneText';
 import { captureLanding } from './storage';
-import { playGreetingOnOpen, prefetchVoiceCaps } from './voice/greeting';
-import { stopSpeaking } from './voice/speech';
+import { playGreetingOnOpen } from './voice/greeting';
+import { prefetchVoiceCaps } from './voice/health';
+import { stopSpeaking } from './voice/playback';
+import { isRecordingSupported } from './voice/support';
 
 export type PanelLoader = () => Promise<{ default: ComponentType<ChatPanelProps> }>;
 
@@ -48,11 +50,11 @@ function panelFor(loader: PanelLoader, attempt: number): ComponentType<ChatPanel
 const PREFETCH_DELAY_MS = 4000;
 
 /**
- * Run `task` at least PREFETCH_DELAY_MS after the page's `load` event, and then
+ * Run `task` at least `delayMs` after the page's `load` event, and then
  * only when the browser reports it is idle. Returns a function that cancels
  * whichever stage is still pending.
  */
-function whenIdle(task: () => void): () => void {
+function whenIdle(task: () => void, delayMs: number = PREFETCH_DELAY_MS): () => void {
   let cancelled = false;
   let cancel = () => {};
 
@@ -68,7 +70,7 @@ function whenIdle(task: () => void): () => void {
 
   const afterLoad = () => {
     if (cancelled) return;
-    const id = window.setTimeout(idle, PREFETCH_DELAY_MS);
+    const id = window.setTimeout(idle, delayMs);
     cancel = () => window.clearTimeout(id);
   };
 
@@ -198,9 +200,20 @@ export default function ChatBubble({ panelLoader = defaultLoader }: { panelLoade
     captureLanding();
   }, []);
 
-  // Ask the Worker once, now, whether it has a server voice, so the greeting can start in the click.
+  // Ask the Worker once whether it has a server voice, so that the greeting can start inside a click
+  // (a click cannot wait for the network). After the page has loaded and the browser is idle, not
+  // during the paint; a click that comes first asks again itself. Browsers that cannot record have no
+  // voice at all, so they never ask.
+  useEffect(() => (isRecordingSupported() ? whenIdle(prefetchVoiceCaps, 0) : undefined), []);
+
+  // A tab that is hidden must not keep talking. The panel does this itself once it exists; this covers
+  // the greeting that started in the click while the panel chunk was still on its way.
   useEffect(() => {
-    prefetchVoiceCaps();
+    const onVisibility = () => {
+      if (document.hidden) stopSpeaking();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
   }, []);
 
   // Fetch the panel chunk in the background (a few seconds after load, see whenIdle)

@@ -29,7 +29,7 @@ import {
 } from './copy';
 import type { OpenDetail } from './events';
 import { EMPTY_LEAD_DRAFT, fillsMissingDetail, LEAD_DRAFT_KEYS, mergeLeadDraft } from './leadDraft';
-import { loadState, saveState } from './storage';
+import { isOnlyGreeting, loadState, saveState } from './storage';
 import { getToken } from './turnstile';
 import type {
   ChatRequest,
@@ -44,6 +44,7 @@ import { buildTranscript, FORM_FIELDS, LIMITS } from './validation';
 import { makeMessage, TURNSTILE_AFTER_TURN } from './thread';
 import { voiceBonusFormHeading } from './voice/copy';
 import { createVoiceController, initialVoiceState, type VoiceState } from './voice/controller';
+import { activeSpeechMode } from './voice/speech';
 
 export type ConciergeStatus = 'idle' | 'sending' | 'leadOnly' | 'ended';
 
@@ -99,6 +100,9 @@ export type ConciergeState = {
 
 export type SubmitLeadOutcome = { ok: true } | { ok: false; fields?: FieldErrors };
 
+/** `keepGreeting`: do not stop the recorded greeting for this input (see stopReadingForInput). */
+type SendOptions = { keepGreeting?: boolean };
+
 const MAX_THREAD_ENTRIES = 25;
 
 const HANDOFF_PATTERNS = [
@@ -127,7 +131,7 @@ function createController() {
   const stored = loadState();
   const { utm } = stored;
 
-  const onlyGreeting = stored.messages.length === 1 && stored.messages[0].greeting === true;
+  const onlyGreeting = isOnlyGreeting(stored.messages);
 
   // The stored shape (plan section 2.9) has no field for the open form, so work
   // it out from the last message: a reload mid-form or mid-outage resumes there.
@@ -377,10 +381,17 @@ function createController() {
   };
 
   /**
-   * The send path shared by typing and by a finished voice transcript. New input stops the reading,
-   * except for the question the widget sends itself on opening (`keepSpeaking`).
+   * New input stops the reading. The one exception is the question a section button sends on opening
+   * the chat (`keepGreeting`): the recorded greeting that the same click started is left to play until
+   * the answer arrives, but anything else being read (a reply, say) is still stopped.
    */
-  const sendText = async (raw: string, opts: { keepSpeaking?: boolean } = {}): Promise<void> => {
+  const stopReadingForInput = (opts: SendOptions) => {
+    if (opts.keepGreeting && activeSpeechMode() === 'greeting') return;
+    voice.stopSpeaking();
+  };
+
+  /** The send path shared by typing and by a finished voice transcript. */
+  const sendText = async (raw: string, opts: SendOptions = {}): Promise<void> => {
     if (state.status !== 'idle') return;
     const text = raw.trim();
     if (!text) return;
@@ -389,7 +400,7 @@ function createController() {
       return;
     }
 
-    if (!opts.keepSpeaking) voice.stopSpeaking(); // any new input stops the reading
+    stopReadingForInput(opts); // any new input stops the reading
     const userMessage = makeMessage('user', text);
 
     if (isHandoffRequest(text)) {
@@ -416,15 +427,15 @@ function createController() {
   };
 
   /** Typed (or chip) input: a recording or transcript in progress is dropped in its favour. */
-  const send = (raw: string, opts: { keepSpeaking?: boolean } = {}): Promise<void> => {
+  const send = (raw: string, opts: SendOptions = {}): Promise<void> => {
     voice.cancelVoice();
     return sendText(raw, opts);
   };
 
-  const chip = async (label: string, opts: { keepSpeaking?: boolean } = {}): Promise<void> => {
+  const chip = async (label: string, opts: SendOptions = {}): Promise<void> => {
     if (state.status === 'ended') return;
     voice.cancelVoice();
-    if (!opts.keepSpeaking) voice.stopSpeaking();
+    stopReadingForInput(opts);
     // Only the widget's own chip labels are analytics values; never pass anything else along.
     track('concierge_quick_reply', isKnownChip(label) ? { chip: label } : undefined);
     if (label === CALLBACK_CHIP || label === OFFER_YES) {
@@ -451,7 +462,7 @@ function createController() {
     void voiceChecked.then(() => voice.adoptGreeting(state.messages.find((m) => m.greeting)?.id));
     // The section buttons open the chat with a question already asked: that must not cut the
     // greeting off; the answer, when it arrives, replaces it.
-    if (detail.quickReply) await chip(detail.quickReply, { keepSpeaking: true });
+    if (detail.quickReply) await chip(detail.quickReply, { keepGreeting: true });
   };
 
   const submitLead = async (input: LeadInput): Promise<SubmitLeadOutcome> => {
