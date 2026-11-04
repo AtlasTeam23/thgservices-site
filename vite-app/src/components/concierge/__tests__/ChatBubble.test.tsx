@@ -8,6 +8,7 @@ vi.mock('../../../lib/track', () => ({ track: vi.fn() }));
 
 import { Concierge, openConcierge } from '../index';
 import { postChat, postLead } from '../api';
+import { EMPTY_LEAD_DRAFT } from '../leadDraft';
 import { track } from '../../../lib/track';
 import * as copy from '../copy';
 
@@ -16,7 +17,13 @@ beforeEach(() => {
   window.sessionStorage.clear();
   vi.mocked(postChat).mockResolvedValue({
     kind: 'ok',
-    data: { reply: 'Here to help.', intent: 'answer', offerCallback: false },
+    data: {
+      reply: 'Here to help.',
+      intent: 'answer',
+      offerCallback: false,
+      readyToConfirm: false,
+      lead: EMPTY_LEAD_DRAFT,
+    },
   });
 });
 

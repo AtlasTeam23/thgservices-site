@@ -117,6 +117,63 @@ export const normalizePhone = (raw: string): string | null => {
 export const isValidEmail = (value: string): boolean =>
   value.length <= LIMITS.emailMax && EMAIL.test(value);
 
+/**
+ * The visitor details a /chat reply carries (contract section 1.1 of the conversational plan):
+ * what the helper has gathered so far, every field a string, empty when unknown. The widget
+ * pre-fills the lead form from this.
+ */
+export interface LeadFields {
+  name: string;
+  /** Exactly 10 digits, or "". */
+  phone: string;
+  /** A valid address, or "". */
+  email: string;
+  business: string;
+  need: string;
+  callbackWindow: CallbackWindow | '';
+}
+
+export const EMPTY_LEAD: Readonly<LeadFields> = Object.freeze({
+  name: '',
+  phone: '',
+  email: '',
+  business: '',
+  need: '',
+  callbackWindow: '',
+});
+
+/**
+ * Cleans lead details produced by the model before they reach the widget. The model is not trusted
+ * to follow the field rules, so the same rules as the lead form are applied here: markup and control
+ * characters are stripped, names and businesses stay on one line, text is clamped (name 80, business
+ * 120, need 500), the phone is normalized to 10 digits or dropped, the email must pass the lead
+ * validator or is dropped, and the callback window must be one of the four values or is dropped.
+ * Never throws; hostile input is length-bounded before it is cleaned.
+ */
+export const sanitizeLeadFields = (raw: {
+  name: string;
+  phone: string;
+  email: string;
+  business: string;
+  need: string;
+  callbackWindow: string;
+}): LeadFields => {
+  const bounded = (value: string, max: number): string => clampLength(value, max * RAW_FACTOR);
+  const oneLine = (value: string, max: number): string =>
+    clampLength(singleLine(sanitizeText(bounded(value, max))), max).trim();
+
+  const email = singleLine(sanitizeText(bounded(raw.email, LIMITS.emailMax)));
+  const window = CALLBACK_WINDOWS.find((candidate) => candidate === raw.callbackWindow);
+  return {
+    name: oneLine(raw.name, LIMITS.nameMax),
+    phone: normalizePhone(raw.phone) ?? '',
+    email: isValidEmail(email) ? email : '',
+    business: oneLine(raw.business, LIMITS.businessMax),
+    need: clampLength(sanitizeText(bounded(raw.need, LIMITS.needMax)), LIMITS.needMax).trim(),
+    callbackWindow: window ?? '',
+  };
+};
+
 export const validateChat = (input: unknown): ChatValidation => {
   const bad = { ok: false, error: 'bad_request' } as const;
   if (!isRecord(input) || !isValidSessionId(input.sessionId)) return bad;

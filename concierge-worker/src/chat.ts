@@ -1,4 +1,4 @@
-import { ENDED, LEAD_ONLY, OFF_TOPIC_REPLY, RATE_LIMITED, TOO_LONG } from './copy';
+import { ENDED, LEAD_ONLY, RATE_LIMITED, TOO_LONG } from './copy';
 import { dailyLlmCap, isLlmConfigured, turnstileSecret, type Env } from './env';
 import { screenTurns } from './guards';
 import { json, readJson, retryAfterSeconds } from './http';
@@ -13,7 +13,7 @@ import {
   llmDailyRule,
   sessionName,
 } from './limits';
-import { LlmUnavailableError, generateReply, type GenerateDeps } from './llm';
+import { LlmUnavailableError, generateReply, offTopicReply, type GenerateDeps } from './llm';
 import { verifyTurnstile } from './turnstile';
 import { selectRecentTurns, validateChat, type ChatPayload } from './validation';
 
@@ -96,7 +96,7 @@ const respond = async (
     return ended();
   }
   if (screened.kind === 'injection') {
-    return json({ reply: OFF_TOPIC_REPLY, intent: 'off_topic', offerCallback: false });
+    return json(offTopicReply());
   }
   const turns = screened.turns;
 

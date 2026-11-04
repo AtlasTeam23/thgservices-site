@@ -14,6 +14,7 @@ export const LIMITS = {
   nameMax: 80,
   businessMax: 120,
   needMax: 500,
+  emailMax: 254,
   messageMax: 1000,
   transcriptMax: 60,
   pageUrlMax: 500,
@@ -57,6 +58,12 @@ export function normalizePhone(raw: string): string | null {
   let digits = raw.replace(/\D/g, '');
   if (digits.length === 11 && digits.startsWith('1')) digits = digits.slice(1);
   return digits.length === 10 ? digits : null;
+}
+
+/** Exactly 10 digits as "(770) 555-0147"; anything else is returned untouched. */
+export function formatPhone(value: string): string {
+  const m = /^(\d{3})(\d{3})(\d{4})$/.exec(value);
+  return m ? `(${m[1]}) ${m[2]}-${m[3]}` : value;
 }
 
 export type LeadValidation =

@@ -50,6 +50,8 @@ describe('concierge copy (contract section 2.7)', () => {
     expect(copy.CONSENT).toBe(
       'OK to contact me by phone, text, or email about my request.'
     );
+    expect(copy.LEAD_FORM_HEADING).toBe("Here's what I have. Check the box and tap send.");
+    expect(copy.LEAD_FORM_DISMISS).toBe('Not now, keep chatting');
   });
 
   it('labels the four callback windows', () => {

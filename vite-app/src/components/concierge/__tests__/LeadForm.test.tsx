@@ -7,6 +7,8 @@ vi.mock('../../../lib/track', () => ({ track: vi.fn() }));
 import LeadForm from '../LeadForm';
 import { track } from '../../../lib/track';
 import type { SubmitLeadOutcome } from '../useConcierge';
+import { EMPTY_LEAD_DRAFT } from '../leadDraft';
+import type { LeadDraft } from '../types';
 import * as copy from '../copy';
 
 type Props = Parameters<typeof LeadForm>[0];
@@ -61,6 +63,345 @@ describe('LeadForm', () => {
     // Focus lands on the first invalid field.
     expect(screen.getByLabelText('Name')).toHaveFocus();
     expect(screen.getByLabelText('Name')).toHaveAttribute('aria-invalid', 'true');
+  });
+
+  describe('pre-filled from the conversation (plan v1.1)', () => {
+    const prefill: LeadDraft = {
+      name: 'Dana Lee',
+      phone: '7705550147',
+      email: 'dana@example.com',
+      business: 'Lee Landscaping',
+      need: 'missed after-hours calls',
+      callbackWindow: 'afternoon_1_3',
+    };
+
+    it('starts with all six fields filled from the draft', () => {
+      setup({ prefill });
+      expect(screen.getByLabelText('Name')).toHaveValue('Dana Lee');
+      expect(screen.getByLabelText('Phone')).toHaveValue('(770) 555-0147');
+      expect(screen.getByLabelText('Email (optional)')).toHaveValue('dana@example.com');
+      expect(screen.getByLabelText('Business name')).toHaveValue('Lee Landscaping');
+      expect(screen.getByLabelText('What do you need help with? (optional)')).toHaveValue(
+        'missed after-hours calls'
+      );
+      expect(screen.getByLabelText('Best callback window')).toHaveValue('afternoon_1_3');
+    });
+
+    it('never pre-checks consent, however complete the draft is', () => {
+      setup({ prefill });
+      expect(screen.getByLabelText(copy.CONSENT)).not.toBeChecked();
+    });
+
+    it('will not send until the visitor ticks the consent box themselves', async () => {
+      const { onSubmit, user } = setup({ prefill });
+      await submit(user);
+      expect(onSubmit).not.toHaveBeenCalled();
+      expect(screen.getByText('Check this box so we can contact you')).toBeInTheDocument();
+    });
+
+    it('is ready to send after one tick: submits the pre-filled details, normalized', async () => {
+      const { onSubmit, user } = setup({ prefill });
+      await user.click(screen.getByLabelText(copy.CONSENT));
+      await submit(user);
+      expect(onSubmit).toHaveBeenCalledTimes(1);
+      expect(onSubmit).toHaveBeenCalledWith({
+        name: 'Dana Lee',
+        phone: '7705550147',
+        email: 'dana@example.com',
+        business: 'Lee Landscaping',
+        need: 'missed after-hours calls',
+        callbackWindow: 'afternoon_1_3',
+        consent: true,
+      });
+    });
+
+    it('lets the visitor edit anything before sending', async () => {
+      const { onSubmit, user } = setup({ prefill });
+      const name = screen.getByLabelText('Name');
+      await user.clear(name);
+      await user.type(name, 'Dana L. Lee');
+      await user.selectOptions(screen.getByLabelText('Best callback window'), 'morning_9_11');
+      await user.click(screen.getByLabelText(copy.CONSENT));
+      await submit(user);
+      expect(onSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'Dana L. Lee', callbackWindow: 'morning_9_11' })
+      );
+    });
+
+    it('still validates a pre-filled value that is wrong', async () => {
+      const { onSubmit, user } = setup({ prefill: { ...prefill, phone: '12345' } });
+      await user.click(screen.getByLabelText(copy.CONSENT));
+      await submit(user);
+      expect(onSubmit).not.toHaveBeenCalled();
+      expect(screen.getByText('Enter a 10-digit US phone number')).toBeInTheDocument();
+    });
+
+    it('shows a partly filled draft as partly filled (what the helper did not gather stays blank)', () => {
+      setup({ prefill: { ...EMPTY_LEAD_DRAFT, name: 'Dana Lee' } });
+      expect(screen.getByLabelText('Name')).toHaveValue('Dana Lee');
+      expect(screen.getByLabelText('Phone')).toHaveValue('');
+      expect(screen.getByLabelText('Best callback window')).toHaveValue('');
+    });
+
+    it('only uses the draft for the first render: later changes do not overwrite what was typed', async () => {
+      const onSubmit = vi.fn();
+      const user = userEvent.setup();
+      const { rerender } = render(
+        <LeadForm onSubmit={onSubmit} sending={false} deliveryFailed={false} prefill={prefill} />
+      );
+      await user.type(screen.getByLabelText('Name'), ' Jr');
+      rerender(
+        <LeadForm
+          onSubmit={onSubmit}
+          sending={false}
+          deliveryFailed={false}
+          prefill={{ ...prefill, name: 'Someone Else' }}
+        />
+      );
+      expect(screen.getByLabelText('Name')).toHaveValue('Dana Lee Jr');
+    });
+
+    it('shows the heading above the fields and announces it with the form', () => {
+      setup({ prefill, heading: copy.LEAD_FORM_HEADING });
+      const heading = screen.getByText("Here's what I have. Check the box and tap send.");
+      const form = screen.getByRole('form', { name: 'Callback request' });
+      expect(form).toHaveAccessibleDescription("Here's what I have. Check the box and tap send.");
+      expect(heading.compareDocumentPosition(screen.getByLabelText('Name'))).toBe(
+        Node.DOCUMENT_POSITION_FOLLOWING
+      );
+    });
+
+    it('shows a pre-filled phone as (770) 555-0147 and still submits 10 digits', async () => {
+      const { onSubmit, user } = setup({ prefill });
+      expect(screen.getByLabelText('Phone')).toHaveValue('(770) 555-0147');
+      await user.click(screen.getByLabelText(copy.CONSENT));
+      await submit(user);
+      expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ phone: '7705550147' }));
+    });
+
+    it('leaves a phone that is not exactly 10 digits as given (so the visitor can fix it)', () => {
+      setup({ prefill: { ...prefill, phone: '77055' } });
+      expect(screen.getByLabelText('Phone')).toHaveValue('77055');
+    });
+
+    describe('consent box description', () => {
+      it('includes the heading when the consent box is where focus goes', () => {
+        setup({ prefill, heading: copy.LEAD_FORM_HEADING });
+        const consent = screen.getByLabelText(copy.CONSENT);
+        expect(consent).toHaveFocus();
+        expect(consent).toHaveAccessibleDescription("Here's what I have. Check the box and tap send.");
+      });
+
+      it('does not, when focus goes to some other field', () => {
+        setup({ prefill: { ...prefill, phone: '' }, heading: copy.LEAD_FORM_HEADING });
+        expect(screen.getByLabelText('Phone')).toHaveFocus();
+        expect(screen.getByLabelText(copy.CONSENT)).not.toHaveAttribute('aria-describedby');
+      });
+
+      it('does not without a heading', () => {
+        setup({ prefill });
+        expect(screen.getByLabelText(copy.CONSENT)).not.toHaveAttribute('aria-describedby');
+      });
+
+      it('keeps the consent error in the description too, alongside the heading', async () => {
+        const { user } = setup({ prefill, heading: copy.LEAD_FORM_HEADING });
+        await submit(user); // box not ticked
+        const consent = screen.getByLabelText(copy.CONSENT);
+        expect(consent).toHaveAccessibleDescription(
+          expect.stringContaining('Check this box so we can contact you')
+        );
+        expect(consent).toHaveAccessibleDescription(
+          expect.stringContaining("Here's what I have. Check the box and tap send.")
+        );
+      });
+    });
+
+    it('has no heading when none is given', () => {
+      setup({ prefill });
+      expect(screen.queryByText("Here's what I have. Check the box and tap send.")).not.toBeInTheDocument();
+      expect(screen.getByRole('form', { name: 'Callback request' })).not.toHaveAttribute('aria-describedby');
+    });
+
+    it('focuses the consent box when name, phone and business are all pre-filled', () => {
+      setup({ prefill, heading: copy.LEAD_FORM_HEADING });
+      expect(screen.getByLabelText(copy.CONSENT)).toHaveFocus();
+    });
+
+    it('focuses the first required field that is still empty', () => {
+      const base = { ...EMPTY_LEAD_DRAFT };
+      const cases: Array<[Partial<LeadDraft>, string]> = [
+        [{ name: 'Dana Lee' }, 'Phone'],
+        [{ name: 'Dana Lee', phone: '7705550147' }, 'Business name'],
+        [{ phone: '7705550147', business: 'Lee Landscaping' }, 'Name'],
+        [{ name: 'Dana Lee', business: 'Lee Landscaping' }, 'Phone'],
+        // name, phone and business in, but no callback window yet: the select is next
+        [{ name: 'Dana Lee', phone: '7705550147', business: 'Lee Landscaping' }, 'Best callback window'],
+      ];
+      for (const [partial, label] of cases) {
+        const { unmount } = render(
+          <LeadForm onSubmit={vi.fn()} sending={false} deliveryFailed={false} prefill={{ ...base, ...partial }} />
+        );
+        expect(screen.getByLabelText(label), JSON.stringify(partial)).toHaveFocus();
+        unmount();
+      }
+    });
+
+    it('an optional field that is filled does not count: email and need alone leave the first field focused', () => {
+      setup({ prefill: { ...EMPTY_LEAD_DRAFT, email: 'dana@example.com', need: 'calls' } });
+      expect(screen.getByLabelText('Name')).toHaveFocus();
+    });
+
+    it('treats a whitespace-only value as empty', () => {
+      setup({ prefill: { ...prefill, phone: '   ' } });
+      expect(screen.getByLabelText('Phone')).toHaveFocus();
+    });
+
+    it('keeps today\'s behaviour for a form with no draft: the first field', () => {
+      setup();
+      expect(screen.getByLabelText('Name')).toHaveFocus();
+    });
+
+    describe('revealing the focus target (a pre-filled form is taller than the chat area)', () => {
+      const original = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView');
+      const spy = vi.fn();
+      beforeEach(() => {
+        spy.mockClear();
+        Element.prototype.scrollIntoView = spy;
+      });
+      afterEach(() => {
+        if (original) Object.defineProperty(Element.prototype, 'scrollIntoView', original);
+        else Reflect.deleteProperty(Element.prototype, 'scrollIntoView');
+      });
+
+      it('brings the end of the form into view when the consent box is the target, so consent, send and "not now" are all visible', async () => {
+        const onDismiss = vi.fn();
+        render(
+          <LeadForm onSubmit={vi.fn()} sending={false} deliveryFailed={false} prefill={prefill} onDismiss={onDismiss} />
+        );
+        await vi.waitFor(() => expect(spy).toHaveBeenCalled());
+        const form = screen.getByRole('form', { name: 'Callback request' });
+        expect(spy.mock.contexts[0]).toBe(form.lastElementChild);
+        expect(spy.mock.contexts[0]).toBe(screen.getByRole('button', { name: copy.LEAD_FORM_DISMISS }));
+        expect(spy).toHaveBeenCalledWith({ block: 'nearest' });
+      });
+
+      it('without a dismiss button the end of the form is the send button', async () => {
+        setup({ prefill });
+        await vi.waitFor(() => expect(spy).toHaveBeenCalled());
+        expect(spy.mock.contexts[0]).toBe(screen.getByRole('button', { name: 'Request my callback' }));
+      });
+
+      it('brings a later required field itself into view', async () => {
+        setup({ prefill: { ...EMPTY_LEAD_DRAFT, name: 'Dana Lee' } });
+        await vi.waitFor(() => expect(spy).toHaveBeenCalled());
+        expect(spy.mock.contexts[0]).toBe(screen.getByLabelText('Phone'));
+      });
+
+      it('does nothing extra when the first field is the target: no frame is even requested', () => {
+        const raf = vi.spyOn(window, 'requestAnimationFrame');
+        try {
+          setup();
+          expect(screen.getByLabelText('Name')).toHaveFocus();
+          expect(raf).not.toHaveBeenCalled(); // the scroll is scheduled with a frame, so none means none
+          expect(spy).not.toHaveBeenCalled();
+        } finally {
+          raf.mockRestore();
+        }
+      });
+
+      it('brings the select into view when the window is the first thing missing', async () => {
+        setup({ prefill: { ...prefill, callbackWindow: '' } });
+        await vi.waitFor(() => expect(spy).toHaveBeenCalled());
+        expect(spy.mock.contexts[0]).toBe(screen.getByLabelText('Best callback window'));
+      });
+    });
+  });
+
+  describe('"Not now, keep chatting"', () => {
+    it('renders under the submit button when a dismiss handler is given, and calls it', async () => {
+      const onDismiss = vi.fn();
+      const user = userEvent.setup();
+      render(<LeadForm onSubmit={vi.fn()} sending={false} deliveryFailed={false} onDismiss={onDismiss} />);
+      const submitButton = screen.getByRole('button', { name: 'Request my callback' });
+      const dismiss = screen.getByRole('button', { name: copy.LEAD_FORM_DISMISS });
+      expect(dismiss).toHaveAttribute('type', 'button');
+      expect(submitButton.compareDocumentPosition(dismiss)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+      await user.click(dismiss);
+      expect(onDismiss).toHaveBeenCalledTimes(1);
+    });
+
+    it('is not rendered without a handler (lead-only mode)', () => {
+      render(<LeadForm onSubmit={vi.fn()} sending={false} deliveryFailed={false} />);
+      expect(screen.queryByRole('button', { name: copy.LEAD_FORM_DISMISS })).not.toBeInTheDocument();
+    });
+
+    it('does not submit the form or validate anything when clicked', async () => {
+      const onSubmit = vi.fn();
+      const user = userEvent.setup();
+      render(<LeadForm onSubmit={onSubmit} sending={false} deliveryFailed={false} onDismiss={vi.fn()} />);
+      await user.click(screen.getByRole('button', { name: copy.LEAD_FORM_DISMISS }));
+      expect(onSubmit).not.toHaveBeenCalled();
+      expect(screen.queryByText('Enter your name')).not.toBeInTheDocument();
+    });
+
+    it('is disabled while a send is in flight, so the form cannot vanish under it', async () => {
+      const onDismiss = vi.fn();
+      const user = userEvent.setup();
+      render(<LeadForm onSubmit={vi.fn()} sending deliveryFailed={false} onDismiss={onDismiss} />);
+      const dismiss = screen.getByRole('button', { name: copy.LEAD_FORM_DISMISS });
+      expect(dismiss).toBeDisabled();
+      await user.click(dismiss);
+      expect(onDismiss).not.toHaveBeenCalled();
+    });
+
+    it('hands over what the visitor has typed, cleaned like a model draft', async () => {
+      const onDismiss = vi.fn();
+      const user = userEvent.setup();
+      render(
+        <LeadForm
+          onSubmit={vi.fn()}
+          sending={false}
+          deliveryFailed={false}
+          onDismiss={onDismiss}
+          prefill={{ ...EMPTY_LEAD_DRAFT, name: 'Dana Lee', phone: '7705550147' }}
+        />
+      );
+      const business = screen.getByLabelText('Business name');
+      await user.type(business, '  Lee Lawn and Garden ');
+      await user.type(screen.getByLabelText('Email (optional)'), 'dana@example.com');
+      await user.type(screen.getByLabelText('What do you need help with? (optional)'), 'fewer missed calls');
+      await user.selectOptions(screen.getByLabelText('Best callback window'), 'morning_9_11');
+      await user.click(screen.getByLabelText(copy.CONSENT)); // consent is not part of a draft
+      await user.click(screen.getByRole('button', { name: copy.LEAD_FORM_DISMISS }));
+      expect(onDismiss).toHaveBeenCalledTimes(1);
+      expect(onDismiss).toHaveBeenCalledWith({
+        name: 'Dana Lee',
+        phone: '7705550147', // the shown "(770) 555-0147" goes back to 10 digits
+        email: 'dana@example.com',
+        business: 'Lee Lawn and Garden',
+        need: 'fewer missed calls',
+        callbackWindow: 'morning_9_11',
+      });
+    });
+
+    it('drops what is not usable yet: a half-typed phone, a half-typed email', async () => {
+      const onDismiss = vi.fn();
+      const user = userEvent.setup();
+      render(<LeadForm onSubmit={vi.fn()} sending={false} deliveryFailed={false} onDismiss={onDismiss} />);
+      await user.type(screen.getByLabelText('Name'), 'Dana Lee');
+      await user.type(screen.getByLabelText('Phone'), '770555');
+      await user.type(screen.getByLabelText('Email (optional)'), 'dana@exa');
+      await user.click(screen.getByRole('button', { name: copy.LEAD_FORM_DISMISS }));
+      expect(onDismiss).toHaveBeenCalledWith({ ...EMPTY_LEAD_DRAFT, name: 'Dana Lee' });
+    });
+
+    it('fires no analytics event', async () => {
+      const user = userEvent.setup();
+      render(<LeadForm onSubmit={vi.fn()} sending={false} deliveryFailed={false} onDismiss={vi.fn()} />);
+      vi.mocked(track).mockClear();
+      await user.click(screen.getByRole('button', { name: copy.LEAD_FORM_DISMISS }));
+      expect(track).not.toHaveBeenCalled();
+    });
   });
 
   it('rejects a bad phone number without submitting', async () => {

@@ -224,6 +224,14 @@
   border-radius: 12px;
 }
 
+.thg-cc-form-heading {
+  margin: 0;
+  color: var(--cc-fg);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
 .thg-cc-field label {
   display: block;
   margin-bottom: 6px;
@@ -316,6 +324,36 @@
 .thg-cc-submit:disabled {
   opacity: 0.7;
   cursor: wait;
+}
+
+.thg-cc-form-dismiss {
+  align-self: center;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 0;
+  background: none;
+  color: var(--cc-accent);
+  font-family: 'Outfit', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.thg-cc-form-dismiss:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.thg-cc-form-dismiss:hover:not(:disabled) {
+  text-decoration-thickness: 2px;
+}
+
+.thg-cc-form-dismiss:focus-visible {
+  outline: 2px solid var(--cc-focus);
+  outline-offset: 2px;
+  border-radius: 6px;
 }
 
 /* ---------- Footer ---------- */
