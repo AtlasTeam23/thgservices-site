@@ -16,9 +16,22 @@ export interface Env {
   RATE_SALT: string;
   /** "anthropic" in production, "mock" for local runs and tests. */
   LLM_PROVIDER: string;
+  /** "browser" (default) or "aura". Anything but "aura" means the browser reads replies aloud. */
+  VOICE_TTS: string;
+  /** An Aura-1 speaker name; unknown values fall back to "asteria". */
+  VOICE_SPEAKER: string;
+  /** Speech-to-text audio seconds per Eastern-time day. */
+  VOICE_DAILY_STT_SECONDS: string;
+  /** Speech-to-text audio seconds per chat session. */
+  VOICE_SESSION_SECONDS: string;
+  /** Premium text-to-speech characters per Eastern-time day. */
+  VOICE_DAILY_TTS_CHARS: string;
 
   // Durable Object binding
   LIMITER: DurableObjectNamespace<Limiter>;
+
+  /** Workers AI. Optional at runtime: without it, voice routes answer 503 and /health says so. */
+  AI?: Ai;
 
   // Secrets (`npx wrangler secret put <NAME>`), all optional at runtime
   LLM_API_KEY?: string;
@@ -73,11 +86,62 @@ export const allowedOrigins = (env: Env): string[] =>
     .map((origin) => origin.trim())
     .filter((origin) => origin.length > 0);
 
+/** A whole number from a var. 0 is valid (it switches the thing off); missing, blank, junk or negative gives `fallback`. */
+const wholeNumber = (value: string | undefined, fallback: number): number => {
+  const parsed = Number.parseInt(value ?? '', 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+};
+
 /**
  * `DAILY_LLM_CAP` as a whole number of model calls per Eastern-time day. 0 is valid and
  * switches the model off; missing, blank, non-numeric or negative values fall back to 2000.
  */
-export const dailyLlmCap = (env: Env): number => {
-  const parsed = Number.parseInt(env.DAILY_LLM_CAP ?? '', 10);
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 2000;
+export const dailyLlmCap = (env: Env): number => wholeNumber(env.DAILY_LLM_CAP, 2000);
+
+// --- voice ------------------------------------------------------------------------
+
+/** Audio seconds of speech-to-text per Eastern-time day (default 9000, 150 minutes). 0 switches speech-to-text off. */
+export const dailySttSeconds = (env: Env): number => wholeNumber(env.VOICE_DAILY_STT_SECONDS, 9000);
+
+/** Audio seconds of speech-to-text per chat session (default 180). 0 switches speech-to-text off. */
+export const sessionVoiceSeconds = (env: Env): number => wholeNumber(env.VOICE_SESSION_SECONDS, 180);
+
+/**
+ * Characters of premium text-to-speech per Eastern-time day (default 100000: about 300 replies of
+ * 330 characters, $1.50 a day at Aura-1's $0.015 per 1,000). 0 uses up the day's budget at once.
+ */
+export const dailyTtsChars = (env: Env): number => wholeNumber(env.VOICE_DAILY_TTS_CHARS, 100_000);
+
+export type TtsMode = 'browser' | 'aura';
+
+/** The configured voice for replies: "aura" only when VOICE_TTS says so. This does not check the AI binding. */
+export const ttsMode = (env: Env): TtsMode => (env.VOICE_TTS?.trim().toLowerCase() === 'aura' ? 'aura' : 'browser');
+
+/** Aura-1's speaker names, as the model accepts them. */
+export const AURA_SPEAKERS = [
+  'angus',
+  'asteria',
+  'arcas',
+  'orion',
+  'orpheus',
+  'athena',
+  'luna',
+  'zeus',
+  'perseus',
+  'helios',
+  'hera',
+  'stella',
+] as const;
+export type AuraSpeaker = (typeof AURA_SPEAKERS)[number];
+
+export const voiceSpeaker = (env: Env): AuraSpeaker => {
+  const wanted = env.VOICE_SPEAKER?.trim().toLowerCase();
+  return AURA_SPEAKERS.find((speaker) => speaker === wanted) ?? 'asteria';
 };
+
+/** True when `/stt` can transcribe: the AI binding exists and both speech budgets are above zero. */
+export const isSttAvailable = (env: Env): boolean =>
+  env.AI !== undefined && dailySttSeconds(env) > 0 && sessionVoiceSeconds(env) > 0;
+
+/** True when `/tts` can speak: selected with VOICE_TTS=aura, and the AI binding exists. */
+export const isAuraAvailable = (env: Env): boolean => env.AI !== undefined && ttsMode(env) === 'aura';

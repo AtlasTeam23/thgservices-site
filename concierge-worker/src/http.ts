@@ -13,13 +13,15 @@ export const methodNotAllowed = (allow: string): Response =>
 export type JsonBody = { ok: true; value: unknown } | { ok: false };
 
 /**
- * Reads and parses a JSON request body without ever buffering more than `maxBytes`:
- * oversized bodies are cancelled mid-stream instead of being read to the end.
+ * Reads a request body into one buffer without ever holding more than `maxBytes`: a declared
+ * Content-Length over the cap is refused before the first byte is read, and a body that turns out
+ * longer (no length declared, or a wrong one) is cancelled mid-stream instead of being read to the
+ * end. Null means missing or too large.
  */
-export const readJson = async (request: Request, maxBytes: number): Promise<JsonBody> => {
+export const readBytes = async (request: Request, maxBytes: number): Promise<Uint8Array | null> => {
   const declared = Number(request.headers.get('Content-Length'));
-  if (Number.isFinite(declared) && declared > maxBytes) return { ok: false };
-  if (!request.body) return { ok: false };
+  if (Number.isFinite(declared) && declared > maxBytes) return null;
+  if (!request.body) return null;
 
   const reader = request.body.getReader();
   const chunks: Uint8Array[] = [];
@@ -30,7 +32,7 @@ export const readJson = async (request: Request, maxBytes: number): Promise<Json
     total += value.byteLength;
     if (total > maxBytes) {
       await reader.cancel();
-      return { ok: false };
+      return null;
     }
     chunks.push(value);
   }
@@ -41,6 +43,13 @@ export const readJson = async (request: Request, maxBytes: number): Promise<Json
     bytes.set(chunk, offset);
     offset += chunk.byteLength;
   }
+  return bytes;
+};
+
+/** Reads and parses a JSON request body, never buffering more than `maxBytes` (see readBytes). */
+export const readJson = async (request: Request, maxBytes: number): Promise<JsonBody> => {
+  const bytes = await readBytes(request, maxBytes);
+  if (!bytes) return { ok: false };
   try {
     return { ok: true, value: JSON.parse(new TextDecoder().decode(bytes)) };
   } catch {

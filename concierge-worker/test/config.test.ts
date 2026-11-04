@@ -64,6 +64,20 @@ describe('wrangler.jsonc', () => {
     expect(config.vars.RATE_SALT).toMatch(/^[0-9a-f]{32}$/);
   });
 
+  it('binds Workers AI as AI, for speech-to-text and the optional premium voice', () => {
+    expect(config.ai).toEqual({ binding: 'AI', remote: true });
+  });
+
+  it('carries the contracted voice vars: browser voice by default, free-plan budgets', () => {
+    expect(config.vars).toMatchObject({
+      VOICE_TTS: 'browser',
+      VOICE_SPEAKER: 'asteria',
+      VOICE_DAILY_STT_SECONDS: '9000',
+      VOICE_SESSION_SECONDS: '180',
+      VOICE_DAILY_TTS_CHARS: '100000',
+    });
+  });
+
   it('never puts a secret in the committed vars', () => {
     for (const secret of ['LLM_API_KEY', 'RESEND_API_KEY', 'TURNSTILE_SECRET_KEY', 'LEADQUIK_WEBHOOK_URL']) {
       expect(config.vars, secret).not.toHaveProperty(secret);

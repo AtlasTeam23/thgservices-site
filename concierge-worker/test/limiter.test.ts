@@ -6,11 +6,24 @@ import {
   CHAT_IP,
   CHAT_SESSION,
   LEAD_IP,
+  STT_IP,
+  TTS_IP,
+  chargeLimiter,
   chatIpName,
   etDay,
   globalName,
+  globalTtsName,
+  globalVoiceName,
+  hitLimiter,
   leadIpName,
+  peekLimiter,
   sessionName,
+  sessionVoiceName,
+  sttDailyRule,
+  sttIpName,
+  sttSessionRule,
+  ttsDailyRule,
+  ttsIpName,
 } from '../src/limits';
 
 const stubFor = (name: string) => env.LIMITER.getByName(name);
@@ -343,5 +356,216 @@ describe('limiter ids and rules', () => {
     expect(CHAT_IP).toEqual({ limit: 20, windowSeconds: 600 });
     expect(LEAD_IP).toEqual({ limit: 3, windowSeconds: 3600 });
     expect(CHAT_SESSION).toEqual({ limit: 40, windowSeconds: 86400 });
+  });
+});
+
+describe('Limiter fixed mode with a cost (seconds of audio, characters of speech)', () => {
+  it('adds the cost to the counter and denies a hit that would pass the limit, without recording it', async () => {
+    const stub = stubFor(uniqueName('global:voice'));
+    expect(await stub.hit(9, 600, 'fixed', 5)).toMatchObject({ allowed: true, count: 5 });
+    expect(await stub.hit(9, 600, 'fixed', 5)).toMatchObject({ allowed: false, count: 5 }); // 5 + 5 > 9
+    expect(await stub.hit(9, 600, 'fixed', 4)).toMatchObject({ allowed: true, count: 9 }); // exactly the limit is allowed
+    expect(await stub.hit(9, 600, 'fixed', 1)).toMatchObject({ allowed: false, count: 9 });
+  });
+
+  it('denies a single cost larger than the whole limit, even on a fresh counter', async () => {
+    const stub = stubFor(uniqueName('global:voice'));
+    expect(await stub.hit(9, 600, 'fixed', 10)).toMatchObject({ allowed: false, count: 0 });
+    expect(await stub.hit(9, 600, 'fixed', 9)).toMatchObject({ allowed: true, count: 9 }); // and the denial left nothing behind
+  });
+
+  it('defaults to a cost of 1, so existing callers are unchanged', async () => {
+    const stub = stubFor(uniqueName('global'));
+    expect(await stub.hit(3, 600, 'fixed')).toMatchObject({ count: 1 });
+    expect(await stub.hit(3, 600, 'fixed', 1)).toMatchObject({ count: 2 });
+  });
+
+  it.each([0, -4, Number.NaN, Number.POSITIVE_INFINITY])('treats a cost of %s as 1', async (cost) => {
+    const stub = stubFor(uniqueName('global'));
+    expect(await stub.hit(5, 600, 'fixed', cost)).toMatchObject({ allowed: true, count: 1 });
+  });
+
+  it('rounds a fractional cost down to whole units', async () => {
+    const stub = stubFor(uniqueName('global'));
+    expect(await stub.hit(50, 600, 'fixed', 2.9)).toMatchObject({ count: 2 });
+  });
+
+  it('keeps the window fixed: a costly hit does not move resetAt', async () => {
+    const stub = stubFor(uniqueName('global:voice'));
+    const first = await stub.hit(100, 3600, 'fixed', 30);
+    expect((await stub.hit(100, 3600, 'fixed', 30)).resetAt).toBe(first.resetAt);
+  });
+
+  it('is atomic under concurrent callers', async () => {
+    const stub = stubFor(uniqueName('global:voice'));
+    const results = await Promise.all(Array.from({ length: 12 }, () => stub.hit(50, 600, 'fixed', 10)));
+    expect(results.filter((r) => r.allowed)).toHaveLength(5);
+    expect(Math.max(...results.map((r) => r.count))).toBe(50);
+  });
+
+  it('ignores the cost in sliding mode (one timestamp per hit)', async () => {
+    const stub = stubFor(uniqueName('ip:stt'));
+    expect(await stub.hit(3, 600, 'sliding', 50)).toMatchObject({ allowed: true, count: 1 });
+  });
+
+  it('still reports an ended id as ended', async () => {
+    const stub = stubFor(uniqueName('session'));
+    await stub.end(600);
+    expect(await stub.hit(10, 600, 'fixed', 3)).toMatchObject({ allowed: false, ended: true });
+  });
+});
+
+describe('voice limiter ids and rules', () => {
+  const SALT = 'test-salt';
+
+  it('puts speech-to-text and text-to-speech addresses in their own hashed buckets', async () => {
+    const chat = await chatIpName('203.0.113.7', SALT);
+    const stt = await sttIpName('203.0.113.7', SALT);
+    const tts = await ttsIpName('203.0.113.7', SALT);
+    expect(stt).toMatch(/^ip:stt:[0-9a-f]{64}$/);
+    expect(tts).toMatch(/^ip:tts:[0-9a-f]{64}$/);
+    expect(stt).not.toContain('203.0.113.7');
+    expect(stt.slice('ip:stt:'.length)).toBe(chat.slice('ip:chat:'.length)); // same hash, different namespace
+    expect(tts.slice('ip:tts:'.length)).toBe(chat.slice('ip:chat:'.length));
+    expect(await sttIpName('203.0.113.8', SALT)).not.toBe(stt);
+  });
+
+  it('reduces an IPv6 address to its /64 for the voice buckets too', async () => {
+    expect(await sttIpName('2001:db8:1:2:aaaa::1', SALT)).toBe(await sttIpName('2001:db8:1:2:bbbb::9', SALT));
+    expect(await ttsIpName('2001:db8:1:2:aaaa::1', SALT)).not.toBe(await ttsIpName('2001:db8:1:3:aaaa::1', SALT));
+  });
+
+  it('names the per-session audio counter after the session, apart from the message counter', () => {
+    expect(sessionVoiceName('abc-123')).toBe('session-voice:abc-123');
+    expect(sessionVoiceName('abc-123')).not.toBe(sessionName('abc-123'));
+  });
+
+  it('keys the daily voice counters on the America/New_York calendar day', () => {
+    expect(globalVoiceName(new Date('2026-11-04T02:00:00Z'))).toBe('global:voice:2026-11-03');
+    expect(globalTtsName(new Date('2026-11-04T02:00:00Z'))).toBe('global:tts:2026-11-03');
+    expect(globalVoiceName(new Date('2026-11-04T05:30:00Z'))).toBe('global:voice:2026-11-04');
+  });
+
+  it('publishes the contracted limits', () => {
+    expect(STT_IP).toEqual({ limit: 30, windowSeconds: 600 });
+    expect(TTS_IP).toEqual({ limit: 30, windowSeconds: 600 });
+    expect(sttDailyRule(9000)).toEqual({ limit: 9000, windowSeconds: 86400, mode: 'fixed' });
+    expect(sttSessionRule(180)).toEqual({ limit: 180, windowSeconds: 86400, mode: 'fixed' });
+    expect(ttsDailyRule(20000)).toEqual({ limit: 20000, windowSeconds: 86400, mode: 'fixed' });
+  });
+});
+
+describe('Limiter.peek (a read that records nothing)', () => {
+  it('reports the count without adding to it', async () => {
+    const stub = stubFor(uniqueName('session'));
+    expect(await stub.peek(600)).toMatchObject({ count: 0, ended: false });
+    await stub.hit(40, 600);
+    await stub.hit(40, 600);
+    expect(await stub.peek(600)).toMatchObject({ count: 2, ended: false });
+    expect(await stub.peek(600)).toMatchObject({ count: 2, ended: false });
+    expect((await stub.hit(40, 600)).count).toBe(3); // the peeks did not count
+  });
+
+  it('counts only the hits inside the window it is asked about', async () => {
+    const stub = stubFor(uniqueName('session'));
+    await stub.hit(5, 1);
+    await sleep(1150);
+    expect((await stub.peek(1)).count).toBe(0);
+    expect((await stub.peek(600)).count).toBe(1);
+  });
+
+  it('reports an ended id as ended, and as not ended once the cutoff has passed', async () => {
+    const stub = stubFor(uniqueName('session'));
+    await stub.hit(40, 600);
+    await stub.end(1);
+    expect(await stub.peek(600)).toMatchObject({ count: 1, ended: true });
+    await sleep(1150);
+    expect((await stub.peek(600)).ended).toBe(false);
+  });
+
+  it('reads a fixed counter too, and a spent fixed window as zero', async () => {
+    const stub = stubFor(uniqueName('global:voice'));
+    await stub.hit(10, 600, 'fixed', 4);
+    expect(await stub.peek(600, 'fixed')).toMatchObject({ count: 4, ended: false });
+    expect(await stub.peek(600, 'fixed')).toMatchObject({ count: 4, ended: false });
+    const spent = stubFor(uniqueName('global:voice'));
+    await spent.hit(10, 1, 'fixed', 4);
+    await sleep(1150);
+    expect((await spent.peek(1, 'fixed')).count).toBe(0);
+  });
+
+  describe('resetAt, for a Retry-After header', () => {
+    it('is when the oldest hit leaves the window, the same moment hit() reports', async () => {
+      const stub = stubFor(uniqueName('session'));
+      const first = await stub.hit(40, 3600);
+      await stub.hit(40, 3600);
+      expect((await stub.peek(3600)).resetAt).toBe(first.resetAt);
+    });
+
+    it('is when the fixed window ends', async () => {
+      const stub = stubFor(uniqueName('global:voice'));
+      const first = await stub.hit(100, 3600, 'fixed', 5);
+      expect((await stub.peek(3600, 'fixed')).resetAt).toBe(first.resetAt);
+    });
+
+    it('is when the cutoff expires for an ended id', async () => {
+      const stub = stubFor(uniqueName('session'));
+      const before = Date.now();
+      await stub.end(120);
+      const { resetAt } = await stub.peek(600);
+      expect(resetAt).toBeGreaterThanOrEqual(before + 120_000);
+      expect(resetAt).toBeLessThanOrEqual(Date.now() + 120_000);
+    });
+
+    it('is "now" when there is nothing to wait for', async () => {
+      const stub = stubFor(uniqueName('session'));
+      const before = Date.now();
+      const { resetAt } = await stub.peek(600);
+      expect(resetAt).toBeGreaterThanOrEqual(before);
+      expect(resetAt).toBeLessThanOrEqual(Date.now());
+    });
+  });
+
+  it('leaves nothing behind on an id that was never used: no tables and no cleanup alarm', async () => {
+    const stub = stubFor(uniqueName('session'));
+    expect(await stub.peek(600)).toMatchObject({ count: 0, ended: false });
+    const state = await runInDurableObject(stub, async (_instance, ctx) => ({
+      tables: ctx.storage.sql
+        .exec<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('hits', 'counter', 'meta')")
+        .toArray(),
+      alarm: await ctx.storage.getAlarm(),
+    }));
+    expect(state).toEqual({ tables: [], alarm: null });
+  });
+
+  it('still answers after the cleanup alarm has deleted everything', async () => {
+    const stub = stubFor(uniqueName('session'));
+    await stub.hit(5, 1);
+    await sleep(1150);
+    await runDurableObjectAlarm(stub);
+    expect(await stub.peek(1)).toMatchObject({ count: 0, ended: false });
+    expect(await stub.hit(5, 1)).toMatchObject({ allowed: true, count: 1 }); // and it still works afterwards
+  });
+});
+
+describe('chargeLimiter (spending that has already happened)', () => {
+  const rule = { limit: 10, windowSeconds: 600, mode: 'fixed' } as const;
+
+  it('adds the cost even when it takes the counter past the limit, which hitLimiter would have refused', async () => {
+    const name = uniqueName('global:voice');
+    expect(await hitLimiter(env, name, rule, 8)).toMatchObject({ allowed: true, count: 8 });
+    expect(await hitLimiter(env, name, rule, 5)).toMatchObject({ allowed: false, count: 8 });
+    expect(await chargeLimiter(env, name, rule, 5)).toMatchObject({ allowed: true, count: 13 });
+    expect(await chargeLimiter(env, name, rule, 1380)).toMatchObject({ count: 1393 });
+    expect((await peekLimiter(env, name, rule)).count).toBe(1393); // visible to the check that runs before the next call
+    expect((await hitLimiter(env, name, rule, 1)).allowed).toBe(false);
+  });
+
+  it('starts a window like any hit, and rounds the cost like any hit', async () => {
+    const name = uniqueName('global:voice');
+    const first = await chargeLimiter(env, name, rule, 2.9);
+    expect(first.count).toBe(2);
+    expect(first.resetAt).toBeGreaterThan(Date.now());
+    expect((await chargeLimiter(env, name, rule, 0)).count).toBe(3); // a cost below 1 counts as 1
   });
 });

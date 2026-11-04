@@ -13,10 +13,12 @@ import {
   PHONE_HREF,
   PRIVACY_HREF,
 } from './copy';
+import Equalizer from './Equalizer';
 import type { OpenDetail } from './events';
 import LeadForm from './LeadForm';
 import MessageList from './MessageList';
 import QuickReplies from './QuickReplies';
+import SpeakToggle from './SpeakToggle';
 import { useAvailableHeight } from './useAvailableHeight';
 import { useConcierge } from './useConcierge';
 import { useFocusTrap } from './useFocusTrap';
@@ -41,7 +43,8 @@ export type ChatPanelProps = {
 
 export default function ChatPanel({ open, request, onClose, returnFocusRef }: ChatPanelProps) {
   const chat = useConcierge();
-  const { handleOpen, chips, showLeadForm, status } = chat;
+  const { handleOpen, chips, showLeadForm, status, voice } = chat;
+  const { stopAll, cancelRecording, setActive, stopSpeaking } = chat;
   const panelRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const isMobile = useMediaQuery(PHONE_QUERY);
@@ -75,7 +78,27 @@ export default function ChatPanel({ open, request, onClose, returnFocusRef }: Ch
     const composer = composerRef.current;
     const target = !touch && composer && !composer.disabled ? composer : panel;
     target.focus({ preventScroll: true });
-  }, [open, touch, chips, showLeadForm, status]);
+    // `voice`: the mic (voice switched off) or the header equalizer (the reading stopped) can
+    // vanish under the focus ring.
+  }, [open, touch, chips, showLeadForm, status, voice]);
+
+  // The panel stays mounted while closed: closing it must release the microphone and stop the
+  // voice, and replies are read aloud only while it is open and the tab is visible. An unmount
+  // (the page tearing it down) does the same.
+  useEffect(() => {
+    setActive(open && !document.hidden);
+    if (!open) stopAll();
+  }, [open, setActive, stopAll]);
+  useEffect(() => stopAll, [stopAll]);
+  // A hidden tab must not keep recording; a transcript already on its way is left to finish.
+  useEffect(() => {
+    const onVisibility = () => {
+      setActive(open && !document.hidden);
+      if (document.hidden) cancelRecording();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, [open, setActive, cancelRecording]);
 
   // Full-screen on phones: track the visual viewport so the on-screen keyboard
   // never covers the composer, and keep the page behind from scrolling. Lenis
@@ -135,6 +158,16 @@ export default function ChatPanel({ open, request, onClose, returnFocusRef }: Ch
             AI
           </span>
         </div>
+        {(voice === 'recording' || voice === 'transcribing' || voice === 'speaking') && (
+          <Equalizer
+            mode={voice === 'recording' ? 'listening' : voice}
+            subscribeLevel={chat.subscribeLevel}
+            onStop={stopSpeaking}
+          />
+        )}
+        {voice !== 'off' && chat.speakAvailable && (
+          <SpeakToggle pressed={chat.speakEnabled} onToggle={() => chat.setSpeakEnabled(!chat.speakEnabled)} />
+        )}
         {/* Shown only on short screens, where the footer's call link is dropped to save a line. */}
         <a
           className="thg-cc-header-call"
@@ -185,10 +218,23 @@ export default function ChatPanel({ open, request, onClose, returnFocusRef }: Ch
         <Composer
           textareaRef={composerRef}
           onSend={(text) => void chat.send(text)}
-          onEdit={chat.clearComposerError}
+          onEdit={() => {
+            chat.clearComposerError();
+            stopSpeaking(); // typing is new input: the reading stops
+          }}
           busy={status === 'sending'}
           disabled={status === 'ended'}
           error={chat.composerError}
+          notice={chat.voiceNotice}
+          voice={{
+            state: voice,
+            ending: chat.voiceEnding,
+            disclosed: chat.voiceDisclosed,
+            touch,
+            onStart: (opts) => void chat.startVoice(opts),
+            onStop: chat.stopVoice,
+            onUnlock: chat.unlockSpeech,
+          }}
         />
       )}
 

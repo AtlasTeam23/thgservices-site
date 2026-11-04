@@ -1,0 +1,309 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  fetchTts,
+  fetchVoiceCaps,
+  HEALTH_TIMEOUT_MS,
+  postStt,
+  STT_TIMEOUT_MS,
+  TTS_TIMEOUT_MS,
+} from '../api';
+
+const SESSION = '11111111-1111-4111-8111-111111111111';
+
+const jsonResponse = (status: number, body: unknown) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+const clip = (type = 'audio/webm;codecs=opus') => new Blob([new Uint8Array([1, 2, 3, 4])], { type });
+
+describe('voice api', () => {
+  const fetchMock = vi.fn();
+
+  beforeEach(() => {
+    vi.stubEnv('VITE_CONCIERGE_API_URL', 'http://localhost:8787/');
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock.mockReset();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  describe('timeouts', () => {
+    it('allow the upload plus the Worker\'s 8 s model attempts for speech to text, and 8 s for the premium voice', () => {
+      expect(STT_TIMEOUT_MS).toBe(20_000);
+      expect(TTS_TIMEOUT_MS).toBe(8_000);
+      expect(HEALTH_TIMEOUT_MS).toBe(5_000);
+    });
+  });
+
+  describe('postStt', () => {
+    it('POSTs multipart form data to {base}/stt with the audio, session and duration', async () => {
+      fetchMock.mockResolvedValue(jsonResponse(200, { text: 'what do you do', durationMs: 2500 }));
+      await postStt(clip(), 'audio/webm;codecs=opus', SESSION, 'tok', 2500);
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(url).toBe('http://localhost:8787/stt');
+      expect(init.method).toBe('POST');
+      expect(init.credentials).toBe('omit');
+      // The browser must set the multipart boundary itself.
+      expect(init.headers).toBeUndefined();
+
+      const form = init.body as FormData;
+      expect(form).toBeInstanceOf(FormData);
+      const audio = form.get('audio') as File;
+      expect(audio).toBeInstanceOf(Blob);
+      expect(audio.size).toBe(4);
+      expect(form.get('sessionId')).toBe(SESSION);
+      expect(form.get('turnstileToken')).toBe('tok');
+      expect(form.get('durationMs')).toBe('2500');
+    });
+
+    it('sends the bare MIME type (no codecs parameter) and a matching file name', async () => {
+      fetchMock.mockResolvedValue(jsonResponse(200, { text: 'hi' }));
+      await postStt(clip('audio/webm;codecs=opus'), 'audio/webm;codecs=opus', SESSION);
+      let audio = (fetchMock.mock.calls[0][1].body as FormData).get('audio') as File;
+      expect(audio.type).toBe('audio/webm');
+      expect(audio.name).toBe('speech.webm');
+
+      fetchMock.mockClear();
+      await postStt(clip('audio/mp4'), 'audio/mp4', SESSION);
+      audio = (fetchMock.mock.calls[0][1].body as FormData).get('audio') as File;
+      expect(audio.type).toBe('audio/mp4');
+      expect(audio.name).toBe('speech.m4a');
+
+      fetchMock.mockClear();
+      await postStt(clip('audio/ogg;codecs=opus'), 'audio/ogg;codecs=opus', SESSION);
+      audio = (fetchMock.mock.calls[0][1].body as FormData).get('audio') as File;
+      expect(audio.type).toBe('audio/ogg');
+      expect(audio.name).toBe('speech.ogg');
+    });
+
+    it('leaves out the token and duration when not given, and caps the duration at 20 seconds', async () => {
+      fetchMock.mockResolvedValue(jsonResponse(200, { text: 'hi' }));
+      await postStt(clip(), 'audio/webm', SESSION);
+      let form = fetchMock.mock.calls[0][1].body as FormData;
+      expect(form.has('turnstileToken')).toBe(false);
+      expect(form.has('durationMs')).toBe(false);
+
+      fetchMock.mockClear();
+      await postStt(clip(), 'audio/webm', SESSION, null, 31234.6);
+      form = fetchMock.mock.calls[0][1].body as FormData;
+      expect(form.get('durationMs')).toBe('20000');
+    });
+
+    it('200 returns the transcript and the server-measured duration', async () => {
+      fetchMock.mockResolvedValue(jsonResponse(200, { text: 'what do you do', durationMs: 2500 }));
+      expect(await postStt(clip(), 'audio/webm', SESSION)).toEqual({
+        kind: 'ok',
+        text: 'what do you do',
+        durationMs: 2500,
+      });
+    });
+
+    it('200 with an empty transcript is ok with empty text; a missing duration is null', async () => {
+      fetchMock.mockResolvedValue(jsonResponse(200, { text: '' }));
+      expect(await postStt(clip(), 'audio/webm', SESSION)).toEqual({
+        kind: 'ok',
+        text: '',
+        durationMs: null,
+      });
+    });
+
+    it('200 without a string transcript is a server error', async () => {
+      fetchMock.mockResolvedValue(jsonResponse(200, { nope: true }));
+      expect(await postStt(clip(), 'audio/webm', SESSION)).toEqual({
+        kind: 'error',
+        reason: 'server',
+      });
+    });
+
+    it('maps the documented error statuses', async () => {
+      const cases: Array<[number, unknown, unknown]> = [
+        [400, { error: 'bad_audio' }, { kind: 'bad_audio' }],
+        [400, { error: 'something_else' }, { kind: 'error', reason: 'server' }],
+        [403, { error: 'verification_required' }, { kind: 'verification_required' }],
+        [403, { error: 'other' }, { kind: 'error', reason: 'server' }],
+        [429, { error: 'rate_limited' }, { kind: 'rate_limited' }],
+        [503, { error: 'voice_unavailable', reason: 'budget' }, { kind: 'voice_unavailable', reason: 'budget' }],
+        [503, { error: 'voice_unavailable', reason: 'server' }, { kind: 'voice_unavailable', reason: 'server' }],
+        // No reason, or one we do not know: the safe reading is "the service is having trouble".
+        [503, { error: 'voice_unavailable' }, { kind: 'voice_unavailable', reason: 'server' }],
+        [503, { error: 'voice_unavailable', reason: 'weather' }, { kind: 'voice_unavailable', reason: 'server' }],
+        // A Worker that predates voice has no /stt route at all.
+        [404, { error: 'not_found' }, { kind: 'voice_unavailable', reason: 'server' }],
+        [500, { error: 'boom' }, { kind: 'error', reason: 'server' }],
+      ];
+      for (const [status, body, expected] of cases) {
+        fetchMock.mockResolvedValueOnce(jsonResponse(status, body));
+        expect(await postStt(clip(), 'audio/webm', SESSION), `${status}`).toEqual(expected);
+      }
+    });
+
+    it('a non-JSON error body still maps by status', async () => {
+      fetchMock.mockResolvedValue(new Response('<html>', { status: 503 }));
+      expect(await postStt(clip(), 'audio/webm', SESSION)).toEqual({
+        kind: 'voice_unavailable',
+        reason: 'server',
+      });
+    });
+
+    it('a network failure is a network error', async () => {
+      fetchMock.mockRejectedValue(new TypeError('Failed to fetch'));
+      expect(await postStt(clip(), 'audio/webm', SESSION)).toEqual({
+        kind: 'error',
+        reason: 'network',
+      });
+    });
+
+    it('aborts and reports a timeout when the Worker is too slow', async () => {
+      vi.useFakeTimers();
+      fetchMock.mockImplementation(
+        (_url: string, init: RequestInit) =>
+          new Promise((_resolve, reject) => {
+            init.signal?.addEventListener('abort', () =>
+              reject(new DOMException('aborted', 'AbortError'))
+            );
+          })
+      );
+      const pending = postStt(clip(), 'audio/webm', SESSION);
+      await vi.advanceTimersByTimeAsync(STT_TIMEOUT_MS + 1);
+      expect(await pending).toEqual({ kind: 'error', reason: 'timeout' });
+    });
+  });
+
+  describe('fetchTts', () => {
+    it('POSTs {sessionId, text} as JSON to {base}/tts and returns the audio', async () => {
+      fetchMock.mockResolvedValue(
+        new Response(new Uint8Array([9, 9, 9]), {
+          status: 200,
+          headers: { 'Content-Type': 'audio/mpeg' },
+        })
+      );
+      const res = await fetchTts('Hello there.', SESSION);
+
+      const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(url).toBe('http://localhost:8787/tts');
+      expect(init.method).toBe('POST');
+      expect(init.credentials).toBe('omit');
+      expect((init.headers as Record<string, string>)['Content-Type']).toBe('application/json');
+      expect(JSON.parse(init.body as string)).toEqual({ sessionId: SESSION, text: 'Hello there.' });
+
+      expect(res.kind).toBe('ok');
+      if (res.kind === 'ok') {
+        expect(res.blob.size).toBe(3);
+        expect(res.blob.type).toBe('audio/mpeg');
+      }
+    });
+
+    it('every way of not getting audio is simply "unavailable" (the browser voice takes over)', async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse(503, { error: 'voice_unavailable' }));
+      expect(await fetchTts('Hi', SESSION)).toEqual({ kind: 'unavailable' });
+      fetchMock.mockResolvedValueOnce(jsonResponse(404, { error: 'not_found' }));
+      expect(await fetchTts('Hi', SESSION)).toEqual({ kind: 'unavailable' });
+      fetchMock.mockResolvedValueOnce(jsonResponse(500, { error: 'x' }));
+      expect(await fetchTts('Hi', SESSION)).toEqual({ kind: 'unavailable' });
+      fetchMock.mockResolvedValueOnce(new Response(new Uint8Array(), { status: 200 }));
+      expect(await fetchTts('Hi', SESSION)).toEqual({ kind: 'unavailable' });
+      fetchMock.mockRejectedValueOnce(new TypeError('offline'));
+      expect(await fetchTts('Hi', SESSION)).toEqual({ kind: 'unavailable' });
+    });
+
+    it('times out', async () => {
+      vi.useFakeTimers();
+      fetchMock.mockImplementation(
+        (_url: string, init: RequestInit) =>
+          new Promise((_resolve, reject) => {
+            init.signal?.addEventListener('abort', () =>
+              reject(new DOMException('aborted', 'AbortError'))
+            );
+          })
+      );
+      const pending = fetchTts('Hi', SESSION);
+      await vi.advanceTimersByTimeAsync(TTS_TIMEOUT_MS + 1);
+      expect(await pending).toEqual({ kind: 'unavailable' });
+    });
+  });
+
+  describe('fetchVoiceCaps', () => {
+    it('GETs {base}/health and returns the voice block', async () => {
+      fetchMock.mockResolvedValue(
+        jsonResponse(200, { ok: true, voice: { stt: true, tts: 'browser' } })
+      );
+      expect(await fetchVoiceCaps()).toEqual({ tts: 'browser' });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(url).toBe('http://localhost:8787/health');
+      expect(init.method ?? 'GET').toBe('GET');
+      expect(init.credentials).toBe('omit');
+    });
+
+    it('accepts the aura voice and treats any other tts value as browser', async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse(200, { voice: { stt: true, tts: 'aura' } }));
+      expect(await fetchVoiceCaps()).toEqual({ tts: 'aura' });
+      fetchMock.mockResolvedValueOnce(jsonResponse(200, { voice: { stt: true, tts: 'weird' } }));
+      expect(await fetchVoiceCaps()).toEqual({ tts: 'browser' });
+    });
+
+    it('is null, without a second request, when the Worker plainly has no voice', async () => {
+      const answers: Response[] = [
+        jsonResponse(200, { ok: true }),
+        jsonResponse(200, { voice: { stt: false, tts: 'browser' } }),
+        jsonResponse(404, { error: 'not_found' }),
+        new Response('<html>', { status: 200 }),
+      ];
+      for (const answer of answers) {
+        fetchMock.mockClear();
+        fetchMock.mockResolvedValueOnce(answer);
+        expect(await fetchVoiceCaps()).toBeNull();
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+      }
+    });
+
+    it('tries once more after a network failure or a server error, and uses the second answer', async () => {
+      fetchMock.mockRejectedValueOnce(new TypeError('offline'));
+      fetchMock.mockResolvedValueOnce(jsonResponse(200, { voice: { stt: true, tts: 'browser' } }));
+      expect(await fetchVoiceCaps()).toEqual({ tts: 'browser' });
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+
+      fetchMock.mockClear();
+      fetchMock.mockResolvedValueOnce(jsonResponse(502, { error: 'bad_gateway' }));
+      fetchMock.mockResolvedValueOnce(jsonResponse(200, { voice: { stt: true, tts: 'aura' } }));
+      expect(await fetchVoiceCaps()).toEqual({ tts: 'aura' });
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('gives up after one retry when the trouble lasts', async () => {
+      fetchMock.mockRejectedValue(new TypeError('offline'));
+      expect(await fetchVoiceCaps()).toBeNull();
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+
+      fetchMock.mockReset();
+      fetchMock.mockResolvedValue(jsonResponse(500, { error: 'x' }));
+      expect(await fetchVoiceCaps()).toBeNull();
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('a timeout counts as trouble: one retry, each attempt limited to the health timeout', async () => {
+      vi.useFakeTimers();
+      fetchMock.mockImplementation(
+        (_url: string, init: RequestInit) =>
+          new Promise((_resolve, reject) => {
+            init.signal?.addEventListener('abort', () =>
+              reject(new DOMException('aborted', 'AbortError'))
+            );
+          })
+      );
+      const pending = fetchVoiceCaps();
+      await vi.advanceTimersByTimeAsync(HEALTH_TIMEOUT_MS + 1);
+      await vi.advanceTimersByTimeAsync(HEALTH_TIMEOUT_MS + 1);
+      expect(await pending).toBeNull();
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+  });
+});

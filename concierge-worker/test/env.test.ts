@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  dailySttSeconds,
+  dailyTtsChars,
   dailyLlmCap,
   isEmailConfigured,
   isLlmConfigured,
@@ -7,10 +9,14 @@ import {
   leadquikUrl,
   llmApiKey,
   llmStatus,
+  isSttAvailable,
   resendApiKey,
+  sessionVoiceSeconds,
   turnstileSecret,
+  ttsMode,
+  voiceSpeaker,
 } from '../src/env';
-import { testEnv } from './helpers';
+import { aiStub, testEnv } from './helpers';
 
 describe('dailyLlmCap', () => {
   it.each([
@@ -67,5 +73,62 @@ describe('secret accessors', () => {
     expect(llmStatus(set)).toBe('anthropic');
     expect(isEmailConfigured(set)).toBe(true);
     expect(isTurnstileConfigured(set)).toBe(true);
+  });
+});
+
+describe('voice budgets', () => {
+  const cases = [
+    ['dailySttSeconds', dailySttSeconds, 'VOICE_DAILY_STT_SECONDS', 9000],
+    ['sessionVoiceSeconds', sessionVoiceSeconds, 'VOICE_SESSION_SECONDS', 180],
+    ['dailyTtsChars', dailyTtsChars, 'VOICE_DAILY_TTS_CHARS', 100000],
+  ] as const;
+
+  describe.each(cases)('%s', (_name, read, key, fallback) => {
+    it.each([
+      ['500', 500],
+      [' 25 ', 25],
+      ['12.9', 12],
+    ])('reads %j as %i', (value, expected) => {
+      expect(read(testEnv({ [key]: value }))).toBe(expected);
+    });
+
+    it('accepts 0, which switches that budget off', () => {
+      expect(read(testEnv({ [key]: '0' }))).toBe(0);
+    });
+
+    it.each([undefined, '', '   ', 'abc', '-5', 'NaN'])(`falls back to ${fallback} for %j`, (value) => {
+      expect(read(testEnv({ [key]: value }))).toBe(fallback);
+    });
+  });
+});
+
+describe('ttsMode', () => {
+  it('is "aura" only for the value aura, ignoring case and spaces', () => {
+    for (const value of ['aura', 'AURA', ' Aura\n']) expect(ttsMode(testEnv({ VOICE_TTS: value }))).toBe('aura');
+  });
+
+  it.each([undefined, '', 'browser', 'elevenlabs', 'aura2'])('is "browser" for %j', (value) => {
+    expect(ttsMode(testEnv({ VOICE_TTS: value }))).toBe('browser');
+  });
+});
+
+describe('voiceSpeaker', () => {
+  it('returns a known Aura speaker, normalized', () => {
+    expect(voiceSpeaker(testEnv({ VOICE_SPEAKER: 'luna' }))).toBe('luna');
+    expect(voiceSpeaker(testEnv({ VOICE_SPEAKER: ' Orion ' }))).toBe('orion');
+  });
+
+  it.each([undefined, '', 'nobody', 'asteria; drop'])('falls back to asteria for %j', (value) => {
+    expect(voiceSpeaker(testEnv({ VOICE_SPEAKER: value }))).toBe('asteria');
+  });
+});
+
+describe('isSttAvailable', () => {
+  it('needs the AI binding and a positive daily and session budget', () => {
+    const { ai } = aiStub();
+    expect(isSttAvailable(testEnv({ AI: ai }))).toBe(true);
+    expect(isSttAvailable(testEnv({ AI: undefined }))).toBe(false);
+    expect(isSttAvailable(testEnv({ AI: ai, VOICE_DAILY_STT_SECONDS: '0' }))).toBe(false);
+    expect(isSttAvailable(testEnv({ AI: ai, VOICE_SESSION_SECONDS: '0' }))).toBe(false);
   });
 });

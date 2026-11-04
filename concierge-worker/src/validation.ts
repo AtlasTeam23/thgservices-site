@@ -1,4 +1,5 @@
 import { clampLength, sanitizeText, singleLine } from './sanitize';
+import { isRecord } from './util';
 
 // Pure request validators for POST /chat and POST /lead. The browser applies the
 // same rules (vite-app/src/components/concierge/validation.ts) so the visitor sees
@@ -97,10 +98,9 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const EMAIL = /^[^\s@<>,;"]+@[^\s@<>,;"]+\.[^\s@<>,;"]{2,}$/;
 const UTM_KEY = /^utm_[a-z0-9_-]+$/i;
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
 
-const token = (value: unknown): string | undefined =>
+/** A Turnstile token as sent by the page: a non-empty string of at most 2,048 characters, else undefined. */
+export const cleanToken = (value: unknown): string | undefined =>
   typeof value === 'string' && value.length > 0 && value.length <= LIMITS.tokenMax ? value : undefined;
 
 export const isValidSessionId = (value: unknown): value is string =>
@@ -203,7 +203,7 @@ export const validateChat = (input: unknown): ChatValidation => {
   if (messages.at(-1)?.role !== 'user') return bad;
 
   const value: ChatPayload = { sessionId: input.sessionId, messages };
-  const turnstileToken = token(input.turnstileToken);
+  const turnstileToken = cleanToken(input.turnstileToken);
   if (turnstileToken) value.turnstileToken = turnstileToken;
   return { ok: true, value };
 };
@@ -337,7 +337,7 @@ export const validateLead = (input: unknown): LeadValidation => {
     page,
   };
   if (email) value.email = email;
-  const turnstileToken = token(input.turnstileToken);
+  const turnstileToken = cleanToken(input.turnstileToken);
   if (turnstileToken) value.turnstileToken = turnstileToken;
   return { ok: true, value };
 };

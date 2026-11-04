@@ -29,7 +29,7 @@ import {
 } from './copy';
 import type { OpenDetail } from './events';
 import { EMPTY_LEAD_DRAFT, fillsMissingDetail, LEAD_DRAFT_KEYS, mergeLeadDraft } from './leadDraft';
-import { loadState, newId, saveState } from './storage';
+import { loadState, saveState } from './storage';
 import { getToken } from './turnstile';
 import type {
   ChatRequest,
@@ -41,8 +41,12 @@ import type {
   Message,
 } from './types';
 import { buildTranscript, FORM_FIELDS, LIMITS } from './validation';
+import { makeMessage, TURNSTILE_AFTER_TURN } from './thread';
+import { createVoiceController, initialVoiceState, type VoiceState } from './voice/controller';
 
 export type ConciergeStatus = 'idle' | 'sending' | 'leadOnly' | 'ended';
+
+export type { VoiceState };
 
 export type ConciergeState = {
   messages: Message[];
@@ -65,15 +69,28 @@ export type ConciergeState = {
   leadHeading: string | null;
   /** Inline message for the composer (for example TOO_LONG). */
   composerError: string | null;
+  /**
+   * A voice message shown in the same place (microphone blocked, nothing heard, voice off).
+   * Kept apart from composerError because it is not a problem with what was typed.
+   */
+  voiceNotice: string | null;
   sessionId: string;
   /** User messages sent to the server this session. */
   turn: number;
+  voice: VoiceState;
+  /** The last seconds of a recording (drives the countdown ring and its text). */
+  voiceEnding: boolean;
+  /** Read each new reply aloud. */
+  speakEnabled: boolean;
+  /** Something can read replies aloud (the browser's own voice, or the premium one). */
+  speakAvailable: boolean;
+  /** Show the microphone line under the composer (from the first voice use until the panel closes). */
+  voiceDisclosed: boolean;
 };
 
 export type SubmitLeadOutcome = { ok: true } | { ok: false; fields?: FieldErrors };
 
 const MAX_THREAD_ENTRIES = 25;
-const TURNSTILE_AFTER_TURN = 10;
 
 const HANDOFF_PATTERNS = [
   /\b(talk|speak|chat)\s+(to|with)\s+(a\s+|an\s+)?(person|human|real\s+person|someone\s+real|representative)\b/i,
@@ -96,18 +113,6 @@ export function toChatTurns(messages: Message[]): ChatTurn[] {
   while (turns.length > 0 && turns[0].role !== 'user') turns.shift();
   return turns;
 }
-
-const makeMessage = (
-  role: Message['role'],
-  content: string,
-  extra: Partial<Message> = {}
-): Message => ({
-  id: newId(),
-  role,
-  content,
-  at: new Date().toISOString(),
-  ...extra,
-});
 
 function createController() {
   const stored = loadState();
@@ -169,6 +174,7 @@ function createController() {
     composerError: null,
     sessionId: stored.sessionId,
     turn: stored.messages.filter((m) => m.role === 'user' && !m.greeting).length,
+    ...initialVoiceState(),
   };
 
   const listeners = new Set<() => void>();
@@ -198,6 +204,21 @@ function createController() {
 
   const push = (message: Message, patch: Partial<ConciergeState> = {}) =>
     set({ messages: [...state.messages, message], ...patch });
+
+  const voice = createVoiceController({
+    get: getState,
+    patch: set,
+    send: (text) => sendText(text),
+  });
+
+  /** Read the newest assistant message added since `fromIndex`, if any. */
+  const speakNewReplies = (fromIndex: number) => {
+    const reply = state.messages
+      .slice(fromIndex)
+      .filter((m) => m.role === 'assistant' && !m.greeting)
+      .at(-1);
+    if (reply) voice.speakReply(reply.content);
+  };
 
   const openCallbackForm = (label: string) => {
     if (state.leadDone || state.showLeadForm || state.status === 'ended') {
@@ -320,10 +341,13 @@ function createController() {
     } catch {
       res = { kind: 'error', reason: 'network' };
     }
+    const before = state.messages.length;
     applyChatResult(res);
+    speakNewReplies(before);
   };
 
-  const send = async (raw: string): Promise<void> => {
+  /** The send path shared by typing and by a finished voice transcript. */
+  const sendText = async (raw: string): Promise<void> => {
     if (state.status !== 'idle') return;
     const text = raw.trim();
     if (!text) return;
@@ -332,9 +356,11 @@ function createController() {
       return;
     }
 
+    voice.stopSpeaking(); // any new input stops the reading
     const userMessage = makeMessage('user', text);
 
     if (isHandoffRequest(text)) {
+      const before = state.messages.length;
       set({
         messages: [
           ...state.messages,
@@ -343,19 +369,29 @@ function createController() {
         ],
         chips: [],
         composerError: null,
+        voiceNotice: null,
       });
+      speakNewReplies(before);
       return;
     }
 
     const thread = [...state.messages, userMessage];
     const turn = state.turn + 1;
-    set({ messages: thread, turn, status: 'sending', chips: [], composerError: null });
+    set({ messages: thread, turn, status: 'sending', chips: [], composerError: null, voiceNotice: null });
     track('concierge_message_sent', { turn_number: turn });
     await converse(thread, turn);
   };
 
+  /** Typed (or chip) input: a recording or transcript in progress is dropped in its favour. */
+  const send = (raw: string): Promise<void> => {
+    voice.cancelVoice();
+    return sendText(raw);
+  };
+
   const chip = async (label: string): Promise<void> => {
     if (state.status === 'ended') return;
+    voice.cancelVoice();
+    voice.stopSpeaking();
     // Only the widget's own chip labels are analytics values; never pass anything else along.
     track('concierge_quick_reply', isKnownChip(label) ? { chip: label } : undefined);
     if (label === CALLBACK_CHIP || label === OFFER_YES) {
@@ -370,6 +406,7 @@ function createController() {
   };
 
   const handleOpen = async (detail: OpenDetail): Promise<void> => {
+    void voice.checkVoice();
     if (state.messages.length === 0) {
       set({
         messages: [makeMessage('assistant', GREETING, { greeting: true })],
@@ -482,13 +519,32 @@ function createController() {
   };
 
   const clearComposerError = () => {
-    if (state.composerError !== null) set({ composerError: null });
+    if (state.composerError !== null || state.voiceNotice !== null) {
+      set({ composerError: null, voiceNotice: null });
+    }
   };
 
   return {
     getState,
     subscribe,
-    actions: { handleOpen, send, chip, submitLead, dismissLeadForm, clearComposerError },
+    actions: {
+      handleOpen,
+      send,
+      chip,
+      submitLead,
+      dismissLeadForm,
+      clearComposerError,
+      startVoice: voice.startVoice,
+      stopVoice: voice.stopVoice,
+      cancelVoice: voice.cancelVoice,
+      cancelRecording: voice.cancelRecording,
+      stopAll: voice.stopAll,
+      setActive: voice.setActive,
+      stopSpeaking: voice.stopSpeaking,
+      setSpeakEnabled: voice.setSpeakEnabled,
+      unlockSpeech: voice.unlock,
+      subscribeLevel: voice.subscribeLevel,
+    },
   };
 }
 

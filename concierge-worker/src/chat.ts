@@ -11,7 +11,9 @@ import {
   globalName,
   hitLimiter,
   llmDailyRule,
+  orLimiterDown,
   sessionName,
+  viaLimiter,
 } from './limits';
 import { LlmUnavailableError, generateReply, offTopicReply, type GenerateDeps } from './llm';
 import { verifyTurnstile } from './turnstile';
@@ -25,19 +27,6 @@ const rateLimited = (resetAt: number): Response =>
 const ended = (): Response => json({ error: 'ended', reply: ENDED }, 403);
 
 const capacity = (): Response => json({ error: 'capacity', mode: 'lead_only', reply: LEAD_ONLY }, 503);
-
-/** A Durable Object call failed. /chat cannot enforce its limits, so it stops taking messages. */
-class LimiterError extends Error {
-  override readonly name = 'LimiterError';
-}
-
-const viaLimiter = async <T>(work: Promise<T>): Promise<T> => {
-  try {
-    return await work;
-  } catch {
-    throw new LimiterError('limiter unavailable');
-  }
-};
 
 /**
  * POST /chat. Check order (contract section 2.3): validate -> session limit -> IP limit ->
@@ -59,15 +48,7 @@ export const handleChat = async (request: Request, env: Env, llm: GenerateDeps |
       : json({ error: 'bad_request' }, 400);
   }
 
-  try {
-    return await respond(request, env, llm, validation.value);
-  } catch (error) {
-    if (error instanceof LimiterError) {
-      console.error(JSON.stringify({ event: 'limiter_error' }));
-      return capacity();
-    }
-    throw error;
-  }
+  return orLimiterDown(() => respond(request, env, llm, validation.value), capacity);
 };
 
 const respond = async (

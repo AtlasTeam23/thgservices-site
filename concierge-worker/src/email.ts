@@ -1,6 +1,7 @@
 import { WINDOW_LABELS } from './copy';
 import { resendApiKey, type Env } from './env';
 import { clampLength, singleLine } from './sanitize';
+import { sleep } from './util';
 import type { LeadPayload } from './validation';
 
 export interface LeadEmail {
@@ -155,7 +156,6 @@ export interface SendOptions {
   timeoutMs?: number;
 }
 
-const sleep = (ms: number): Promise<void> => (ms > 0 ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve());
 
 /**
  * Sends the lead email through Resend. One retry, only for failures a retry can fix
