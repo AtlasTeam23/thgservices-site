@@ -4,7 +4,7 @@
 // limit and analytics rule that applies to typing applies to speaking too.
 
 import { track } from '../../../lib/track';
-import { fetchTts, fetchVoiceCaps, postStt, type SttResult } from '../api';
+import { fetchTts, postStt, type SttResult, type VoiceCaps } from '../api';
 import { RATE_LIMITED } from '../copy';
 import { makeMessage, TURNSTILE_AFTER_TURN } from '../thread';
 import { getToken } from '../turnstile';
@@ -20,7 +20,14 @@ import {
   VOICE_SOUND_OFF_HINT,
   VOICE_SPOKEN_LIMIT_DONE,
 } from './copy';
-import { capExpired, loadVoicePrefs, saveVoicePrefs, withoutCap, type VoicePrefs } from './prefs';
+import { claimGreeting, voiceCapsOnce } from './greeting';
+import {
+  loadVoicePrefs,
+  saveVoicePrefs,
+  spokenCapInForce,
+  withoutCap,
+  type VoicePrefs,
+} from './prefs';
 import {
   isRecordingSupported,
   MIN_RECORDING_MS,
@@ -34,6 +41,7 @@ import {
   speakBlob,
   stopSpeaking as stopReading,
   unlockSpeech,
+  watchSpeech,
   type SpeechMode,
 } from './speech';
 
@@ -82,8 +90,11 @@ export function createVoiceController({ get, patch, send }: VoiceHost) {
 
   /** Whether replies are read aloud (by the server voice); /health decides. 'none' is text only. */
   let ttsMode: 'server' | 'none' = 'none';
-  /** The reply audio the browser would not start, kept so that a tap can play it (no second request). */
-  let held: { blob: Blob; messageId: string } | null = null;
+  /**
+   * The audio the browser would not start (a reply, or the opening greeting), kept so that a tap can
+   * play it (no second request).
+   */
+  let held: { blob: Blob; messageId: string; mode: SpeechMode } | null = null;
   let checked = false;
   /** Voice gave up for this session (budget spent, no microphone); a late /health cannot revive it. */
   let blocked = prefs.blocked;
@@ -111,7 +122,7 @@ export function createVoiceController({ get, patch, send }: VoiceHost) {
    */
   const capInForce = (): boolean => {
     if (!prefs.spokenLimit) return false;
-    if (!capExpired(prefs, Date.now())) return true;
+    if (spokenCapInForce(prefs, Date.now())) return true;
     prefs = withoutCap(prefs);
     saveVoicePrefs(prefs);
     patch({ speakAvailable: ttsMode === 'server', readAloudBonus: false });
@@ -121,13 +132,16 @@ export function createVoiceController({ get, patch, send }: VoiceHost) {
   /** Replies can be read aloud: there is a server voice, and the day's allowance is not used up. */
   const canSpeak = (): boolean => ttsMode === 'server' && !capInForce();
 
-  /** Ask the Worker once whether voice is on. Browsers that cannot record never ask. */
+  /**
+   * Ask the Worker once whether voice is on. Browsers that cannot record never ask. The answer the
+   * bubble fetched when the page loaded (for the greeting) is reused rather than asked for again.
+   */
   const checkVoice = async (): Promise<void> => {
     if (checked || blocked || !isRecordingSupported()) return;
     checked = true;
-    let caps: Awaited<ReturnType<typeof fetchVoiceCaps>> = null;
+    let caps: VoiceCaps | null = null;
     try {
-      caps = await fetchVoiceCaps();
+      caps = await voiceCapsOnce();
     } catch {
       // treated as "no voice"
     }
@@ -420,10 +434,10 @@ export function createVoiceController({ get, patch, send }: VoiceHost) {
     }
   };
 
-  /** The browser would not start this reply's audio: offer a tap, once explain why. */
-  const audioBlocked = (blob: Blob, messageId: string | undefined) => {
+  /** The browser would not start this audio (a reply, or the greeting): offer a tap, once explain why. */
+  const audioBlocked = (blob: Blob, messageId: string | undefined, mode: SpeechMode = 'server') => {
     if (!messageId) return;
-    held = { blob, messageId };
+    held = { blob, messageId, mode };
     const notice: Partial<ConciergeState> = { blockedReplyId: messageId };
     if (!prefs.soundHint) {
       prefs = { ...prefs, soundHint: true };
@@ -433,14 +447,19 @@ export function createVoiceController({ get, patch, send }: VoiceHost) {
     patch(notice);
   };
 
-  const onSpeechStart = (mode: SpeechMode) => {
-    held = null;
+  /** Sound is playing: the equalizer shows, and a waiting tap-to-hear pill or its hint goes. */
+  const markSpeaking = () => {
     patch({
       blockedReplyId: null,
       ...(get().voice === 'idle' ? { voice: 'speaking' as const } : {}),
       // Once audio is playing, "Sound is off until you tap." is no longer true.
       ...(get().voiceNotice === VOICE_SOUND_OFF_HINT ? { voiceNotice: null } : {}),
     });
+  };
+
+  const onSpeechStart = (mode: SpeechMode) => {
+    held = null;
+    markSpeaking();
     track('concierge_voice_reply_spoken', { mode });
   };
 
@@ -469,11 +488,29 @@ export function createVoiceController({ get, patch, send }: VoiceHost) {
     const { voice } = get();
     if (!pending || voice === 'recording' || voice === 'transcribing') return;
     speakBlob(pending.blob, {
+      mode: pending.mode,
       onStart: onSpeechStart,
       onEnd: onSpeechEnd,
       // Even the tap was refused: the pill stays, with the same audio.
-      onBlocked: (blob) => audioBlocked(blob, pending.messageId),
+      onBlocked: (blob) => audioBlocked(blob, pending.messageId, pending.mode),
     });
+  };
+
+  /**
+   * The recorded greeting was started by the click that opened the chat, before this controller
+   * existed (see voice/greeting.ts). Take it over: the preferences that click wrote, the speaking
+   * state while it plays, and its audio if the browser refused it (then a tap plays it, like a
+   * blocked reply). Call it once the greeting message is in the thread and /health has been read.
+   */
+  const adoptGreeting = (messageId: string | undefined) => {
+    const claim = claimGreeting((blob) => audioBlocked(blob, messageId, 'greeting'));
+    if (!claim) return;
+    // What the click saved goes into this controller's copy before anything here saves prefs again.
+    prefs = { ...prefs, speak: claim.speak, disclosed: true, greeted: true };
+    patch({ speakEnabled: claim.speak, voiceDisclosed: true });
+    // Already playing, or about to: show it like a spoken reply, and go back to idle at the end.
+    watchSpeech({ onStart: markSpeaking, onEnd: onSpeechEnd }, 'greeting');
+    if (claim.blob) audioBlocked(claim.blob, messageId, 'greeting');
   };
 
   return {
@@ -488,6 +525,7 @@ export function createVoiceController({ get, patch, send }: VoiceHost) {
     setSpeakEnabled,
     speakReply,
     playBlocked,
+    adoptGreeting,
     noteLeadSubmitted,
     unlock,
     subscribeLevel,

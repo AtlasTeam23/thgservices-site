@@ -1,6 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as speech from '../voice/speech';
-import { resetSpeech, SERVER_MAX_CHARS, speak, speakBlob, stopSpeaking, unlockSpeech } from '../voice/speech';
+import {
+  resetSpeech,
+  SERVER_MAX_CHARS,
+  speak,
+  speakBlob,
+  speakUrl,
+  stopSpeaking,
+  unlockSpeech,
+  watchSpeech,
+} from '../voice/speech';
 
 // There is no browser voice: speechSynthesis is stubbed in every test as a trap, and the suite
 // fails if anything at all touches it.
@@ -448,5 +457,281 @@ describe('speakBlob (playing audio we already have, from inside a tap)', () => {
     await flush();
     expect(FakeAudio.instances).toHaveLength(1); // no second element for iOS to lock out
     expect(element.play.mock.calls.length).toBe(2);
+  });
+});
+
+// ---- The recorded greeting: a file the site serves --------------------------------
+
+describe('speakUrl (the recorded greeting)', () => {
+  const URL_OF_FILE = '/concierge/greeting.mp3';
+  const clip = () => new Blob([new Uint8Array([1, 2, 3])], { type: 'audio/mpeg' });
+  const notAllowed = () => new DOMException('The request is not allowed', 'NotAllowedError');
+  /** A fetch that hands back the file. */
+  const serveFile = () => {
+    const get = vi.fn<(url: string, init?: RequestInit) => Promise<{ ok: boolean; blob: () => Promise<Blob> }>>(async () => ({
+      ok: true,
+      blob: async () => clip(),
+    }));
+    vi.stubGlobal('fetch', get);
+    return get;
+  };
+
+  it('sets the file as the source and reaches play() before it returns, with nothing awaited', () => {
+    let reached = false;
+    FakeAudio.playImpl = () => {
+      reached = true;
+      return new Promise(() => {});
+    };
+    speakUrl(URL_OF_FILE, { mode: 'greeting' });
+    expect(reached).toBe(true);
+    expect(FakeAudio.instances).toHaveLength(1);
+    expect(FakeAudio.instances[0].src).toBe(URL_OF_FILE);
+    expect(URL.createObjectURL).not.toHaveBeenCalled(); // a file, not a blob: nothing to make or revoke
+  });
+
+  it('reports the start as the mode it was given, and the end once when it finishes', async () => {
+    const onStart = vi.fn();
+    const onEnd = vi.fn();
+    speakUrl(URL_OF_FILE, { mode: 'greeting', onStart, onEnd });
+    await flush();
+    expect(onStart).toHaveBeenCalledWith('greeting');
+    expect(onEnd).not.toHaveBeenCalled();
+
+    FakeAudio.instances[0].onended?.();
+    FakeAudio.instances[0].onended?.();
+    expect(onEnd).toHaveBeenCalledTimes(1);
+    expect(URL.revokeObjectURL).not.toHaveBeenCalled();
+  });
+
+  it('plays on the same shared element the replies use, so the click that started it unlocks them on iOS', async () => {
+    unlockSpeech();
+    speakUrl(URL_OF_FILE, { mode: 'greeting' });
+    await flush();
+    FakeAudio.instances[0].onended?.();
+    speak('A reply.', { fetchAudio: async () => ({ kind: 'ok', blob: clip() }) });
+    await flush();
+    expect(FakeAudio.instances).toHaveLength(1);
+    expect(FakeAudio.instances[0].play).toHaveBeenCalledTimes(3);
+  });
+
+  it('is ended by stopSpeaking(), by a newer speak() and by a newer speakBlob(), each exactly once', async () => {
+    for (const end of [() => stopSpeaking(), () => speak('x', {}), () => speakBlob(clip(), {})]) {
+      const onEnd = vi.fn();
+      speakUrl(URL_OF_FILE, { mode: 'greeting', onEnd });
+      await flush();
+      end();
+      end();
+      expect(onEnd).toHaveBeenCalledTimes(1);
+      expect(FakeAudio.instances[0].pause).toHaveBeenCalled();
+      resetSpeech();
+      FakeAudio.instances = [];
+    }
+  });
+
+  it('ends a greeting that was still starting when it is stopped, and never reports its start', async () => {
+    let resolve!: () => void;
+    FakeAudio.playImpl = () => new Promise<void>((r) => (resolve = r));
+    const onStart = vi.fn();
+    const onEnd = vi.fn();
+    speakUrl(URL_OF_FILE, { mode: 'greeting', onStart, onEnd });
+    stopSpeaking();
+    resolve();
+    await flush();
+    expect(onEnd).toHaveBeenCalledTimes(1);
+    expect(onStart).not.toHaveBeenCalled();
+  });
+
+  describe('when the browser wants a tap', () => {
+    it('fetches the file and hands it over, and the run is over', async () => {
+      FakeAudio.playImpl = async () => {
+        throw notAllowed();
+      };
+      const get = serveFile();
+      const onBlocked = vi.fn<(blob: Blob) => void>();
+      const onEnd = vi.fn();
+      const onStart = vi.fn();
+      speakUrl(URL_OF_FILE, { mode: 'greeting', onBlocked, onEnd, onStart });
+      await flush();
+      expect(get).toHaveBeenCalledTimes(1);
+      expect(get.mock.calls[0][0]).toBe(URL_OF_FILE);
+      expect(onBlocked).toHaveBeenCalledTimes(1);
+      expect(onBlocked.mock.calls[0][0].size).toBe(3);
+      expect(onEnd).toHaveBeenCalledTimes(1);
+      expect(onStart).not.toHaveBeenCalled();
+    });
+
+    it('the handed-over blob plays from a tap and reports the mode it was given', async () => {
+      FakeAudio.playImpl = async () => {
+        throw notAllowed();
+      };
+      serveFile();
+      const onBlocked = vi.fn<(blob: Blob) => void>();
+      speakUrl(URL_OF_FILE, { mode: 'greeting', onBlocked });
+      await flush();
+
+      FakeAudio.playImpl = async () => {};
+      const onStart = vi.fn();
+      speakBlob(onBlocked.mock.calls[0][0], { mode: 'greeting', onStart });
+      await flush();
+      expect(onStart).toHaveBeenCalledWith('greeting');
+      expect(FakeAudio.instances[0].src).toBe('blob:fake');
+    });
+
+    for (const [label, change] of [
+      ['stopped', () => stopSpeaking()],
+      ['replaced by a reply', () => speak('x', {})],
+      ['replaced by a tap', () => speakBlob(new Blob([new Uint8Array([9])]), {})],
+    ] as const) {
+      it(`drops the file if speech was ${label} while it was being fetched`, async () => {
+        FakeAudio.playImpl = async () => {
+          throw notAllowed();
+        };
+        let deliver!: (value: unknown) => void;
+        vi.stubGlobal('fetch', vi.fn(() => new Promise((resolve) => (deliver = resolve))));
+        const onBlocked = vi.fn();
+        speakUrl(URL_OF_FILE, { mode: 'greeting', onBlocked });
+        await flush();
+        change();
+        deliver({ ok: true, blob: async () => clip() });
+        await flush();
+        expect(onBlocked).not.toHaveBeenCalled();
+      });
+    }
+
+    it('says nothing when the file cannot be had: not found, empty, or no network', async () => {
+      FakeAudio.playImpl = async () => {
+        throw notAllowed();
+      };
+      for (const get of [
+        vi.fn(async () => ({ ok: false, blob: async () => clip() })),
+        vi.fn(async () => ({ ok: true, blob: async () => new Blob([]) })),
+        vi.fn(async () => {
+          throw new TypeError('network');
+        }),
+      ]) {
+        vi.stubGlobal('fetch', get);
+        const onBlocked = vi.fn();
+        const onEnd = vi.fn();
+        speakUrl(URL_OF_FILE, { mode: 'greeting', onBlocked, onEnd });
+        await flush();
+        expect(onBlocked).not.toHaveBeenCalled();
+        expect(onEnd).toHaveBeenCalledTimes(1);
+      }
+    });
+
+    it('does not even fetch when nobody wants the audio', async () => {
+      FakeAudio.playImpl = async () => {
+        throw notAllowed();
+      };
+      const get = serveFile();
+      speakUrl(URL_OF_FILE, { mode: 'greeting' });
+      await flush();
+      expect(get).not.toHaveBeenCalled();
+    });
+  });
+
+  it('any other failure ends it quietly, with no request for the file', async () => {
+    FakeAudio.playImpl = async () => {
+      throw new DOMException('no source', 'NotSupportedError');
+    };
+    const get = serveFile();
+    const onBlocked = vi.fn();
+    const onEnd = vi.fn();
+    speakUrl(URL_OF_FILE, { mode: 'greeting', onBlocked, onEnd });
+    await flush();
+    expect(onEnd).toHaveBeenCalledTimes(1);
+    expect(onBlocked).not.toHaveBeenCalled();
+    expect(get).not.toHaveBeenCalled();
+  });
+
+  it('a media error ends it, and a missing Audio does not throw', async () => {
+    const onEnd = vi.fn();
+    speakUrl(URL_OF_FILE, { mode: 'greeting', onEnd });
+    await flush();
+    FakeAudio.instances[0].onerror?.();
+    expect(onEnd).toHaveBeenCalledTimes(1);
+
+    resetSpeech();
+    vi.stubGlobal('Audio', undefined);
+    const lonely = vi.fn();
+    expect(() => speakUrl(URL_OF_FILE, { onEnd: lonely })).not.toThrow();
+    expect(lonely).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('speakBlob and speak report the mode they are given, "server" by default', () => {
+  const clip = () => new Blob([new Uint8Array([1, 2, 3])], { type: 'audio/mpeg' });
+
+  it('defaults to server', async () => {
+    const onStart = vi.fn();
+    speakBlob(clip(), { onStart });
+    await flush();
+    expect(onStart).toHaveBeenCalledWith('server');
+  });
+
+  it('reports "greeting" for a greeting replayed from a tap', async () => {
+    const onStart = vi.fn();
+    speakBlob(clip(), { mode: 'greeting', onStart });
+    await flush();
+    expect(onStart).toHaveBeenCalledWith('greeting');
+  });
+});
+
+describe('watchSpeech (joining a run that began before you existed)', () => {
+  const clip = () => new Blob([new Uint8Array([1, 2, 3])], { type: 'audio/mpeg' });
+
+  it('has nothing to join when nothing is being read', () => {
+    expect(watchSpeech({ onStart: vi.fn(), onEnd: vi.fn() })).toBe(false);
+  });
+
+  it('joins a run that has already started: onStart at once, onEnd when it ends', async () => {
+    speakUrl('/g.mp3', { mode: 'greeting' });
+    await flush();
+    const order: string[] = [];
+    expect(watchSpeech({ onStart: (mode) => order.push(`start:${mode}`), onEnd: () => order.push('end') })).toBe(true);
+    expect(order).toEqual(['start:greeting']);
+    FakeAudio.instances[0].onended?.();
+    expect(order).toEqual(['start:greeting', 'end']);
+  });
+
+  it('joins a run that has not started yet, and hears the start when it comes', async () => {
+    let resolve!: () => void;
+    FakeAudio.playImpl = () => new Promise<void>((r) => (resolve = r));
+    speakUrl('/g.mp3', { mode: 'greeting' });
+    const onStart = vi.fn();
+    watchSpeech({ onStart });
+    expect(onStart).not.toHaveBeenCalled();
+    resolve();
+    await flush();
+    expect(onStart).toHaveBeenCalledTimes(1);
+    expect(onStart).toHaveBeenCalledWith('greeting');
+  });
+
+  it('hears the end when the run is stopped or replaced, and only once', async () => {
+    speakBlob(clip(), {});
+    await flush();
+    const onEnd = vi.fn();
+    watchSpeech({ onEnd });
+    speakBlob(clip(), {}); // replaces it
+    expect(onEnd).toHaveBeenCalledTimes(1);
+    stopSpeaking();
+    expect(onEnd).toHaveBeenCalledTimes(1); // the next run is not the one it joined
+  });
+
+  it('can be limited to one kind of run', async () => {
+    speakBlob(clip(), {});
+    await flush();
+    const onEnd = vi.fn();
+    expect(watchSpeech({ onEnd }, 'greeting')).toBe(false);
+    expect(watchSpeech({ onEnd }, 'server')).toBe(true);
+    stopSpeaking();
+    expect(onEnd).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not join a run that is over', async () => {
+    speakUrl('/g.mp3', { mode: 'greeting' });
+    await flush();
+    FakeAudio.instances[0].onended?.();
+    expect(watchSpeech({ onEnd: vi.fn() })).toBe(false);
   });
 });

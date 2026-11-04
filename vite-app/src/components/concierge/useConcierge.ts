@@ -376,8 +376,11 @@ function createController() {
     speakNewReplies(before);
   };
 
-  /** The send path shared by typing and by a finished voice transcript. */
-  const sendText = async (raw: string): Promise<void> => {
+  /**
+   * The send path shared by typing and by a finished voice transcript. New input stops the reading,
+   * except for the question the widget sends itself on opening (`keepSpeaking`).
+   */
+  const sendText = async (raw: string, opts: { keepSpeaking?: boolean } = {}): Promise<void> => {
     if (state.status !== 'idle') return;
     const text = raw.trim();
     if (!text) return;
@@ -386,7 +389,7 @@ function createController() {
       return;
     }
 
-    voice.stopSpeaking(); // any new input stops the reading
+    if (!opts.keepSpeaking) voice.stopSpeaking(); // any new input stops the reading
     const userMessage = makeMessage('user', text);
 
     if (isHandoffRequest(text)) {
@@ -413,15 +416,15 @@ function createController() {
   };
 
   /** Typed (or chip) input: a recording or transcript in progress is dropped in its favour. */
-  const send = (raw: string): Promise<void> => {
+  const send = (raw: string, opts: { keepSpeaking?: boolean } = {}): Promise<void> => {
     voice.cancelVoice();
-    return sendText(raw);
+    return sendText(raw, opts);
   };
 
-  const chip = async (label: string): Promise<void> => {
+  const chip = async (label: string, opts: { keepSpeaking?: boolean } = {}): Promise<void> => {
     if (state.status === 'ended') return;
     voice.cancelVoice();
-    voice.stopSpeaking();
+    if (!opts.keepSpeaking) voice.stopSpeaking();
     // Only the widget's own chip labels are analytics values; never pass anything else along.
     track('concierge_quick_reply', isKnownChip(label) ? { chip: label } : undefined);
     if (label === CALLBACK_CHIP || label === OFFER_YES) {
@@ -432,18 +435,23 @@ function createController() {
       set({ chips: [] });
       return;
     }
-    await send(label);
+    await send(label, opts);
   };
 
   const handleOpen = async (detail: OpenDetail): Promise<void> => {
-    void voice.checkVoice();
+    const voiceChecked = voice.checkVoice();
     if (state.messages.length === 0) {
       set({
         messages: [makeMessage('assistant', GREETING, { greeting: true })],
         chips: state.status === 'ended' ? [] : CHIPS,
       });
     }
-    if (detail.quickReply) await chip(detail.quickReply);
+    // The recorded greeting may already be playing, started by the click that opened the chat.
+    // Once /health has been read (so the voice controls exist), this panel takes it over.
+    void voiceChecked.then(() => voice.adoptGreeting(state.messages.find((m) => m.greeting)?.id));
+    // The section buttons open the chat with a question already asked: that must not cut the
+    // greeting off; the answer, when it arrives, replaces it.
+    if (detail.quickReply) await chip(detail.quickReply, { keepSpeaking: true });
   };
 
   const submitLead = async (input: LeadInput): Promise<SubmitLeadOutcome> => {

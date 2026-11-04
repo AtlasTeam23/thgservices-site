@@ -24,6 +24,8 @@ export type VoicePrefs = {
   bonusUsed: boolean;
   /** "Sound is off until you tap." has been shown. */
   soundHint: boolean;
+  /** The recorded opening greeting has been started this tab session: it plays once, not on every open. */
+  greeted: boolean;
 };
 
 const NONE: VoicePrefs = {
@@ -36,6 +38,7 @@ const NONE: VoicePrefs = {
   bonusCount: null,
   bonusUsed: false,
   soundHint: false,
+  greeted: false,
 };
 
 /** How long a cap is believed: the Worker's allowance is per day, but a visitor may have been granted more. */
@@ -48,6 +51,13 @@ export function capExpired(prefs: VoicePrefs, now: number): boolean {
   if (at === null) return true;
   return now - at > CAP_MAX_AGE_MS || new Date(at).toDateString() !== new Date(now).toDateString();
 }
+
+/**
+ * The day's allowance of spoken replies is used up, and the cap has not lapsed: no audio is requested while this
+ * holds. Pure; the voice controller (which also drops a lapsed cap) and the greeting both ask it.
+ */
+export const spokenCapInForce = (prefs: VoicePrefs, now: number): boolean =>
+  prefs.spokenLimit && !capExpired(prefs, now);
 
 /** The same prefs with the cap (and the offer that went with it) cleared. */
 export const withoutCap = (prefs: VoicePrefs): VoicePrefs => ({
@@ -81,6 +91,7 @@ function readVoicePrefs(): VoicePrefs {
       bonusCount: typeof o.bonusCount === 'number' && Number.isInteger(o.bonusCount) ? o.bonusCount : null,
       bonusUsed: o.bonusUsed === true,
       soundHint: o.soundHint === true,
+      greeted: o.greeted === true,
     };
   } catch {
     return { ...NONE };
@@ -101,6 +112,7 @@ export function saveVoicePrefs(prefs: VoicePrefs): void {
         ...(prefs.bonusOffer && prefs.bonusCount !== null ? { bonusCount: prefs.bonusCount } : {}),
         ...(prefs.bonusUsed ? { bonusUsed: true } : {}),
         ...(prefs.soundHint ? { soundHint: true } : {}),
+        ...(prefs.greeted ? { greeted: true } : {}),
       })
     );
   } catch {

@@ -20,6 +20,8 @@ import { BUBBLE_LABEL, ERROR } from './copy';
 import { onConciergeOpen, type OpenDetail } from './events';
 import PhoneText from './PhoneText';
 import { captureLanding } from './storage';
+import { playGreetingOnOpen, prefetchVoiceCaps } from './voice/greeting';
+import { stopSpeaking } from './voice/speech';
 
 export type PanelLoader = () => Promise<{ default: ComponentType<ChatPanelProps> }>;
 
@@ -159,6 +161,10 @@ export default function ChatBubble({ panelLoader = defaultLoader }: { panelLoade
 
   const requestOpen = useCallback(
     (detail: OpenDetail) => {
+      // The recorded greeting has to start here, inside the visitor's click: the panel (and its voice
+      // controller) is a lazy chunk that is not loaded yet, and iOS lets audio start only in a gesture.
+      // Nothing before this line awaits anything; it decides from module state and sessionStorage.
+      playGreetingOnOpen();
       track('concierge_open', { source: detail.source });
       requestCount.current += 1;
       setRequest({ ...detail, id: requestCount.current });
@@ -169,10 +175,20 @@ export default function ChatBubble({ panelLoader = defaultLoader }: { panelLoade
     [failed, retry]
   );
 
-  const close = useCallback(() => setOpen(false), []);
+  // The panel stops the voice itself when it closes; this covers the chat that never loaded.
+  const close = useCallback(() => {
+    stopSpeaking();
+    setOpen(false);
+  }, []);
   const dismissNotice = useCallback(() => {
+    stopSpeaking();
     setOpen(false);
     bubbleRef.current?.focus();
+  }, []);
+  // The panel could not be loaded: nobody can see the greeting's text, so it should not go on talking.
+  const panelFailed = useCallback(() => {
+    stopSpeaking();
+    setFailed(true);
   }, []);
 
   useEffect(() => onConciergeOpen(requestOpen), [requestOpen]);
@@ -180,6 +196,11 @@ export default function ChatBubble({ panelLoader = defaultLoader }: { panelLoade
   // Remember where the visitor arrived from (UTM) now, not when the chat first opens.
   useEffect(() => {
     captureLanding();
+  }, []);
+
+  // Ask the Worker once, now, whether it has a server voice, so the greeting can start in the click.
+  useEffect(() => {
+    prefetchVoiceCaps();
   }, []);
 
   // Fetch the panel chunk in the background (a few seconds after load, see whenIdle)
@@ -220,7 +241,7 @@ export default function ChatBubble({ panelLoader = defaultLoader }: { panelLoade
       {mounted && (
         <PanelBoundary
           key={attempt}
-          onError={() => setFailed(true)}
+          onError={panelFailed}
           fallback={<ChunkNotice open={open} onRetry={retry} onClose={dismissNotice} />}
         >
           <Suspense

@@ -4,6 +4,7 @@ import {
   capExpired,
   loadVoicePrefs,
   saveVoicePrefs,
+  spokenCapInForce,
   VOICE_PREFS_KEY,
   type VoicePrefs,
 } from '../voice/prefs';
@@ -18,6 +19,7 @@ const capped = (at: number | null, extra: Partial<VoicePrefs> = {}): VoicePrefs 
   bonusCount: null,
   bonusUsed: false,
   soundHint: true,
+  greeted: false,
   ...extra,
 });
 
@@ -97,5 +99,53 @@ describe('the persisted cap on spoken replies expires', () => {
     const prefs = loadVoicePrefs();
     expect(prefs.spokenLimit).toBe(false);
     expect(prefs.bonusOffer).toBe(false);
+  });
+});
+
+describe('spokenCapInForce (the pure test the controller and the greeting share)', () => {
+  const noon = at('2026-11-04T12:00:00');
+
+  it('is false without a cap, true for a fresh one, false once it has lapsed', () => {
+    expect(spokenCapInForce(capped(noon, { spokenLimit: false }), noon)).toBe(false);
+    expect(spokenCapInForce(capped(noon), noon + 5 * 60_000)).toBe(true);
+    expect(spokenCapInForce(capped(noon), noon + CAP_MAX_AGE_MS)).toBe(true);
+    expect(spokenCapInForce(capped(noon), noon + CAP_MAX_AGE_MS + 1)).toBe(false);
+    expect(spokenCapInForce(capped(at('2026-11-04T23:59:00')), at('2026-11-05T00:01:00'))).toBe(false);
+  });
+
+  it('treats a cap with no timestamp as lapsed, and changes nothing it is given', () => {
+    const prefs = capped(null);
+    expect(spokenCapInForce(prefs, noon)).toBe(false);
+    expect(prefs.spokenLimit).toBe(true);
+  });
+});
+
+describe('the greeted flag', () => {
+  it('is false for a visitor with nothing stored, and for stored prefs from before it existed', () => {
+    expect(loadVoicePrefs().greeted).toBe(false);
+    window.sessionStorage.setItem(VOICE_PREFS_KEY, JSON.stringify({ speak: true, disclosed: true }));
+    expect(loadVoicePrefs().greeted).toBe(false);
+  });
+
+  it('is kept like the other flags, and only written when set', () => {
+    saveVoicePrefs({ ...capped(null), spokenLimit: false, bonusOffer: false, soundHint: false, greeted: true });
+    expect(JSON.parse(window.sessionStorage.getItem(VOICE_PREFS_KEY)!)).toEqual({ speak: true, disclosed: true, greeted: true });
+    expect(loadVoicePrefs().greeted).toBe(true);
+
+    saveVoicePrefs({ ...capped(null), spokenLimit: false, bonusOffer: false, soundHint: false });
+    expect(JSON.parse(window.sessionStorage.getItem(VOICE_PREFS_KEY)!)).toEqual({ speak: true, disclosed: true });
+  });
+
+  it('survives the cap lapsing on load', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const noon = at('2026-11-04T12:00:00');
+    vi.setSystemTime(noon + 2 * CAP_MAX_AGE_MS);
+    saveVoicePrefs(capped(noon, { greeted: true }));
+    expect(loadVoicePrefs()).toMatchObject({ spokenLimit: false, greeted: true });
+  });
+
+  it('only counts a real true', () => {
+    window.sessionStorage.setItem(VOICE_PREFS_KEY, JSON.stringify({ greeted: 'yes' }));
+    expect(loadVoicePrefs().greeted).toBe(false);
   });
 });
