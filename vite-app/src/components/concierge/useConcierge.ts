@@ -29,7 +29,7 @@ import {
 } from './copy';
 import type { OpenDetail } from './events';
 import { EMPTY_LEAD_DRAFT, fillsMissingDetail, LEAD_DRAFT_KEYS, mergeLeadDraft } from './leadDraft';
-import { loadState, newId, saveState } from './storage';
+import { isOnlyGreeting, loadState, saveState } from './storage';
 import { getToken } from './turnstile';
 import type {
   ChatRequest,
@@ -41,8 +41,14 @@ import type {
   Message,
 } from './types';
 import { buildTranscript, FORM_FIELDS, LIMITS } from './validation';
+import { makeMessage, TURNSTILE_AFTER_TURN } from './thread';
+import { voiceBonusFormHeading } from './voice/copy';
+import { createVoiceController, initialVoiceState, type VoiceState } from './voice/controller';
+import { activeSpeechMode } from './voice/speech';
 
 export type ConciergeStatus = 'idle' | 'sending' | 'leadOnly' | 'ended';
+
+export type { VoiceState };
 
 export type ConciergeState = {
   messages: Message[];
@@ -63,17 +69,41 @@ export type ConciergeState = {
   gatheredLead: LeadDraft;
   /** One line shown above the form when the helper opened it itself (null otherwise). */
   leadHeading: string | null;
+  /** The form was opened for the read-aloud bonus: the email is required this time. */
+  leadEmailRequired: boolean;
   /** Inline message for the composer (for example TOO_LONG). */
   composerError: string | null;
+  /**
+   * A voice message shown in the same place (microphone blocked, nothing heard, voice off).
+   * Kept apart from composerError because it is not a problem with what was typed.
+   */
+  voiceNotice: string | null;
   sessionId: string;
   /** User messages sent to the server this session. */
   turn: number;
+  voice: VoiceState;
+  /** The last seconds of a recording (drives the countdown ring and its text). */
+  voiceEnding: boolean;
+  /** Read each new reply aloud. */
+  speakEnabled: boolean;
+  /** Something can read replies aloud, and today's allowance is not used up (drives the speaker toggle). */
+  speakAvailable: boolean;
+  /** The reply whose audio the browser would not start: it shows a "Tap to hear replies" pill. */
+  blockedReplyId: string | null;
+  /** Spoken replies are paused and sharing details would add more: show that notice with its chip. */
+  readAloudBonus: boolean;
+  /** How many spoken replies that offer adds (the Worker's figure, or 5). */
+  bonusCount: number;
+  /** Show the microphone line under the composer (from the first voice use until the panel closes). */
+  voiceDisclosed: boolean;
 };
 
 export type SubmitLeadOutcome = { ok: true } | { ok: false; fields?: FieldErrors };
 
+/** `keepGreeting`: do not stop the recorded greeting for this input (see stopReadingForInput). */
+type SendOptions = { keepGreeting?: boolean };
+
 const MAX_THREAD_ENTRIES = 25;
-const TURNSTILE_AFTER_TURN = 10;
 
 const HANDOFF_PATTERNS = [
   /\b(talk|speak|chat)\s+(to|with)\s+(a\s+|an\s+)?(person|human|real\s+person|someone\s+real|representative)\b/i,
@@ -97,23 +127,11 @@ export function toChatTurns(messages: Message[]): ChatTurn[] {
   return turns;
 }
 
-const makeMessage = (
-  role: Message['role'],
-  content: string,
-  extra: Partial<Message> = {}
-): Message => ({
-  id: newId(),
-  role,
-  content,
-  at: new Date().toISOString(),
-  ...extra,
-});
-
 function createController() {
   const stored = loadState();
   const { utm } = stored;
 
-  const onlyGreeting = stored.messages.length === 1 && stored.messages[0].greeting === true;
+  const onlyGreeting = isOnlyGreeting(stored.messages);
 
   // The stored shape (plan section 2.9) has no field for the open form, so work
   // it out from the last message: a reload mid-form or mid-outage resumes there.
@@ -166,9 +184,11 @@ function createController() {
     // even after dismissing it a "Request a callback" comes up pre-filled.
     gatheredLead: { ...EMPTY_LEAD_DRAFT, ...stored.leadDraft },
     leadHeading: resumeReadyForm ? LEAD_FORM_HEADING : null,
+    leadEmailRequired: false,
     composerError: null,
     sessionId: stored.sessionId,
     turn: stored.messages.filter((m) => m.role === 'user' && !m.greeting).length,
+    ...initialVoiceState(),
   };
 
   const listeners = new Set<() => void>();
@@ -199,6 +219,21 @@ function createController() {
   const push = (message: Message, patch: Partial<ConciergeState> = {}) =>
     set({ messages: [...state.messages, message], ...patch });
 
+  const voice = createVoiceController({
+    get: getState,
+    patch: set,
+    send: (text) => sendText(text),
+  });
+
+  /** Read the newest assistant message added since `fromIndex`, if any. */
+  const speakNewReplies = (fromIndex: number) => {
+    const reply = state.messages
+      .slice(fromIndex)
+      .filter((m) => m.role === 'assistant' && !m.greeting)
+      .at(-1);
+    if (reply) voice.speakReply(reply.content, reply.id);
+  };
+
   const openCallbackForm = (label: string) => {
     if (state.leadDone || state.showLeadForm || state.status === 'ended') {
       set({ chips: [] });
@@ -214,6 +249,26 @@ function createController() {
       ],
       showLeadForm: true,
       leadHeading: null,
+      leadEmailRequired: false,
+      leadError: false,
+      chips: [],
+    });
+    track('concierge_lead_form_shown');
+  };
+
+  /**
+   * "Share my details" (read-aloud paused, a bonus on offer): the same lead form, pre-filled from
+   * the conversation, with the email required this time. No chat messages: it is not a question.
+   */
+  const shareDetails = () => {
+    if (state.leadDone || state.showLeadForm || state.status === 'ended') return;
+    clearDismissal();
+    voice.cancelVoice();
+    voice.stopSpeaking();
+    set({
+      showLeadForm: true,
+      leadHeading: voiceBonusFormHeading(state.bonusCount),
+      leadEmailRequired: true,
       leadError: false,
       chips: [],
     });
@@ -320,10 +375,23 @@ function createController() {
     } catch {
       res = { kind: 'error', reason: 'network' };
     }
+    const before = state.messages.length;
     applyChatResult(res);
+    speakNewReplies(before);
   };
 
-  const send = async (raw: string): Promise<void> => {
+  /**
+   * New input stops the reading. The one exception is the question a section button sends on opening
+   * the chat (`keepGreeting`): the recorded greeting that the same click started is left to play until
+   * the answer arrives, but anything else being read (a reply, say) is still stopped.
+   */
+  const stopReadingForInput = (opts: SendOptions) => {
+    if (opts.keepGreeting && activeSpeechMode() === 'greeting') return;
+    voice.stopSpeaking();
+  };
+
+  /** The send path shared by typing and by a finished voice transcript. */
+  const sendText = async (raw: string, opts: SendOptions = {}): Promise<void> => {
     if (state.status !== 'idle') return;
     const text = raw.trim();
     if (!text) return;
@@ -332,9 +400,11 @@ function createController() {
       return;
     }
 
+    stopReadingForInput(opts); // any new input stops the reading
     const userMessage = makeMessage('user', text);
 
     if (isHandoffRequest(text)) {
+      const before = state.messages.length;
       set({
         messages: [
           ...state.messages,
@@ -343,19 +413,29 @@ function createController() {
         ],
         chips: [],
         composerError: null,
+        voiceNotice: null,
       });
+      speakNewReplies(before);
       return;
     }
 
     const thread = [...state.messages, userMessage];
     const turn = state.turn + 1;
-    set({ messages: thread, turn, status: 'sending', chips: [], composerError: null });
+    set({ messages: thread, turn, status: 'sending', chips: [], composerError: null, voiceNotice: null });
     track('concierge_message_sent', { turn_number: turn });
     await converse(thread, turn);
   };
 
-  const chip = async (label: string): Promise<void> => {
+  /** Typed (or chip) input: a recording or transcript in progress is dropped in its favour. */
+  const send = (raw: string, opts: SendOptions = {}): Promise<void> => {
+    voice.cancelVoice();
+    return sendText(raw, opts);
+  };
+
+  const chip = async (label: string, opts: SendOptions = {}): Promise<void> => {
     if (state.status === 'ended') return;
+    voice.cancelVoice();
+    stopReadingForInput(opts);
     // Only the widget's own chip labels are analytics values; never pass anything else along.
     track('concierge_quick_reply', isKnownChip(label) ? { chip: label } : undefined);
     if (label === CALLBACK_CHIP || label === OFFER_YES) {
@@ -366,17 +446,23 @@ function createController() {
       set({ chips: [] });
       return;
     }
-    await send(label);
+    await send(label, opts);
   };
 
   const handleOpen = async (detail: OpenDetail): Promise<void> => {
+    const voiceChecked = voice.checkVoice();
     if (state.messages.length === 0) {
       set({
         messages: [makeMessage('assistant', GREETING, { greeting: true })],
         chips: state.status === 'ended' ? [] : CHIPS,
       });
     }
-    if (detail.quickReply) await chip(detail.quickReply);
+    // The recorded greeting may already be playing, started by the click that opened the chat.
+    // Once /health has been read (so the voice controls exist), this panel takes it over.
+    void voiceChecked.then(() => voice.adoptGreeting(state.messages.find((m) => m.greeting)?.id));
+    // The section buttons open the chat with a question already asked: that must not cut the
+    // greeting off; the answer, when it arrives, replaces it.
+    if (detail.quickReply) await chip(detail.quickReply, { keepGreeting: true });
   };
 
   const submitLead = async (input: LeadInput): Promise<SubmitLeadOutcome> => {
@@ -405,11 +491,15 @@ function createController() {
         delivery: res.delivery,
       });
       track('concierge_lead');
+      // A lead with an email is what earns the read-aloud bonus, if one is on offer; any lead
+      // closes the offer (the chip that opened the form could not be used again).
+      voice.noteLeadSubmitted(Boolean(input.email));
       const first = input.name.split(/\s+/)[0];
       openFormAfterId = undefined; // sent: nothing left to resume after a reload
       push(makeMessage('assistant', CONFIRM(first, WINDOWS[input.callbackWindow])), {
         showLeadForm: false,
         leadHeading: null,
+        leadEmailRequired: false,
         leadDone: true,
         leadSending: false,
         leadError: false,
@@ -474,6 +564,7 @@ function createController() {
     set({
       showLeadForm: false,
       leadHeading: null,
+      leadEmailRequired: false,
       leadError: false,
       leadErrorMessage: null,
       composerError: null,
@@ -482,13 +573,34 @@ function createController() {
   };
 
   const clearComposerError = () => {
-    if (state.composerError !== null) set({ composerError: null });
+    if (state.composerError !== null || state.voiceNotice !== null) {
+      set({ composerError: null, voiceNotice: null });
+    }
   };
 
   return {
     getState,
     subscribe,
-    actions: { handleOpen, send, chip, submitLead, dismissLeadForm, clearComposerError },
+    actions: {
+      handleOpen,
+      send,
+      chip,
+      submitLead,
+      dismissLeadForm,
+      clearComposerError,
+      startVoice: voice.startVoice,
+      stopVoice: voice.stopVoice,
+      cancelVoice: voice.cancelVoice,
+      cancelRecording: voice.cancelRecording,
+      stopAll: voice.stopAll,
+      setActive: voice.setActive,
+      stopSpeaking: voice.stopSpeaking,
+      setSpeakEnabled: voice.setSpeakEnabled,
+      playBlocked: voice.playBlocked,
+      shareDetails,
+      unlockSpeech: voice.unlock,
+      subscribeLevel: voice.subscribeLevel,
+    },
   };
 }
 

@@ -3,6 +3,7 @@ import { track } from '../../lib/track';
 import { PHONE_DISPLAY, PHONE_HREF } from './copy';
 import PhoneText from './PhoneText';
 import type { Message } from './types';
+import { VOICE_TAP_TO_HEAR } from './voice/copy';
 
 type Props = {
   /** False while the panel is closed (display: none), when there is nothing to scroll. */
@@ -14,13 +15,25 @@ type Props = {
   formVisible: boolean;
   /** Rendered after the log inside the same scroll container (lead form). */
   children?: ReactNode;
+  /** The reply whose audio the browser would not start: shows a "Tap to hear replies" pill under it. */
+  blockedReplyId?: string | null;
+  /** The pill was tapped (called straight from the tap, so the browser lets the audio play). */
+  onPlayBlocked?: () => void;
 };
 
 const prefersReducedMotion = () =>
   typeof window.matchMedia === 'function' &&
   window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-export default function MessageList({ open = true, messages, typing, formVisible, children }: Props) {
+export default function MessageList({
+  open = true,
+  messages,
+  typing,
+  formVisible,
+  children,
+  blockedReplyId = null,
+  onPlayBlocked,
+}: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const wasOpen = useRef(open);
 
@@ -70,6 +83,16 @@ export default function MessageList({ open = true, messages, typing, formVisible
                 >
                   Call {PHONE_DISPLAY}
                 </a>
+              )}
+              {m.role === 'assistant' && m.id === blockedReplyId && onPlayBlocked && (
+                <button type="button" className="thg-cc-sound-pill" onClick={onPlayBlocked}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+                    <path d="M11 5 6 9H3v6h3l5 4V5Z" />
+                    <path d="M15.5 8.5a5 5 0 0 1 0 7" />
+                    <path d="M18.5 5.5a9 9 0 0 1 0 13" />
+                  </svg>
+                  {VOICE_TAP_TO_HEAR}
+                </button>
               )}
             </li>
           ))}

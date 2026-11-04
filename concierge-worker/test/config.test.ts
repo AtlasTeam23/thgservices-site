@@ -44,6 +44,13 @@ describe('wrangler.jsonc', () => {
     expect(parseJsonc('{ // note\n "a": "x//y", /* c */ "b": [1, 2,], }')).toEqual({ a: 'x//y', b: [1, 2] });
   });
 
+  it('ships with the ElevenLabs voice that was chosen by listening, not a guessed id', () => {
+    expect(config.vars.VOICE_TTS).toBe('elevenlabs');
+    // "Matilda - Knowledgable, Professional", picked from `npm run eleven:voices` on 2026-11-04.
+    expect(config.vars.VOICE_ELEVEN_VOICE_ID).toBe('XrExE9yKIg1WjnnlVkGX');
+    expect(config.vars.VOICE_ELEVEN_VOICE_ID).toMatch(/^[A-Za-z0-9]{20}$/); // the shape elevenConfig() accepts
+  });
+
   it('deploys with the real provider and the contracted model, not the test mock', () => {
     expect(config.vars.LLM_PROVIDER).toBe('anthropic');
     expect(config.vars.MODEL).toBe('claude-haiku-5-5');
@@ -64,11 +71,31 @@ describe('wrangler.jsonc', () => {
     expect(config.vars.RATE_SALT).toMatch(/^[0-9a-f]{32}$/);
   });
 
+  it('binds Workers AI as AI, for speech-to-text and the optional premium voice', () => {
+    expect(config.ai).toEqual({ binding: 'AI', remote: true });
+  });
+
+  it('carries the contracted voice vars: ElevenLabs Flash, small per-visitor and daily budgets', () => {
+    expect(config.vars).toMatchObject({
+      VOICE_TTS: 'elevenlabs',
+      VOICE_TTS_MODEL: 'aura-1',
+      VOICE_SPEAKER: 'asteria',
+      VOICE_ELEVEN_VOICE_ID: 'XrExE9yKIg1WjnnlVkGX',
+      VOICE_ELEVEN_MODEL: 'eleven_flash_v2_5',
+      VOICE_ELEVEN_FORMAT: 'mp3_22050_32',
+      VOICE_TTS_PER_IP_PER_DAY: '5',
+      VOICE_TTS_BONUS: '5',
+      VOICE_DAILY_STT_SECONDS: '9000',
+      VOICE_SESSION_SECONDS: '180',
+      VOICE_DAILY_TTS_CHARS: '50000',
+    });
+  });
+
   it('never puts a secret in the committed vars', () => {
-    for (const secret of ['LLM_API_KEY', 'RESEND_API_KEY', 'TURNSTILE_SECRET_KEY', 'LEADQUIK_WEBHOOK_URL']) {
+    for (const secret of ['LLM_API_KEY', 'RESEND_API_KEY', 'TURNSTILE_SECRET_KEY', 'LEADQUIK_WEBHOOK_URL', 'ELEVENLABS_API_KEY']) {
       expect(config.vars, secret).not.toHaveProperty(secret);
     }
-    expect(JSON.stringify(config.vars)).not.toMatch(/sk-ant|re_[A-Za-z0-9]{16}|whsec_/);
+    expect(JSON.stringify(config.vars)).not.toMatch(/sk-ant|re_[A-Za-z0-9]{16}|whsec_|sk_[a-f0-9]{20}/);
   });
 
   it('binds the SQLite-backed Limiter Durable Object', () => {

@@ -15,9 +15,14 @@ LLM_PROVIDER=mock
 #   RESEND_API_KEY       Resend key scoped to sending from leadquik.com. Empty ->
 #                        /lead answers 502 delivery_failed (unless LeadQuik succeeds).
 #   LEADQUIK_WEBHOOK_URL Optional https URL that receives each lead as JSON.
+#   ELEVENLABS_API_KEY   ElevenLabs key (elevenlabs.io, API keys). Only used when VOICE_TTS is
+#                        "elevenlabs"; `npm run eleven:voices` also reads it from this file to list the
+#                        voices you can choose from. Empty -> /tts answers 503 and /health shows
+#                        voice.configured: false.
 LLM_API_KEY=
 RESEND_API_KEY=
 LEADQUIK_WEBHOOK_URL=
+ELEVENLABS_API_KEY=
 
 # Cloudflare's published Turnstile TEST secret key: always passes, but only
 # accepts the dummy token XXXX.DUMMY.TOKEN.XXXX that the matching test sitekeys

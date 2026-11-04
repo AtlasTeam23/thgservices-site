@@ -20,6 +20,10 @@ import { BUBBLE_LABEL, ERROR } from './copy';
 import { onConciergeOpen, type OpenDetail } from './events';
 import PhoneText from './PhoneText';
 import { captureLanding } from './storage';
+import { playGreetingOnOpen } from './voice/greeting';
+import { prefetchVoiceCaps } from './voice/health';
+import { stopSpeaking } from './voice/playback';
+import { isRecordingSupported } from './voice/support';
 
 export type PanelLoader = () => Promise<{ default: ComponentType<ChatPanelProps> }>;
 
@@ -46,11 +50,11 @@ function panelFor(loader: PanelLoader, attempt: number): ComponentType<ChatPanel
 const PREFETCH_DELAY_MS = 4000;
 
 /**
- * Run `task` at least PREFETCH_DELAY_MS after the page's `load` event, and then
+ * Run `task` at least `delayMs` after the page's `load` event, and then
  * only when the browser reports it is idle. Returns a function that cancels
  * whichever stage is still pending.
  */
-function whenIdle(task: () => void): () => void {
+function whenIdle(task: () => void, delayMs: number = PREFETCH_DELAY_MS): () => void {
   let cancelled = false;
   let cancel = () => {};
 
@@ -66,7 +70,7 @@ function whenIdle(task: () => void): () => void {
 
   const afterLoad = () => {
     if (cancelled) return;
-    const id = window.setTimeout(idle, PREFETCH_DELAY_MS);
+    const id = window.setTimeout(idle, delayMs);
     cancel = () => window.clearTimeout(id);
   };
 
@@ -159,6 +163,10 @@ export default function ChatBubble({ panelLoader = defaultLoader }: { panelLoade
 
   const requestOpen = useCallback(
     (detail: OpenDetail) => {
+      // The recorded greeting has to start here, inside the visitor's click: the panel (and its voice
+      // controller) is a lazy chunk that is not loaded yet, and iOS lets audio start only in a gesture.
+      // Nothing before this line awaits anything; it decides from module state and sessionStorage.
+      playGreetingOnOpen();
       track('concierge_open', { source: detail.source });
       requestCount.current += 1;
       setRequest({ ...detail, id: requestCount.current });
@@ -169,10 +177,20 @@ export default function ChatBubble({ panelLoader = defaultLoader }: { panelLoade
     [failed, retry]
   );
 
-  const close = useCallback(() => setOpen(false), []);
+  // The panel stops the voice itself when it closes; this covers the chat that never loaded.
+  const close = useCallback(() => {
+    stopSpeaking();
+    setOpen(false);
+  }, []);
   const dismissNotice = useCallback(() => {
+    stopSpeaking();
     setOpen(false);
     bubbleRef.current?.focus();
+  }, []);
+  // The panel could not be loaded: nobody can see the greeting's text, so it should not go on talking.
+  const panelFailed = useCallback(() => {
+    stopSpeaking();
+    setFailed(true);
   }, []);
 
   useEffect(() => onConciergeOpen(requestOpen), [requestOpen]);
@@ -180,6 +198,22 @@ export default function ChatBubble({ panelLoader = defaultLoader }: { panelLoade
   // Remember where the visitor arrived from (UTM) now, not when the chat first opens.
   useEffect(() => {
     captureLanding();
+  }, []);
+
+  // Ask the Worker once whether it has a server voice, so that the greeting can start inside a click
+  // (a click cannot wait for the network). After the page has loaded and the browser is idle, not
+  // during the paint; a click that comes first asks again itself. Browsers that cannot record have no
+  // voice at all, so they never ask.
+  useEffect(() => (isRecordingSupported() ? whenIdle(prefetchVoiceCaps, 0) : undefined), []);
+
+  // A tab that is hidden must not keep talking. The panel does this itself once it exists; this covers
+  // the greeting that started in the click while the panel chunk was still on its way.
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.hidden) stopSpeaking();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
   }, []);
 
   // Fetch the panel chunk in the background (a few seconds after load, see whenIdle)
@@ -220,7 +254,7 @@ export default function ChatBubble({ panelLoader = defaultLoader }: { panelLoade
       {mounted && (
         <PanelBoundary
           key={attempt}
-          onError={() => setFailed(true)}
+          onError={panelFailed}
           fallback={<ChunkNotice open={open} onRetry={retry} onClose={dismissNotice} />}
         >
           <Suspense

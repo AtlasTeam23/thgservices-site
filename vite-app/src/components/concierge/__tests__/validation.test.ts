@@ -150,6 +150,34 @@ describe('validateLead', () => {
   });
 });
 
+describe('validateLead: email required for the read-aloud bonus', () => {
+  const MESSAGE = 'Enter your email so we can add your replies';
+
+  it('without the option, an empty email is fine (it is optional)', () => {
+    expect(validateLead({ ...valid, email: '' }).ok).toBe(true);
+  });
+
+  it('with the option, an empty or blank email is refused with the given message', () => {
+    for (const email of ['', '   ']) {
+      const res = validateLead({ ...valid, email }, { emailRequiredMessage: MESSAGE });
+      expect(res.ok).toBe(false);
+      if (!res.ok) expect(res.fields.email).toBe(MESSAGE);
+    }
+  });
+
+  it('with the option, a malformed email still gets the ordinary message', () => {
+    const res = validateLead({ ...valid, email: 'nope' }, { emailRequiredMessage: MESSAGE });
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.fields.email).toBe('Enter a valid email address');
+  });
+
+  it('with the option, a good email passes and is part of the lead', () => {
+    const res = validateLead({ ...valid, email: ' jane@doe.example ' }, { emailRequiredMessage: MESSAGE });
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.value.email).toBe('jane@doe.example');
+  });
+});
+
 describe('buildTranscript', () => {
   const msg = (over: Partial<Message> & Pick<Message, 'role' | 'content'>): Message => ({
     id: Math.random().toString(36),

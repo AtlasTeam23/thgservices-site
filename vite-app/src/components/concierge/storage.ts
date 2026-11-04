@@ -30,6 +30,14 @@ export type StoredState = {
   leadDraft?: LeadDraft;
 };
 
+/** The thread is nothing but the local greeting message (no visitor turn, no reply). */
+export const isOnlyGreeting = (messages: readonly Message[]): boolean =>
+  messages.length === 1 && messages[0].greeting === true;
+
+/** Nothing has been said yet: no messages at all, or only the local greeting. */
+export const isFreshThread = (messages: readonly Message[]): boolean =>
+  messages.length === 0 || isOnlyGreeting(messages);
+
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 /** crypto.randomUUID when available, otherwise a Math.random-based v4. */

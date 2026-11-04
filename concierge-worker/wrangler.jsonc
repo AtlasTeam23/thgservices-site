@@ -16,7 +16,7 @@
   },
 
   // Public, non-secret settings. Secrets (LLM_API_KEY, RESEND_API_KEY,
-  // TURNSTILE_SECRET_KEY, LEADQUIK_WEBHOOK_URL) are set with
+  // TURNSTILE_SECRET_KEY, LEADQUIK_WEBHOOK_URL, ELEVENLABS_API_KEY) are set with
   // `npx wrangler secret put <NAME>` and never live in this file.
   "vars": {
     "ALLOWED_ORIGINS": "https://thgservices.io,https://www.thgservices.io,http://localhost:3000,http://localhost:4173",
@@ -27,8 +27,41 @@
     // Used only to hash client IPs into Durable Object names. Not a secret.
     "RATE_SALT": "92fc073eb83ffe453544cd5c7fdcfa7c",
     // `.dev.vars` and the test config override this with "mock".
-    "LLM_PROVIDER": "anthropic"
+    "LLM_PROVIDER": "anthropic",
+
+    // Push-to-talk voice (see README "Voice"). Speech-to-text is on whenever the AI binding below
+    // exists. Replies are spoken only when VOICE_TTS is "aura" or "elevenlabs", which switch on POST /tts
+    // (a paid voice; Aura also needs the Workers Paid plan); "browser" means no spoken replies at all.
+    "VOICE_TTS": "elevenlabs",
+    // Which Aura model speaks when VOICE_TTS is "aura": "aura-1" ($0.015 per 1,000 characters) or "aura-2"
+    // (more natural, $0.030). VOICE_SPEAKER must be one of that model's speakers or the model's default is
+    // used and the Worker logs tts_speaker_fallback. "asteria" exists on both.
+    "VOICE_TTS_MODEL": "aura-1",
+    "VOICE_SPEAKER": "asteria",
+    // ElevenLabs, when VOICE_TTS is "elevenlabs" (the key is the secret ELEVENLABS_API_KEY). The voice id comes
+    // from `npm run eleven:voices`; while it is empty the route answers 503. This one is the premade voice
+    // "Matilda - Knowledgable, Professional", chosen by listening on 2026-11-04.
+    "VOICE_ELEVEN_VOICE_ID": "XrExE9yKIg1WjnnlVkGX",
+    "VOICE_ELEVEN_MODEL": "eleven_flash_v2_5",
+    "VOICE_ELEVEN_FORMAT": "mp3_22050_32",
+    // Spoken replies per visitor (one address) per Eastern-time day on either paid voice, and the extra replies
+    // that address earns the same day by leaving a name, a valid email and a phone number in the lead form.
+    "VOICE_TTS_PER_IP_PER_DAY": "5",
+    "VOICE_TTS_BONUS": "5",
+    // Audio seconds of speech-to-text per Eastern-time day across all visitors (9000 = 150 minutes,
+    // inside the Workers Free plan's 10,000 neurons a day), and per chat session (3 minutes).
+    "VOICE_DAILY_STT_SECONDS": "9000",
+    "VOICE_SESSION_SECONDS": "180",
+    // Characters of paid text-to-speech per Eastern-time day, all visitors together (VOICE_TTS "aura" or
+    // "elevenlabs"). 50000 is at most about $2 a day on ElevenLabs Flash ($0.04 per 1,000 characters), roughly
+    // 150 spoken replies; Aura-1 would be $0.75 and Aura-2 $1.50 for the same characters.
+    "VOICE_DAILY_TTS_CHARS": "50000"
   },
+
+  // Workers AI: Whisper for POST /stt and, only when VOICE_TTS is "aura", Aura-1 for POST /tts.
+  // Billed to the account (Free plan: 10,000 neurons a day). It always runs on Cloudflare's network,
+  // so `wrangler dev` needs a logged-in account for it.
+  "ai": { "binding": "AI", "remote": true },
 
   "durable_objects": {
     "bindings": [{ "name": "LIMITER", "class_name": "Limiter" }]

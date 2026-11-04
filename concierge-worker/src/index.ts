@@ -1,9 +1,12 @@
+import type { VoiceDeps } from './ai';
 import { handleChat } from './chat';
 import { checkOrigin, originDenied, preflight, withCors } from './cors';
-import { isEmailConfigured, isTurnstileConfigured, llmStatus, type Env } from './env';
+import { isEmailConfigured, isTurnstileConfigured, llmStatus, ttsProvider, voiceHealth, type Env } from './env';
 import { json, methodNotAllowed } from './http';
 import { handleLead, type LeadDeps } from './lead';
 import type { GenerateDeps } from './llm';
+import { handleStt } from './stt';
+import { handleTts } from './tts';
 
 export { Limiter } from './limiter';
 
@@ -11,6 +14,7 @@ export { Limiter } from './limiter';
 export interface AppDeps {
   llm?: GenerateDeps;
   lead?: LeadDeps;
+  voice?: VoiceDeps;
 }
 
 const route = async (request: Request, env: Env, deps: AppDeps): Promise<Response> => {
@@ -24,6 +28,7 @@ const route = async (request: Request, env: Env, deps: AppDeps): Promise<Respons
         llm: llmStatus(env),
         email: isEmailConfigured(env),
         turnstile: isTurnstileConfigured(env),
+        voice: voiceHealth(env),
       });
 
     case '/chat':
@@ -33,6 +38,16 @@ const route = async (request: Request, env: Env, deps: AppDeps): Promise<Respons
     case '/lead':
       if (request.method !== 'POST') return methodNotAllowed('POST, OPTIONS');
       return handleLead(request, env, deps.lead);
+
+    case '/stt':
+      if (request.method !== 'POST') return methodNotAllowed('POST, OPTIONS');
+      return handleStt(request, env, deps.voice);
+
+    case '/tts':
+      // The paid voice is off unless VOICE_TTS names a provider, and then the route does not exist at all.
+      if (ttsProvider(env) === 'browser') return json({ error: 'not_found' }, 404);
+      if (request.method !== 'POST') return methodNotAllowed('POST, OPTIONS');
+      return handleTts(request, env, deps.voice);
 
     default:
       return json({ error: 'not_found' }, 404);
