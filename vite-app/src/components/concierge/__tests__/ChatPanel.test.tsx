@@ -566,34 +566,76 @@ describe('ChatPanel', () => {
         expect(postLeadMock).not.toHaveBeenCalled();
       });
 
-      it('does not bring the form back for the same details; a changed phone number does', async () => {
+      it('does not bring the form back for an unrelated question, even when the model rewords the need', async () => {
         const user = userEvent.setup();
         postChatMock
           .mockResolvedValueOnce(readyReply())
-          // The model carries the lead forward and says ready again on every reply.
+          // The model carries the lead forward, says ready again, and rewords the need every turn.
           .mockResolvedValueOnce(
-            reply('Call handling answers every call.', { intent: 'collecting', readyToConfirm: true, lead: FILLED })
-          )
-          .mockResolvedValueOnce(
-            reply('Got the new number.', {
+            reply('Working with us starts with a quick call.', {
               intent: 'collecting',
               readyToConfirm: true,
-              lead: { ...FILLED, phone: '4045550100' },
+              lead: { ...FILLED, need: 'wants to understand what working together looks like' },
+            })
+          )
+          .mockResolvedValueOnce(
+            reply('Call handling answers every call.', {
+              intent: 'collecting',
+              readyToConfirm: true,
+              lead: { ...FILLED, need: 'call handling' },
             })
           );
         render(<Harness />);
         await user.type(await screen.findByRole('textbox', { name: 'Message' }), 'Dana Lee, 770-555-0147{Enter}');
         await user.click(await screen.findByRole('button', { name: dismissName }));
 
+        await user.type(screen.getByRole('textbox', { name: 'Message' }), 'What does working with you look like?{Enter}');
+        expect(await screen.findByText('Working with us starts with a quick call.')).toBeInTheDocument();
+        expect(screen.queryByLabelText('Name')).not.toBeInTheDocument();
+        expect(await screen.findByRole('button', { name: 'Yes, call me' })).toBeInTheDocument();
+
         await user.type(screen.getByRole('textbox', { name: 'Message' }), 'what does call handling do?{Enter}');
         expect(await screen.findByText('Call handling answers every call.')).toBeInTheDocument();
         expect(screen.queryByLabelText('Name')).not.toBeInTheDocument();
         expect(screen.getByRole('textbox', { name: 'Message' })).toBeInTheDocument();
 
+        // The chip still brings it back, with the latest wording of the need.
+        await user.click(screen.getByRole('button', { name: 'Yes, call me' }));
+        expect(await screen.findByLabelText('What do you need help with? (optional)')).toHaveValue('call handling');
+      });
+
+      it('a changed phone number keeps the form closed with a chip; a newly given email brings it back', async () => {
+        const user = userEvent.setup();
+        postChatMock
+          .mockResolvedValueOnce(readyReply())
+          .mockResolvedValueOnce(
+            reply('Got the new number.', {
+              intent: 'collecting',
+              readyToConfirm: true,
+              lead: { ...FILLED, phone: '4045550100' },
+            })
+          )
+          .mockResolvedValueOnce(
+            reply('Thanks, noted your email.', {
+              intent: 'collecting',
+              readyToConfirm: true,
+              lead: { ...FILLED, phone: '4045550100', email: 'dana@example.com' },
+            })
+          );
+        render(<Harness />);
+        await user.type(await screen.findByRole('textbox', { name: 'Message' }), 'Dana Lee, 770-555-0147{Enter}');
+        await user.click(await screen.findByRole('button', { name: dismissName }));
+
         await user.type(screen.getByRole('textbox', { name: 'Message' }), 'use 404-555-0100{Enter}');
-        expect(await screen.findByLabelText('Phone')).toHaveValue('(404) 555-0100');
-        expect(screen.getByLabelText('Name')).toHaveValue('Dana Lee');
+        expect(await screen.findByText('Got the new number.')).toBeInTheDocument();
+        expect(screen.queryByLabelText('Phone')).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Yes, call me' })).toBeInTheDocument();
+
+        await user.type(screen.getByRole('textbox', { name: 'Message' }), 'my email is dana@example.com{Enter}');
+        expect(await screen.findByLabelText('Email (optional)')).toHaveValue('dana@example.com');
+        expect(screen.getByLabelText('Phone')).toHaveValue('(404) 555-0100'); // the changed number is in it
         expect(screen.getByLabelText(copy.CONSENT)).not.toBeChecked();
+        expect(screen.getByText("Here's what I have. Check the box and tap send.")).toBeInTheDocument();
       });
 
       it('"ok, go ahead and call me" after a dismissal: a Yes, call me chip brings the form back', async () => {

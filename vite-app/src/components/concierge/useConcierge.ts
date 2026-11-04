@@ -28,7 +28,7 @@ import {
   WINDOWS,
 } from './copy';
 import type { OpenDetail } from './events';
-import { EMPTY_LEAD_DRAFT, hasNewDetail, LEAD_DRAFT_KEYS, mergeLeadDraft } from './leadDraft';
+import { EMPTY_LEAD_DRAFT, fillsMissingDetail, LEAD_DRAFT_KEYS, mergeLeadDraft } from './leadDraft';
 import { loadState, newId, saveState } from './storage';
 import { getToken } from './turnstile';
 import type {
@@ -232,11 +232,13 @@ function createController() {
         // pre-filled, for the visitor to check the consent box and send. Defensive: only if
         // the cleaned details really hold a name and a 10-digit number; never if a lead was
         // already sent or the form is already up; and after a dismissal ("Not now, keep
-        // chatting") only for a new or changed detail, else it would pop up after every reply.
+        // chatting") only when a detail that was missing then (name, phone, email, business,
+        // callback window) has been given since. A changed value or a re-worded need does not
+        // count (the "Yes, call me" chip covers those), else it would pop up after every reply.
         const pending = readyToConfirm && !state.leadDone && !state.showLeadForm;
         const hasContact = gatheredLead.name !== '' && /^\d{10}$/.test(gatheredLead.phone);
         const allowedAgain =
-          dismissedSnapshot === null || hasNewDetail(dismissedSnapshot, lead, visitorEdited);
+          dismissedSnapshot === null || fillsMissingDetail(dismissedSnapshot, lead);
         const openForm = pending && hasContact && allowedAgain;
         const message = makeMessage('assistant', reply, intent === 'handoff' ? { callLink: true } : {});
         if (openForm) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { EMPTY_LEAD_DRAFT, hasNewDetail, mergeLeadDraft, parseLeadDraft } from '../leadDraft';
+import { EMPTY_LEAD_DRAFT, fillsMissingDetail, mergeLeadDraft, parseLeadDraft } from '../leadDraft';
 import type { LeadDraft } from '../types';
 
 const full: LeadDraft = {
@@ -125,32 +125,60 @@ describe('EMPTY_LEAD_DRAFT', () => {
   });
 });
 
-describe('hasNewDetail', () => {
-  it('ignores the fields it is told to (visitor-edited ones)', () => {
-    const incoming = { ...full, phone: '4045550100' };
-    expect(hasNewDetail(full, incoming)).toBe(true);
-    expect(hasNewDetail(full, incoming, new Set(['phone']))).toBe(false);
-    expect(hasNewDetail(full, { ...incoming, need: 'something new' }, new Set(['phone']))).toBe(true);
-  });
+describe('fillsMissingDetail (when a dismissed form may come back)', () => {
+  const some = { ...EMPTY_LEAD_DRAFT, name: 'Dana Lee', phone: '7705550147' };
 
   it('is false for the same details again', () => {
-    expect(hasNewDetail(full, full)).toBe(false);
+    expect(fillsMissingDetail(full, full)).toBe(false);
+    expect(fillsMissingDetail(some, some)).toBe(false);
   });
 
-  it('is false when the reply carries fewer details, or none (empty fields are not changes)', () => {
-    expect(hasNewDetail(full, { ...EMPTY_LEAD_DRAFT, name: 'Jane Doe' })).toBe(false);
-    expect(hasNewDetail(full, EMPTY_LEAD_DRAFT)).toBe(false);
+  it('is false when the reply carries fewer details, or none', () => {
+    expect(fillsMissingDetail(full, { ...EMPTY_LEAD_DRAFT, name: 'Jane Doe' })).toBe(false);
+    expect(fillsMissingDetail(full, EMPTY_LEAD_DRAFT)).toBe(false);
   });
 
-  it('is true when a non-empty field differs from what was gathered', () => {
-    expect(hasNewDetail(full, { ...full, phone: '4045550100' })).toBe(true);
-    expect(hasNewDetail(full, { ...full, name: 'Jane Q. Doe' })).toBe(true);
-    expect(hasNewDetail(full, { ...EMPTY_LEAD_DRAFT, callbackWindow: 'morning_9_11' })).toBe(true);
+  it('never counts the free-text need: reworded, or filled for the first time', () => {
+    expect(fillsMissingDetail(full, { ...full, need: 'a completely different way of saying it' })).toBe(false);
+    expect(fillsMissingDetail(some, { ...some, need: 'answering calls after hours' })).toBe(false);
   });
 
-  it('is true when a detail is added that was not gathered before', () => {
-    const before = { ...full, need: '' };
-    expect(hasNewDetail(before, full)).toBe(true);
-    expect(hasNewDetail(EMPTY_LEAD_DRAFT, { ...EMPTY_LEAD_DRAFT, email: 'jane@example.com' })).toBe(true);
+  it('does not count a changed value for a field that was already filled', () => {
+    for (const changed of [
+      { phone: '4045550100' },
+      { name: 'Jane Q. Doe' },
+      { business: 'Doe Plumbing LLC' },
+      { email: 'other@example.com' },
+      { callbackWindow: 'morning_9_11' as const },
+    ]) {
+      expect(fillsMissingDetail(full, { ...full, ...changed }), JSON.stringify(changed)).toBe(false);
+    }
+  });
+
+  it('counts a name, phone, email, business or callback window that was empty and is now filled', () => {
+    const cases: Array<[Partial<LeadDraft>, Partial<LeadDraft>]> = [
+      [{ ...some, name: '' }, { name: 'Dana Lee' }],
+      [{ ...some, phone: '' }, { phone: '7705550147' }],
+      [some, { email: 'dana@example.com' }],
+      [some, { business: 'Lee Landscaping' }],
+      [some, { callbackWindow: 'afternoon_1_3' }],
+    ];
+    for (const [snapshot, incoming] of cases) {
+      expect(
+        fillsMissingDetail({ ...EMPTY_LEAD_DRAFT, ...snapshot }, { ...EMPTY_LEAD_DRAFT, ...incoming }),
+        JSON.stringify(incoming)
+      ).toBe(true);
+    }
+  });
+
+  it('is false for a field that was empty and stays empty', () => {
+    expect(fillsMissingDetail(some, { ...some, need: '' })).toBe(false);
+    expect(fillsMissingDetail(EMPTY_LEAD_DRAFT, EMPTY_LEAD_DRAFT)).toBe(false);
+  });
+
+  it('one filled field is enough, even alongside reworded or changed ones', () => {
+    expect(
+      fillsMissingDetail(some, { ...some, phone: '4045550100', need: 'reworded', business: 'Lee Landscaping' })
+    ).toBe(true);
   });
 });

@@ -56,16 +56,18 @@ export function mergeLeadDraft(
 }
 
 /**
- * Does `incoming` add or change a detail compared with `previous`? Only its
- * non-empty fields count: an empty field means "not mentioned", not "removed".
- * Fields in `ignore` (visitor-edited ones, which the model cannot know about) never count.
+ * The details that can bring a dismissed form back by being filled in for the first time.
+ * Not `need`: it is free text the model re-words on almost every turn, so it says nothing
+ * about the visitor having given us more.
  */
-export function hasNewDetail(
-  previous: LeadDraft,
-  incoming: LeadDraft,
-  ignore?: ReadonlySet<keyof LeadDraft>
-): boolean {
-  return LEAD_DRAFT_KEYS.some(
-    (key) => !ignore?.has(key) && incoming[key] !== '' && incoming[key] !== previous[key]
-  );
+const REOPEN_KEYS = ['name', 'phone', 'email', 'business', 'callbackWindow'] as const;
+
+/**
+ * After the visitor said "not now", may this reply bring the form back? Only if a detail
+ * that was missing when they dismissed it (name, phone, email, business, callback window)
+ * has since been given. A changed value for something already filled in does not count (the
+ * "Yes, call me" chip covers that), and neither does `need`.
+ */
+export function fillsMissingDetail(snapshot: LeadDraft, incoming: LeadDraft): boolean {
+  return REOPEN_KEYS.some((key) => snapshot[key] === '' && incoming[key] !== '');
 }
