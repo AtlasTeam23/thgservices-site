@@ -1,6 +1,13 @@
 export type Role = 'user' | 'assistant';
 
-export type Intent = 'answer' | 'pricing' | 'off_topic' | 'handoff' | 'unsure';
+export type Intent =
+  | 'answer'
+  | 'pricing'
+  | 'off_topic'
+  | 'handoff'
+  | 'unsure'
+  /** The helper is gathering details for a callback; shown like an answer. */
+  | 'collecting';
 
 export type CallbackWindow =
   | 'morning_9_11'
@@ -31,10 +38,27 @@ export type ChatRequest = {
   turnstileToken?: string;
 };
 
+/**
+ * What the helper has gathered from the conversation so far (plan v1.1 section 1.1).
+ * Every field is a string, empty when unknown, so it can pre-fill the lead form directly.
+ */
+export type LeadDraft = {
+  name: string;
+  /** Exactly 10 digits, or empty. */
+  phone: string;
+  email: string;
+  business: string;
+  need: string;
+  callbackWindow: CallbackWindow | '';
+};
+
 export type ChatResponse = {
   reply: string;
   intent: Intent;
   offerCallback: boolean;
+  /** The helper has a name and a phone number: show the lead form for one-tap consent. */
+  readyToConfirm: boolean;
+  lead: LeadDraft;
 };
 
 /** What the visitor typed into the lead form, trimmed and normalized. */

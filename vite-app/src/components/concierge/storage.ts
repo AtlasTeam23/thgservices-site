@@ -1,7 +1,8 @@
 // Per-tab persistence (plan section 2.9). Every read and write is wrapped:
 // the widget must work with storage disabled.
 
-import type { Message } from './types';
+import { parseLeadDraft } from './leadDraft';
+import type { LeadDraft, Message } from './types';
 import { sanitizeUtm } from './validation';
 
 export const STORAGE_KEY = 'thg-concierge-v1';
@@ -13,6 +14,20 @@ export type StoredState = {
   leadSubmitted: boolean;
   ended: boolean;
   utm: Record<string, string>;
+  /**
+   * Id of the last message when the visitor dismissed the lead form ("Not now, keep
+   * chatting"). A reload that still ends on that message does not bring the form back.
+   * Additive: absent unless a dismissal happened, so the v1 shape stays readable.
+   */
+  leadFormDismissedAfter?: string;
+  /**
+   * Id of the last message when a readyToConfirm form was open, and the details it was
+   * pre-filled with (the transcript holds the same data). A reload that still ends on that
+   * message brings the form back as it was. Both cleared when the lead is sent or the form
+   * dismissed. Additive: absent unless such a form is open.
+   */
+  leadFormOpenAfter?: string;
+  leadDraft?: LeadDraft;
 };
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -55,6 +70,9 @@ function freshState(): StoredState {
   };
 }
 
+const nonEmptyString = (v: unknown): string | undefined =>
+  typeof v === 'string' && v.length > 0 ? v : undefined;
+
 function isMessage(m: unknown): m is Message {
   if (!m || typeof m !== 'object') return false;
   const o = m as Record<string, unknown>;
@@ -85,6 +103,15 @@ export function loadState(): StoredState {
         o.utm && typeof o.utm === 'object'
           ? sanitizeUtm(o.utm as Record<string, unknown>)
           : {},
+      leadFormDismissedAfter: nonEmptyString(o.leadFormDismissedAfter),
+      leadFormOpenAfter: nonEmptyString(o.leadFormOpenAfter),
+      leadDraft:
+        o.leadDraft &&
+        typeof o.leadDraft === 'object' &&
+        !Array.isArray(o.leadDraft) &&
+        Object.keys(o.leadDraft).length > 0
+          ? parseLeadDraft(o.leadDraft)
+          : undefined,
     };
   } catch {
     return fresh;

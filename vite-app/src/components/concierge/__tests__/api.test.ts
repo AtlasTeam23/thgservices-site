@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CHAT_TIMEOUT_MS, LEAD_TIMEOUT_MS, postChat, postLead } from '../api';
+import { EMPTY_LEAD_DRAFT } from '../leadDraft';
 import type { ChatRequest, LeadRequest } from '../types';
 
 const chatReq: ChatRequest = {
@@ -59,13 +60,19 @@ describe('api', () => {
       });
     });
 
-    it('200 returns the typed reply', async () => {
+    it('200 returns the typed reply; an older server without the new fields gets safe defaults', async () => {
       fetchMock.mockResolvedValue(
         jsonResponse(200, { reply: 'We help.', intent: 'handoff', offerCallback: true })
       );
       expect(await postChat(chatReq)).toEqual({
         kind: 'ok',
-        data: { reply: 'We help.', intent: 'handoff', offerCallback: true },
+        data: {
+          reply: 'We help.',
+          intent: 'handoff',
+          offerCallback: true,
+          readyToConfirm: false,
+          lead: EMPTY_LEAD_DRAFT,
+        },
       });
     });
 
@@ -75,8 +82,99 @@ describe('api', () => {
       );
       expect(await postChat(chatReq)).toEqual({
         kind: 'ok',
-        data: { reply: 'Hello', intent: 'answer', offerCallback: false },
+        data: {
+          reply: 'Hello',
+          intent: 'answer',
+          offerCallback: false,
+          readyToConfirm: false,
+          lead: EMPTY_LEAD_DRAFT,
+        },
       });
+    });
+
+    it('accepts the collecting intent', async () => {
+      fetchMock.mockResolvedValue(
+        jsonResponse(200, { reply: 'And your number?', intent: 'collecting', offerCallback: false })
+      );
+      const res = await postChat(chatReq);
+      expect(res.kind === 'ok' && res.data.intent).toBe('collecting');
+    });
+
+    it('parses readyToConfirm and the lead object (plan v1.1 section 1.1)', async () => {
+      const lead = {
+        name: 'Jane Doe',
+        phone: '7705550147',
+        email: '',
+        business: 'Doe Plumbing',
+        need: 'missed after-hours calls',
+        callbackWindow: 'afternoon_1_3',
+      };
+      fetchMock.mockResolvedValue(
+        jsonResponse(200, {
+          reply: "Here's what I've got.",
+          intent: 'collecting',
+          offerCallback: false,
+          readyToConfirm: true,
+          lead,
+        })
+      );
+      expect(await postChat(chatReq)).toEqual({
+        kind: 'ok',
+        data: {
+          reply: "Here's what I've got.",
+          intent: 'collecting',
+          offerCallback: false,
+          readyToConfirm: true,
+          lead,
+        },
+      });
+    });
+
+    it('only a literal true counts as readyToConfirm', async () => {
+      for (const value of ['true', 1, 'yes', null, {}, undefined]) {
+        fetchMock.mockResolvedValueOnce(
+          jsonResponse(200, { reply: 'Hi', intent: 'answer', offerCallback: false, readyToConfirm: value })
+        );
+        const res = await postChat(chatReq);
+        expect(res.kind === 'ok' && res.data.readyToConfirm).toBe(false);
+      }
+    });
+
+    it('cleans a strange lead: wrong types, bad email, bad window, 11-digit phone', async () => {
+      fetchMock.mockResolvedValue(
+        jsonResponse(200, {
+          reply: 'Hi',
+          intent: 'collecting',
+          offerCallback: false,
+          readyToConfirm: true,
+          lead: {
+            name: 7,
+            phone: '1-770-555-0147',
+            email: 'nope',
+            business: ' Doe Plumbing ',
+            need: ['x'],
+            callbackWindow: 'evening',
+            extra: 'ignored',
+          },
+        })
+      );
+      const res = await postChat(chatReq);
+      expect(res.kind === 'ok' && res.data.lead).toEqual({
+        name: '',
+        phone: '7705550147',
+        email: '',
+        business: 'Doe Plumbing',
+        need: '',
+        callbackWindow: '',
+      });
+    });
+
+    it('a lead that is not an object becomes an empty draft', async () => {
+      fetchMock.mockResolvedValue(
+        jsonResponse(200, { reply: 'Hi', intent: 'answer', offerCallback: false, lead: 'Jane' })
+      );
+      const res = await postChat(chatReq);
+      expect(res.kind === 'ok' && res.data.lead).toEqual(EMPTY_LEAD_DRAFT);
     });
 
     it('200 without a reply string is an error', async () => {

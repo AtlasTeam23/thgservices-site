@@ -2,6 +2,7 @@
 // throws: every outcome is a typed result the state machine can switch on.
 
 import { apiBase } from './config';
+import { parseLeadDraft } from './leadDraft';
 import type {
   ChatRequest,
   ChatResponse,
@@ -14,7 +15,14 @@ export const CHAT_TIMEOUT_MS = 15000;
 // A lead may wait on email delivery and one retry server-side.
 export const LEAD_TIMEOUT_MS = 30000;
 
-const INTENTS: readonly Intent[] = ['answer', 'pricing', 'off_topic', 'handoff', 'unsure'];
+const INTENTS: readonly Intent[] = [
+  'answer',
+  'pricing',
+  'off_topic',
+  'handoff',
+  'unsure',
+  'collecting',
+];
 const DELIVERIES: readonly LeadDelivery[] = ['email', 'email+leadquik', 'leadquik'];
 
 export type ChatResult =
@@ -88,7 +96,14 @@ export async function postChat(req: ChatRequest): Promise<ChatResult> {
     const intent = INTENTS.find((i) => i === body?.intent) ?? 'answer';
     return {
       kind: 'ok',
-      data: { reply, intent, offerCallback: body?.offerCallback === true },
+      data: {
+        reply,
+        intent,
+        offerCallback: body?.offerCallback === true,
+        // Servers before plan v1.1 send neither field: no lead, nothing to confirm.
+        readyToConfirm: body?.readyToConfirm === true,
+        lead: parseLeadDraft(body?.lead),
+      },
     };
   }
   if (status === 429) return { kind: 'rate_limited', reply };

@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   CALLBACK_WINDOWS,
+  EMPTY_LEAD,
   MESSAGES,
+  sanitizeLeadFields,
   isValidEmail,
   normalizePhone,
   selectRecentTurns,
@@ -439,5 +441,89 @@ describe('selectRecentTurns', () => {
       { role: 'user' as const, content: 'hi' },
     ];
     expect(selectRecentTurns(messages)[0]?.role).toBe('user');
+  });
+});
+
+describe('sanitizeLeadFields (the lead details a model reply carries)', () => {
+  const lead = (overrides: Record<string, string> = {}) => ({
+    name: 'Jane Doe',
+    phone: '7705550147',
+    email: 'jane@example.com',
+    business: 'Doe Plumbing',
+    need: 'missed after-hours calls',
+    callbackWindow: 'afternoon_1_3',
+    ...overrides,
+  });
+
+  it('passes clean values through unchanged', () => {
+    expect(sanitizeLeadFields(lead())).toEqual(lead());
+  });
+
+  it('has an empty lead with six empty strings', () => {
+    expect(EMPTY_LEAD).toEqual({ name: '', phone: '', email: '', business: '', need: '', callbackWindow: '' });
+    expect(Object.isFrozen(EMPTY_LEAD)).toBe(true);
+  });
+
+  it.each([
+    ['(770) 555-0147', '7705550147'],
+    ['770.555.0147', '7705550147'],
+    ['+1 (770) 555-0147', '7705550147'],
+    ['1-770-555-0147', '7705550147'],
+    ['17705550147', '7705550147'], // 11 digits with a leading 1 is normalized to 10
+    ['  770 555 0147 ', '7705550147'],
+  ])('normalizes the phone %j to %j', (phone, expected) => {
+    expect(sanitizeLeadFields(lead({ phone })).phone).toBe(expected);
+  });
+
+  it.each(['', '770555014', '770-555-01470', '2-770-555-0147', 'call me', '770-555-0147 ext 5', '12345678901234567890123456789012345678901'])(
+    'turns the unusable phone %j into an empty string',
+    (phone) => {
+      expect(sanitizeLeadFields(lead({ phone })).phone).toBe('');
+    },
+  );
+
+  it('keeps a valid email (trimmed) and empties anything the lead validator would refuse', () => {
+    expect(sanitizeLeadFields(lead({ email: '  jane@example.com ' })).email).toBe('jane@example.com');
+    for (const email of ['nope', 'jane@example', 'jane@example.com,evil@example.org', 'Jane <jane@example.com>', '"jane"@example.com', 'jane @example.com', '']) {
+      expect(sanitizeLeadFields(lead({ email })).email, email).toBe('');
+    }
+  });
+
+  it('clamps over-long text to the field limits (name 80, business 120, need 500)', () => {
+    const result = sanitizeLeadFields(lead({ name: 'N'.repeat(200), business: 'B'.repeat(300), need: 'n'.repeat(800) }));
+    expect(result.name).toHaveLength(80);
+    expect(result.business).toHaveLength(120);
+    expect(result.need).toHaveLength(500);
+  });
+
+  it('strips markup and control characters, and keeps names and businesses on one line', () => {
+    const result = sanitizeLeadFields(lead({ name: '<b>Jane</b>\u0007\nDoe', business: 'Doe\r\n<i>Plumbing</i>', need: '<script>x</script>missed calls' }));
+    expect(result.name).toBe('Jane Doe');
+    expect(result.business).toBe('Doe Plumbing');
+    expect(result.need).toBe('xmissed calls');
+  });
+
+  it('keeps the four callback windows and empties anything else', () => {
+    for (const window of CALLBACK_WINDOWS) expect(sanitizeLeadFields(lead({ callbackWindow: window })).callbackWindow).toBe(window);
+    expect(sanitizeLeadFields(lead({ callbackWindow: '' })).callbackWindow).toBe('');
+    for (const callbackWindow of ['afternoon', 'Morning_9_11', 'late', 'noon', ' midday_11_1']) {
+      expect(sanitizeLeadFields(lead({ callbackWindow })).callbackWindow, callbackWindow).toBe('');
+    }
+  });
+
+  it('does not modify its input and returns a fresh object', () => {
+    const input = lead({ phone: '(770) 555-0147' });
+    const copy = { ...input };
+    const result = sanitizeLeadFields(input);
+    expect(input).toEqual(copy);
+    expect(result).not.toBe(input);
+  });
+
+  it('copes with hostile input quickly', () => {
+    const started = performance.now();
+    const result = sanitizeLeadFields(lead({ name: '<a'.repeat(200_000), need: '<a'.repeat(200_000), business: '<'.repeat(400_000) }));
+    expect(performance.now() - started).toBeLessThan(100);
+    expect(result.name.length).toBeLessThanOrEqual(80);
+    expect(result.need.length).toBeLessThanOrEqual(500);
   });
 });

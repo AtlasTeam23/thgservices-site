@@ -2,29 +2,44 @@ import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import KNOWLEDGE from '../knowledge.md';
 import SYSTEM_PROMPT_TEMPLATE from '../system-prompt.md';
-import { FALLBACK_REPLY, HANDOFF, OFF_TOPIC_REPLY, PRICING_REPLY } from './copy';
+import { FALLBACK_REPLY, OFF_TOPIC_REPLY } from './copy';
 import { isMockProvider, llmApiKey, type Env } from './env';
+import { mockReply } from './mock';
 import { clampLength, sanitizeText } from './sanitize';
-import type { ChatMessage } from './validation';
+import { CALLBACK_WINDOWS, EMPTY_LEAD, sanitizeLeadFields, type ChatMessage } from './validation';
 
 // --- reply shape -----------------------------------------------------------------
 
-const INTENTS = ['answer', 'pricing', 'off_topic', 'handoff', 'unsure'] as const;
+const INTENTS = ['answer', 'pricing', 'off_topic', 'handoff', 'unsure', 'collecting'] as const;
+// The callback window in `lead` is one of the four values, or "" while the visitor has not chosen one.
+const LEAD_WINDOWS = ['', ...CALLBACK_WINDOWS] as const;
 
 /**
  * Validates the parsed JSON after the call. Kept next to REPLY_JSON_SCHEMA; a test
- * checks the two agree.
+ * checks the two agree. The lead fields are cleaned afterwards by sanitizeLeadFields.
  */
+const LeadSchema = z.object({
+  name: z.string(),
+  phone: z.string(),
+  email: z.string(),
+  business: z.string(),
+  need: z.string(),
+  callbackWindow: z.enum(LEAD_WINDOWS),
+});
+
 export const ReplySchema = z.object({
   reply: z.string(),
   intent: z.enum(INTENTS),
   offerCallback: z.boolean(),
+  readyToConfirm: z.boolean(),
+  lead: LeadSchema,
 });
 export type Reply = z.infer<typeof ReplySchema>;
 
 /**
  * Written by hand on purpose (plan section 2.4). The SDK's zod helper drops `enum`
  * under zod 4, which would turn `intent` into a hint instead of a constraint.
+ * Every property is required at both levels and extra properties are refused.
  */
 export const REPLY_JSON_SCHEMA = {
   type: 'object',
@@ -32,8 +47,22 @@ export const REPLY_JSON_SCHEMA = {
     reply: { type: 'string' },
     intent: { type: 'string', enum: INTENTS },
     offerCallback: { type: 'boolean' },
+    readyToConfirm: { type: 'boolean' },
+    lead: {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        phone: { type: 'string' },
+        email: { type: 'string' },
+        business: { type: 'string' },
+        need: { type: 'string' },
+        callbackWindow: { type: 'string', enum: LEAD_WINDOWS },
+      },
+      required: ['name', 'phone', 'email', 'business', 'need', 'callbackWindow'],
+      additionalProperties: false,
+    },
   },
-  required: ['reply', 'intent', 'offerCallback'],
+  required: ['reply', 'intent', 'offerCallback', 'readyToConfirm', 'lead'],
   additionalProperties: false,
 } as const;
 
@@ -52,7 +81,32 @@ const ATTEMPT_TIMEOUT_MS = 12_000;
 // "$" sequences in the knowledge text (the "$80K" sentence) from being read as patterns.
 export const SYSTEM_PROMPT = SYSTEM_PROMPT_TEMPLATE.replace('{{KNOWLEDGE}}', () => KNOWLEDGE.trim());
 
-const fallbackReply = (): Reply => ({ reply: FALLBACK_REPLY, intent: 'unsure', offerCallback: true });
+/** A reply that carries no visitor details. Every answer has `lead` and `readyToConfirm`, even the canned ones. */
+const withoutDetails = (reply: string, intent: Reply['intent'], offerCallback: boolean): Reply => ({
+  reply,
+  intent,
+  offerCallback,
+  readyToConfirm: false,
+  lead: { ...EMPTY_LEAD },
+});
+
+const fallbackReply = (): Reply => withoutDetails(FALLBACK_REPLY, 'unsure', true);
+
+/** The off-topic decline, used when a guard answers without calling the model. */
+export const offTopicReply = (): Reply => withoutDetails(OFF_TOPIC_REPLY, 'off_topic', false);
+
+/**
+ * Applies the server's rules to a reply's visitor details (contract section 1.1): the lead fields
+ * are cleaned, and `readyToConfirm` is DERIVED from the cleaned lead: true exactly when it holds a
+ * name and a 10-digit phone number. The model's own flag is ignored, in both directions (it stays
+ * in the schema so the prompt can talk about wrapping up, but the server's value wins). A model
+ * that forgets the flag therefore cannot stop the form appearing, and one that sets it early cannot
+ * make it appear without a number to call. Used for the model's output and the mock's.
+ */
+const enforceLead = (reply: Reply): Reply => {
+  const lead = sanitizeLeadFields(reply.lead);
+  return { ...reply, lead, readyToConfirm: lead.name !== '' && /^\d{10}$/.test(lead.phone) };
+};
 
 // --- client seam -----------------------------------------------------------------
 
@@ -62,7 +116,7 @@ export interface CreateParams {
   max_tokens: number;
   system: string;
   messages: ChatMessage[];
-  output_config: { effort: 'low'; format: { type: 'json_schema'; schema: typeof REPLY_JSON_SCHEMA } };
+  output_config: { effort: 'medium'; format: { type: 'json_schema'; schema: typeof REPLY_JSON_SCHEMA } };
 }
 
 export interface ContentBlock {
@@ -92,7 +146,7 @@ export interface GenerateDeps {
 const REQUEST_BASE = {
   max_tokens: MAX_TOKENS,
   system: SYSTEM_PROMPT,
-  output_config: { effort: 'low', format: { type: 'json_schema', schema: REPLY_JSON_SCHEMA } },
+  output_config: { effort: 'medium', format: { type: 'json_schema', schema: REPLY_JSON_SCHEMA } },
 } as const satisfies Omit<CreateParams, 'model' | 'messages'>;
 
 // maxRetries: 0 because this module owns the retry policy (one retry on a 5xx or a dropped
@@ -112,35 +166,6 @@ const createAnthropicClient = (apiKey: string, timeoutMs: number): LlmClient => 
         };
       },
     },
-  };
-};
-
-// --- mock provider ---------------------------------------------------------------
-
-/** Deterministic canned replies keyed on the latest user message. No network, no key. */
-const mockReply = (turns: ChatMessage[]): Reply => {
-  const text = (turns.findLast((turn) => turn.role === 'user')?.content ?? '').toLowerCase();
-  if (/\b(price|prices|pricing|cost|costs|much)\b/.test(text)) {
-    return { reply: PRICING_REPLY, intent: 'pricing', offerCallback: false };
-  }
-  if (/\b(person|human)\b/.test(text)) {
-    return { reply: HANDOFF, intent: 'handoff', offerCallback: false };
-  }
-  if (/\b(essay|weather|joke)\b/.test(text)) {
-    return { reply: OFF_TOPIC_REPLY, intent: 'off_topic', offerCallback: false };
-  }
-  if (/\b(call|callback|quote|demo)\b/.test(text)) {
-    return {
-      reply: 'Happy to help with that. Want me to have someone call you?',
-      intent: 'answer',
-      offerCallback: true,
-    };
-  }
-  return {
-    reply:
-      'We help local businesses use AI to save time on the busywork, like missed calls, email, ads and bookkeeping.',
-    intent: 'answer',
-    offerCallback: false,
   };
 };
 
@@ -178,7 +203,7 @@ const interpret = (response: CreateResponse): { reply: Reply; outcome: Outcome }
 
   const reply = clampLength(sanitizeText(parsed.data.reply), REPLY_MAX_CHARS).trim();
   if (reply.length === 0) return { reply: fallbackReply(), outcome: 'empty' };
-  return { reply: { ...parsed.data, reply }, outcome: 'ok' };
+  return { reply: enforceLead({ ...parsed.data, reply }), outcome: 'ok' };
 };
 
 const callModel = async (env: Env, turns: ChatMessage[], client: LlmClient, retryDelayMs: number): Promise<Reply> => {
@@ -219,7 +244,7 @@ const callModel = async (env: Env, turns: ChatMessage[], client: LlmClient, retr
  * into the 503 lead-only response.
  */
 export const generateReply = async (env: Env, turns: ChatMessage[], deps: GenerateDeps = {}): Promise<Reply> => {
-  if (isMockProvider(env)) return mockReply(turns);
+  if (isMockProvider(env)) return enforceLead(mockReply(turns));
   const apiKey = llmApiKey(env);
   if (!apiKey) throw new LlmUnavailableError('LLM_API_KEY is not set');
   const client = deps.client ?? createAnthropicClient(apiKey, deps.timeoutMs ?? ATTEMPT_TIMEOUT_MS);

@@ -13,6 +13,8 @@ import { postChat, postLead } from '../api';
 import { getToken } from '../turnstile';
 import { getLenis } from '../../../hooks/useLenis';
 import { STORAGE_KEY } from '../storage';
+import { EMPTY_LEAD_DRAFT } from '../leadDraft';
+import type { Intent, LeadDraft } from '../types';
 import { track } from '../../../lib/track';
 import * as copy from '../copy';
 
@@ -38,10 +40,24 @@ function Harness({
   );
 }
 
-const reply = (text: string, over: { intent?: 'answer' | 'handoff'; offerCallback?: boolean } = {}) =>
+const reply = (
+  text: string,
+  over: {
+    intent?: Intent;
+    offerCallback?: boolean;
+    readyToConfirm?: boolean;
+    lead?: Partial<LeadDraft>;
+  } = {}
+) =>
   ({
     kind: 'ok',
-    data: { reply: text, intent: over.intent ?? 'answer', offerCallback: over.offerCallback ?? false },
+    data: {
+      reply: text,
+      intent: over.intent ?? 'answer',
+      offerCallback: over.offerCallback ?? false,
+      readyToConfirm: over.readyToConfirm ?? false,
+      lead: { ...EMPTY_LEAD_DRAFT, ...over.lead },
+    },
   }) as const;
 
 const stubMatchMedia = (matching: string[]) => {
@@ -366,6 +382,349 @@ describe('ChatPanel', () => {
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent('Conversation is too long to send');
     expect(alert).toHaveFocus();
+  });
+
+  describe('conversational lead capture (plan v1.1)', () => {
+    const FILLED = {
+      name: 'Dana Lee',
+      phone: '7705550147',
+      business: 'Lee Landscaping',
+      need: 'missed after-hours calls',
+      callbackWindow: 'afternoon_1_3' as const,
+    };
+    const readyReply = () =>
+      reply("Here's what I've got. Check the box below and tap send.", {
+        intent: 'collecting',
+        readyToConfirm: true,
+        lead: FILLED,
+      });
+
+    const formShown = () =>
+      vi.mocked(track).mock.calls.filter(([name]) => name === 'concierge_lead_form_shown').length;
+
+    it('shows the form pre-filled under the reply, with the heading and an unchecked box', async () => {
+      const user = userEvent.setup();
+      postChatMock.mockResolvedValue(readyReply());
+      render(<Harness />);
+      await user.type(await screen.findByRole('textbox', { name: 'Message' }), 'Dana Lee, 770-555-0147{Enter}');
+
+      const heading = await screen.findByText("Here's what I have. Check the box and tap send.");
+      expect(heading).toBeInTheDocument();
+      expect(screen.getByLabelText('Name')).toHaveValue('Dana Lee');
+      expect(screen.getByLabelText('Phone')).toHaveValue('(770) 555-0147');
+      expect(screen.getByLabelText('Email (optional)')).toHaveValue('');
+      expect(screen.getByLabelText('Business name')).toHaveValue('Lee Landscaping');
+      expect(screen.getByLabelText('What do you need help with? (optional)')).toHaveValue('missed after-hours calls');
+      expect(screen.getByLabelText('Best callback window')).toHaveValue('afternoon_1_3');
+      expect(screen.getByLabelText(copy.CONSENT)).not.toBeChecked();
+      // No composer while the form is up (as with every form), and the form follows the reply directly.
+      expect(screen.queryByRole('textbox', { name: 'Message' })).not.toBeInTheDocument();
+      const log = screen.getByRole('log');
+      expect(
+        log.compareDocumentPosition(screen.getByRole('form', { name: 'Callback request' }))
+      ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+      expect(within(log).getAllByRole('listitem').at(-1)).toHaveTextContent("Here's what I've got.");
+      expect(formShown()).toBe(1);
+    });
+
+    it('sends the pre-filled lead after one tick of the box, with the conversation as transcript', async () => {
+      const user = userEvent.setup();
+      postChatMock.mockResolvedValue(readyReply());
+      postLeadMock.mockResolvedValue({ kind: 'ok', delivery: 'email' });
+      render(<Harness />);
+      await user.type(await screen.findByRole('textbox', { name: 'Message' }), 'Dana Lee, 770-555-0147{Enter}');
+      await screen.findByLabelText('Name');
+
+      await user.click(screen.getByLabelText(copy.CONSENT));
+      await user.click(screen.getByRole('button', { name: 'Request my callback' }));
+
+      expect(postLeadMock).toHaveBeenCalledTimes(1);
+      const req = postLeadMock.mock.calls[0][0];
+      expect(req).toMatchObject({ ...FILLED, consent: true });
+      expect(req.transcript.map((t) => t.content)).toEqual([
+        'Dana Lee, 770-555-0147',
+        "Here's what I've got. Check the box below and tap send.",
+      ]);
+      expect(
+        await screen.findByText(/Thanks, Dana! Someone from our team will reach out during your Afternoon/)
+      ).toBeInTheDocument();
+      expect(screen.queryByText("Here's what I have. Check the box and tap send.")).not.toBeInTheDocument();
+    });
+
+    it('does not send anything until the visitor ticks the box', async () => {
+      const user = userEvent.setup();
+      postChatMock.mockResolvedValue(readyReply());
+      render(<Harness />);
+      await user.type(await screen.findByRole('textbox', { name: 'Message' }), 'Dana Lee, 770-555-0147{Enter}');
+      await user.click(await screen.findByRole('button', { name: 'Request my callback' }));
+      expect(postLeadMock).not.toHaveBeenCalled();
+      expect(screen.getByText('Check this box so we can contact you')).toBeInTheDocument();
+    });
+
+    it('follows a three-turn collection: the form appears only once name and number are in', async () => {
+      const user = userEvent.setup();
+      postChatMock
+        .mockResolvedValueOnce(reply('Happy to. What is your name?', { intent: 'collecting' }))
+        .mockResolvedValueOnce(
+          reply('Thanks, Dana. What is the best number to reach you?', {
+            intent: 'collecting',
+            lead: { name: 'Dana Lee' },
+          })
+        )
+        .mockResolvedValueOnce(
+          reply("Here's what I've got. Check the box below and tap send.", {
+            intent: 'collecting',
+            readyToConfirm: true,
+            lead: { name: 'Dana Lee', phone: '7705550147' },
+          })
+        );
+      render(<Harness />);
+      const box = await screen.findByRole('textbox', { name: 'Message' });
+
+      await user.type(box, 'can you have someone call me?{Enter}');
+      await screen.findByText('Happy to. What is your name?');
+      expect(screen.queryByLabelText('Name')).not.toBeInTheDocument();
+
+      await user.type(screen.getByRole('textbox', { name: 'Message' }), 'Dana Lee{Enter}');
+      await screen.findByText('Thanks, Dana. What is the best number to reach you?');
+      expect(screen.queryByLabelText('Name')).not.toBeInTheDocument();
+
+      await user.type(screen.getByRole('textbox', { name: 'Message' }), '770-555-0147{Enter}');
+      expect(await screen.findByLabelText('Name')).toHaveValue('Dana Lee');
+      expect(screen.getByLabelText('Phone')).toHaveValue('(770) 555-0147');
+      expect(screen.getByLabelText('Business name')).toHaveValue('');
+      expect(screen.getByLabelText(copy.CONSENT)).not.toBeChecked();
+      expect(formShown()).toBe(1);
+    });
+
+    it('"Yes, call me" after partial details opens the form with what was gathered', async () => {
+      const user = userEvent.setup();
+      postChatMock.mockResolvedValue(
+        reply('Thanks Dana. Want me to have someone call you?', {
+          intent: 'collecting',
+          offerCallback: true,
+          lead: { name: 'Dana Lee', business: 'Lee Landscaping' },
+        })
+      );
+      render(<Harness />);
+      await user.type(
+        await screen.findByRole('textbox', { name: 'Message' }),
+        "I'm Dana Lee at Lee Landscaping, can you help with calls?{Enter}"
+      );
+      await user.click(await screen.findByRole('button', { name: 'Yes, call me' }));
+
+      expect(await screen.findByLabelText('Name')).toHaveValue('Dana Lee');
+      expect(screen.getByLabelText('Business name')).toHaveValue('Lee Landscaping');
+      expect(screen.getByLabelText('Phone')).toHaveValue('');
+      expect(screen.getByLabelText(copy.CONSENT)).not.toBeChecked();
+      // This form was asked for by the visitor, so no "here's what I have" heading.
+      expect(screen.queryByText("Here's what I have. Check the box and tap send.")).not.toBeInTheDocument();
+      expect(screen.getByText(copy.CALLBACK_INTRO)).toBeInTheDocument();
+    });
+
+    describe('"Not now, keep chatting"', () => {
+      const dismissName = copy.LEAD_FORM_DISMISS;
+
+      it('hides the form and brings the composer back, focused', async () => {
+        const user = userEvent.setup();
+        postChatMock.mockResolvedValue(readyReply());
+        render(<Harness />);
+        await user.type(await screen.findByRole('textbox', { name: 'Message' }), 'Dana Lee, 770-555-0147{Enter}');
+        await screen.findByLabelText('Name');
+        vi.mocked(track).mockClear();
+
+        await user.click(screen.getByRole('button', { name: dismissName }));
+
+        expect(screen.queryByRole('form', { name: 'Callback request' })).not.toBeInTheDocument();
+        expect(screen.queryByText("Here's what I have. Check the box and tap send.")).not.toBeInTheDocument();
+        const composer = screen.getByRole('textbox', { name: 'Message' });
+        expect(composer).toHaveFocus();
+        expect(screen.getByRole('alert')).toBeEmptyDOMElement(); // the composer's alert: no error shown
+        expect(track).not.toHaveBeenCalled();
+        // The reply it was attached to is still the last message.
+        expect(within(screen.getByRole('log')).getAllByRole('listitem').at(-1)).toHaveTextContent("Here's what I've got.");
+      });
+
+      it('lets the visitor keep talking, and what was gathered pre-fills the form when it comes back', async () => {
+        const user = userEvent.setup();
+        postChatMock
+          .mockResolvedValueOnce(readyReply())
+          .mockResolvedValueOnce(
+            reply('Happy to explain. Want me to have someone call you?', { offerCallback: true })
+          );
+        render(<Harness />);
+        await user.type(await screen.findByRole('textbox', { name: 'Message' }), 'Dana Lee, 770-555-0147{Enter}');
+        await user.click(await screen.findByRole('button', { name: dismissName }));
+
+        await user.type(screen.getByRole('textbox', { name: 'Message' }), 'what does call handling do?{Enter}');
+        await user.click(await screen.findByRole('button', { name: 'Yes, call me' }));
+
+        expect(await screen.findByLabelText('Name')).toHaveValue('Dana Lee');
+        expect(screen.getByLabelText('Phone')).toHaveValue('(770) 555-0147');
+        expect(screen.getByLabelText('Business name')).toHaveValue('Lee Landscaping');
+        expect(screen.getByLabelText(copy.CONSENT)).not.toBeChecked();
+        expect(postLeadMock).not.toHaveBeenCalled();
+      });
+
+      it('does not bring the form back for the same details; a changed phone number does', async () => {
+        const user = userEvent.setup();
+        postChatMock
+          .mockResolvedValueOnce(readyReply())
+          // The model carries the lead forward and says ready again on every reply.
+          .mockResolvedValueOnce(
+            reply('Call handling answers every call.', { intent: 'collecting', readyToConfirm: true, lead: FILLED })
+          )
+          .mockResolvedValueOnce(
+            reply('Got the new number.', {
+              intent: 'collecting',
+              readyToConfirm: true,
+              lead: { ...FILLED, phone: '4045550100' },
+            })
+          );
+        render(<Harness />);
+        await user.type(await screen.findByRole('textbox', { name: 'Message' }), 'Dana Lee, 770-555-0147{Enter}');
+        await user.click(await screen.findByRole('button', { name: dismissName }));
+
+        await user.type(screen.getByRole('textbox', { name: 'Message' }), 'what does call handling do?{Enter}');
+        expect(await screen.findByText('Call handling answers every call.')).toBeInTheDocument();
+        expect(screen.queryByLabelText('Name')).not.toBeInTheDocument();
+        expect(screen.getByRole('textbox', { name: 'Message' })).toBeInTheDocument();
+
+        await user.type(screen.getByRole('textbox', { name: 'Message' }), 'use 404-555-0100{Enter}');
+        expect(await screen.findByLabelText('Phone')).toHaveValue('(404) 555-0100');
+        expect(screen.getByLabelText('Name')).toHaveValue('Dana Lee');
+        expect(screen.getByLabelText(copy.CONSENT)).not.toBeChecked();
+      });
+
+      it('"ok, go ahead and call me" after a dismissal: a Yes, call me chip brings the form back', async () => {
+        const user = userEvent.setup();
+        postChatMock
+          .mockResolvedValueOnce(readyReply())
+          .mockResolvedValueOnce(
+            reply('Great. Check the box below and tap send.', {
+              intent: 'collecting',
+              readyToConfirm: true,
+              lead: FILLED,
+            })
+          );
+        render(<Harness />);
+        await user.type(await screen.findByRole('textbox', { name: 'Message' }), 'Dana Lee, 770-555-0147{Enter}');
+        await user.click(await screen.findByRole('button', { name: dismissName }));
+        await user.type(screen.getByRole('textbox', { name: 'Message' }), 'ok, go ahead and call me{Enter}');
+
+        await screen.findByText('Great. Check the box below and tap send.');
+        expect(screen.queryByLabelText('Name')).not.toBeInTheDocument();
+        await user.click(await screen.findByRole('button', { name: 'Yes, call me' }));
+
+        expect(await screen.findByLabelText('Name')).toHaveValue('Dana Lee');
+        expect(screen.getByLabelText('Phone')).toHaveValue('(770) 555-0147');
+        expect(screen.getByLabelText(copy.CONSENT)).not.toBeChecked();
+        expect(screen.queryByText("Here's what I have. Check the box and tap send.")).not.toBeInTheDocument();
+      });
+
+      it('keeps what the visitor typed in the form when they choose "Not now"', async () => {
+        const user = userEvent.setup();
+        postChatMock.mockResolvedValueOnce(readyReply()).mockResolvedValueOnce(
+          reply('Want me to have someone call you?', { offerCallback: true })
+        );
+        render(<Harness />);
+        await user.type(await screen.findByRole('textbox', { name: 'Message' }), 'Dana Lee, 770-555-0147{Enter}');
+        const business = await screen.findByLabelText('Business name');
+        await user.clear(business);
+        await user.type(business, 'Lee Lawn and Garden');
+        await user.click(screen.getByRole('button', { name: dismissName }));
+
+        await user.type(screen.getByRole('textbox', { name: 'Message' }), 'how does it work?{Enter}');
+        await user.click(await screen.findByRole('button', { name: 'Yes, call me' }));
+        expect(await screen.findByLabelText('Business name')).toHaveValue('Lee Lawn and Garden');
+      });
+
+      it('is also offered on the form the visitor asked for with "Request a callback"', async () => {
+        const user = userEvent.setup();
+        render(<Harness />);
+        await user.click(await screen.findByRole('button', { name: 'Request a callback' }));
+        await user.click(await screen.findByRole('button', { name: dismissName }));
+        expect(screen.queryByLabelText('Name')).not.toBeInTheDocument();
+        expect(screen.getByRole('textbox', { name: 'Message' })).toBeInTheDocument();
+      });
+
+      it('is not offered in lead-only mode, where there is nothing to chat with', async () => {
+        const user = userEvent.setup();
+        postChatMock.mockResolvedValue({ kind: 'lead_only' });
+        render(<Harness />);
+        await user.type(await screen.findByRole('textbox', { name: 'Message' }), 'hello{Enter}');
+        expect(await screen.findByLabelText('Name')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Request my callback' })).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: dismissName })).not.toBeInTheDocument();
+      });
+
+      it('is not offered once the chat has ended or the lead was sent (no form then)', async () => {
+        const user = userEvent.setup();
+        postChatMock.mockResolvedValue(readyReply());
+        postLeadMock.mockResolvedValue({ kind: 'ok', delivery: 'email' });
+        render(<Harness />);
+        await user.type(await screen.findByRole('textbox', { name: 'Message' }), 'Dana Lee, 770-555-0147{Enter}');
+        await user.click(await screen.findByLabelText(copy.CONSENT));
+        await user.click(screen.getByRole('button', { name: 'Request my callback' }));
+        await screen.findByText(/Thanks, Dana!/);
+        expect(screen.queryByRole('button', { name: dismissName })).not.toBeInTheDocument();
+      });
+
+      it('opens focused on the consent box when the helper pre-filled the three required fields', async () => {
+        const user = userEvent.setup();
+        postChatMock.mockResolvedValue(readyReply());
+        render(<Harness />);
+        await user.type(await screen.findByRole('textbox', { name: 'Message' }), 'Dana Lee, 770-555-0147{Enter}');
+        expect(await screen.findByLabelText(copy.CONSENT)).toHaveFocus();
+      });
+
+      it('opens on the phone field when only the name was gathered', async () => {
+        const user = userEvent.setup();
+        postChatMock.mockResolvedValue(
+          reply('Thanks Dana. Want me to have someone call you?', {
+            intent: 'collecting',
+            offerCallback: true,
+            lead: { name: 'Dana Lee' },
+          })
+        );
+        render(<Harness />);
+        await user.type(await screen.findByRole('textbox', { name: 'Message' }), "I'm Dana Lee, how much?{Enter}");
+        await user.click(await screen.findByRole('button', { name: 'Yes, call me' }));
+        expect(await screen.findByLabelText('Phone')).toHaveFocus();
+      });
+    });
+
+    it('a reload while the pre-filled form is open brings it back: same details, heading, unchecked box', async () => {
+      const user = userEvent.setup();
+      postChatMock.mockResolvedValue(readyReply());
+      const first = render(<Harness />);
+      await user.type(await screen.findByRole('textbox', { name: 'Message' }), 'Dana Lee, 770-555-0147{Enter}');
+      await screen.findByLabelText('Name');
+      first.unmount();
+
+      // A fresh page load: new panel, no open request, same tab storage.
+      render(<Harness request={null} />);
+      expect(await screen.findByText("Here's what I have. Check the box and tap send.")).toBeInTheDocument();
+      expect(screen.getByLabelText('Name')).toHaveValue('Dana Lee');
+      expect(screen.getByLabelText('Phone')).toHaveValue('(770) 555-0147');
+      expect(screen.getByLabelText('Business name')).toHaveValue('Lee Landscaping');
+      expect(screen.getByLabelText(copy.CONSENT)).not.toBeChecked();
+      expect(screen.queryByRole('textbox', { name: 'Message' })).not.toBeInTheDocument();
+    });
+
+    it('lets the visitor fix a detail before sending', async () => {
+      const user = userEvent.setup();
+      postChatMock.mockResolvedValue(readyReply());
+      postLeadMock.mockResolvedValue({ kind: 'ok', delivery: 'email' });
+      render(<Harness />);
+      await user.type(await screen.findByRole('textbox', { name: 'Message' }), 'Dana, 770-555-0147{Enter}');
+      const business = await screen.findByLabelText('Business name');
+      await user.clear(business);
+      await user.type(business, 'Lee Lawn and Garden');
+      await user.click(screen.getByLabelText(copy.CONSENT));
+      await user.click(screen.getByRole('button', { name: 'Request my callback' }));
+      expect(postLeadMock.mock.calls[0][0].business).toBe('Lee Lawn and Garden');
+    });
   });
 
   it('offers the callback when the reply asks for it', async () => {

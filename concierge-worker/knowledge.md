@@ -26,6 +26,18 @@ We sit down with local business owners, learn how their day actually runs, and f
 
 If a visitor's problem isn't on this list, they can tell us about it and we'll figure out what tooling or process fixes it.
 
+## Who we work with
+
+We work with local businesses of all kinds, especially ones with phones to answer, inboxes to keep up with, ads to run, or books to keep. That includes home-service and trade companies (HVAC, plumbing, electrical, flooring, remodeling, painting, landscaping), professional offices (law, accounting, insurance, real estate), health and wellness practices, restaurants and retail shops, and anyone else running a small business locally. David has run flooring and remodeling companies in several states himself, so the trades are home turf, but the tools work the same way for any business.
+
+## How working with us goes
+
+It starts with a quick call to hear what is eating up your time. Then we sit down with you, in person around Woodstock and metro Atlanta or by video, and map out how your day really runs: calls, leads, estimates, email, ads, and books. From there we pick the smallest mix of software and AI tools that fixes the busywork, and we use what you already have wherever we can. We set it up, connect it, and show your team how it works. After that we stay on as support and tune things as your business changes. On that first call the team gives you a straight answer about scope and cost.
+
+## After-hours calls
+
+When a customer calls after hours, the call gets answered instead of going to voicemail. The caller hears a friendly greeting and says what they need, and the system takes down their name, their number, and the job. Urgent calls can be routed to whoever is on call. Everything else becomes a message with a callback request. You get the details by text or email, so nothing sits in a voicemail box.
+
 ## Products
 
 - LeadQuik (leadquik.com): our flagship, and the one we use every day. AI replies to new leads in seconds, routes conversations, and handles estimating, project management, customer tracking, and Google Ads conversion tracking in one app, for service, professional, and retail businesses. It's available on the App Store.
@@ -38,12 +50,25 @@ If a visitor's problem isn't on this list, they can tell us about it and we'll f
 - Custom apps: we build apps for clients when no off-the-shelf tool does the job. We have teams ready to help.
 - AI Website Concierge: an AI helper that answers your website 24/7. It's a friendly chat helper on a business's website that answers common questions, takes down the visitor's name, phone number, and what they need, and sets up a callback, so the business doesn't lose the job and the owner doesn't have to be glued to the phone. More time for family, fewer missed leads. This chat is a live example of it.
 
+## The AI Website Concierge, for a business
+
+The AI Website Concierge is the same chat helper you are using now, placed on a business's own website. It answers common questions about that business, takes down the visitor's name, phone number, and what they need, and sets up a callback window, day or night. The business gets each lead by email. It is offered as a monthly service, and the team walks through fit and setup on a call.
+
 ## Contact
 
 - Phone: (866) 519-7993
 - Email: developer@leadquik.com
 - The contact form is further down this website.
 - Callbacks: someone from our team reaches out during a two-hour window the visitor picks, on weekdays, Eastern time. The windows are weekday morning 9–11 AM, midday 11 AM–1 PM, afternoon 1–3 PM, and late afternoon 3–5 PM. These are windows, not booked appointments.
+
+## Frequently asked questions
+
+- Do I need to be technical? No. We set things up and show your team how to use them.
+- Will this replace my staff? It is meant to take the repetitive parts off their plate so they can spend more time with customers.
+- Can you work with the tools I already use, like QuickBooks or Xero, Google Ads, my current website, or my phone system? Yes. Working with what you already use is usually where we start.
+- Where are you? Woodstock, Georgia. We serve Cherokee County and metro Atlanta, and we have clients in other states too.
+- How do I get started? With a quick call. The chat helper can set one up for you right here, or you can call (866) 519-7993.
+- Can I see examples? The team shares real examples on a call.
 
 ## Things the helper must not claim
 

@@ -171,6 +171,10 @@ export default function ChatPanel({ open, request, onClose, returnFocusRef }: Ch
             sending={chat.leadSending}
             deliveryFailed={chat.leadError}
             failureMessage={chat.leadErrorMessage}
+            prefill={chat.gatheredLead}
+            heading={chat.leadHeading}
+            // Lead-only mode has nothing to go back to, so no "keep chatting" there.
+            onDismiss={status === 'idle' ? chat.dismissLeadForm : undefined}
           />
         )}
       </MessageList>

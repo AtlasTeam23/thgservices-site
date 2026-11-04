@@ -18,6 +18,7 @@ import {
   GREETING,
   HANDOFF,
   isKnownChip,
+  LEAD_FORM_HEADING,
   LEAD_ONLY,
   OFFER_CHIPS,
   OFFER_NO,
@@ -27,12 +28,14 @@ import {
   WINDOWS,
 } from './copy';
 import type { OpenDetail } from './events';
+import { EMPTY_LEAD_DRAFT, hasNewDetail, LEAD_DRAFT_KEYS, mergeLeadDraft } from './leadDraft';
 import { loadState, newId, saveState } from './storage';
 import { getToken } from './turnstile';
 import type {
   ChatRequest,
   ChatTurn,
   FieldErrors,
+  LeadDraft,
   LeadInput,
   LeadRequest,
   Message,
@@ -53,6 +56,13 @@ export type ConciergeState = {
   leadError: boolean;
   /** Replaces the default delivery-failed text in that notice (null means use the default). */
   leadErrorMessage: string | null;
+  /**
+   * What the helper has gathered from the conversation so far. Pre-fills the lead
+   * form whenever it opens. Kept in memory only, never persisted.
+   */
+  gatheredLead: LeadDraft;
+  /** One line shown above the form when the helper opened it itself (null otherwise). */
+  leadHeading: string | null;
   /** Inline message for the composer (for example TOO_LONG). */
   composerError: string | null;
   sessionId: string;
@@ -110,21 +120,52 @@ function createController() {
   const lastMessage = stored.messages.at(-1);
   const resumeLeadOnly =
     !stored.ended && lastMessage?.role === 'assistant' && lastMessage.content === LEAD_ONLY;
+  // Not if the visitor dismissed that very form ("Not now, keep chatting") before the reload.
+  const dismissedBeforeReload =
+    stored.leadFormDismissedAfter !== undefined && lastMessage?.id === stored.leadFormDismissedAfter;
   const resumeForm =
     !stored.ended &&
     !stored.leadSubmitted &&
+    !dismissedBeforeReload &&
     lastMessage?.role === 'assistant' &&
     (lastMessage.content === CALLBACK_INTRO || lastMessage.content === LEAD_ONLY);
+  // A form the helper opened itself (readyToConfirm) is not recognisable from its message
+  // text, so it was stored with the id of the message it sat under.
+  const resumeReadyForm =
+    !stored.ended &&
+    !stored.leadSubmitted &&
+    stored.leadFormOpenAfter !== undefined &&
+    lastMessage?.id === stored.leadFormOpenAfter;
+
+  // What the helper had gathered when the visitor last dismissed the form, so a later
+  // readyToConfirm only brings it back for something new. In memory only; null until a dismissal.
+  let dismissedSnapshot: LeadDraft | null = null;
+  // The persisted half of the same fact: the last message at that moment.
+  let dismissedAfterId: string | undefined = stored.leadFormDismissedAfter;
+  // The id of the message a readyToConfirm form is open under (persisted), or undefined.
+  let openFormAfterId: string | undefined = resumeReadyForm ? stored.leadFormOpenAfter : undefined;
+  // Fields the visitor typed themselves; a later model reply may not overwrite these.
+  const visitorEdited = new Set<keyof LeadDraft>();
+
+  /** The visitor asked for the form (or lead-only mode needs it): any earlier "not now" is void. */
+  const clearDismissal = () => {
+    dismissedSnapshot = null;
+    dismissedAfterId = undefined;
+  };
 
   let state: ConciergeState = {
     messages: stored.messages,
     status: stored.ended ? 'ended' : resumeLeadOnly ? 'leadOnly' : 'idle',
     chips: onlyGreeting && !stored.ended ? CHIPS : [],
-    showLeadForm: resumeForm,
+    showLeadForm: resumeForm || resumeReadyForm,
     leadDone: stored.leadSubmitted,
     leadSending: false,
     leadError: false,
     leadErrorMessage: null,
+    // Seeded from the stored draft (present only while a readyToConfirm form was open), so
+    // even after dismissing it a "Request a callback" comes up pre-filled.
+    gatheredLead: { ...EMPTY_LEAD_DRAFT, ...stored.leadDraft },
+    leadHeading: resumeReadyForm ? LEAD_FORM_HEADING : null,
     composerError: null,
     sessionId: stored.sessionId,
     turn: stored.messages.filter((m) => m.role === 'user' && !m.greeting).length,
@@ -147,6 +188,10 @@ function createController() {
       leadSubmitted: state.leadDone,
       ended: state.status === 'ended',
       utm,
+      leadFormDismissedAfter: dismissedAfterId,
+      leadFormOpenAfter: openFormAfterId,
+      // The transcript already holds this data; it only needs to survive while the form is open.
+      leadDraft: openFormAfterId ? state.gatheredLead : undefined,
     });
     listeners.forEach((l) => l());
   };
@@ -159,6 +204,8 @@ function createController() {
       set({ chips: [] });
       return;
     }
+    // The visitor asked for the form themselves: any earlier "not now" no longer applies.
+    clearDismissal();
     set({
       messages: [
         ...state.messages,
@@ -166,6 +213,7 @@ function createController() {
         makeMessage('assistant', CALLBACK_INTRO),
       ],
       showLeadForm: true,
+      leadHeading: null,
       leadError: false,
       chips: [],
     });
@@ -175,12 +223,43 @@ function createController() {
   const applyChatResult = (res: ChatResult) => {
     switch (res.kind) {
       case 'ok': {
-        const { reply, intent, offerCallback } = res.data;
+        const { reply, intent, offerCallback, readyToConfirm, lead } = res.data;
         if (intent === 'off_topic') track('concierge_off_topic');
-        push(makeMessage('assistant', reply, intent === 'handoff' ? { callLink: true } : {}), {
+        // Details the helper has gathered so far; a later empty field never erases one, and
+        // a field the visitor typed themselves is never overwritten.
+        const gatheredLead = mergeLeadDraft(state.gatheredLead, lead, visitorEdited);
+        // The helper says it has what it needs: show the form right under this reply,
+        // pre-filled, for the visitor to check the consent box and send. Defensive: only if
+        // the cleaned details really hold a name and a 10-digit number; never if a lead was
+        // already sent or the form is already up; and after a dismissal ("Not now, keep
+        // chatting") only for a new or changed detail, else it would pop up after every reply.
+        const pending = readyToConfirm && !state.leadDone && !state.showLeadForm;
+        const hasContact = gatheredLead.name !== '' && /^\d{10}$/.test(gatheredLead.phone);
+        const allowedAgain =
+          dismissedSnapshot === null || hasNewDetail(dismissedSnapshot, lead, visitorEdited);
+        const openForm = pending && hasContact && allowedAgain;
+        const message = makeMessage('assistant', reply, intent === 'handoff' ? { callLink: true } : {});
+        if (openForm) {
+          clearDismissal();
+          openFormAfterId = message.id;
+        }
+        push(message, {
           status: 'idle',
-          chips: offerCallback && !state.leadDone && !state.showLeadForm ? OFFER_CHIPS : [],
+          gatheredLead,
+          ...(openForm ? { showLeadForm: true, leadHeading: LEAD_FORM_HEADING, leadError: false } : {}),
+          // A callback offer brings both chips. If the model said "check the box" but the form
+          // is not coming up (dismissed, or details missing), the reply would point at nothing,
+          // so offer the one-tap way in: "Yes, call me" opens it pre-filled.
+          chips:
+            offerCallback && !state.leadDone && !state.showLeadForm && !openForm
+              ? OFFER_CHIPS
+              : pending && !openForm
+                ? [OFFER_YES]
+                : [],
         });
+        // Counts every opening, including re-opens after a dismissal: it is a count of times
+        // the form was shown, not of distinct visitors.
+        if (openForm) track('concierge_lead_form_shown');
         return;
       }
       case 'rate_limited':
@@ -197,10 +276,12 @@ function createController() {
       case 'lead_only': {
         const showForm = !state.leadDone;
         const newlyShown = showForm && !state.showLeadForm;
+        if (newlyShown) clearDismissal();
         push(makeMessage('assistant', res.reply ?? LEAD_ONLY), {
           status: 'leadOnly',
           chips: [],
           showLeadForm: showForm,
+          leadHeading: newlyShown ? null : state.leadHeading,
         });
         if (newlyShown) track('concierge_lead_form_shown');
         return;
@@ -323,8 +404,10 @@ function createController() {
       });
       track('concierge_lead');
       const first = input.name.split(/\s+/)[0];
+      openFormAfterId = undefined; // sent: nothing left to resume after a reload
       push(makeMessage('assistant', CONFIRM(first, WINDOWS[input.callbackWindow])), {
         showLeadForm: false,
+        leadHeading: null,
         leadDone: true,
         leadSending: false,
         leadError: false,
@@ -359,6 +442,43 @@ function createController() {
     return { ok: false };
   };
 
+  /**
+   * "Not now, keep chatting": close the form and bring the composer back. What the
+   * helper gathered stays, and so does anything the visitor typed in the form (`edits`),
+   * so a later "Yes, call me" re-opens it pre-filled. A later readyToConfirm only brings
+   * the form back for something new (see applyChatResult). Lead-only mode keeps its form
+   * (there is nothing to chat with), and a lead that is being sent cannot be dismissed.
+   * No analytics event.
+   */
+  const dismissLeadForm = (edits?: LeadDraft) => {
+    if (!state.showLeadForm || state.status !== 'idle' || state.leadSending) return;
+
+    let gatheredLead = state.gatheredLead;
+    if (edits) {
+      const merged: Record<string, string> = { ...gatheredLead };
+      for (const key of LEAD_DRAFT_KEYS) {
+        if (edits[key] === gatheredLead[key]) continue; // left as it was
+        merged[key] = edits[key];
+        // Typed a value: the model may not overwrite it. Cleared it: the model may fill it again.
+        if (edits[key] !== '') visitorEdited.add(key);
+        else visitorEdited.delete(key);
+      }
+      gatheredLead = merged as unknown as LeadDraft;
+    }
+
+    dismissedSnapshot = { ...gatheredLead };
+    dismissedAfterId = state.messages.at(-1)?.id;
+    openFormAfterId = undefined; // dismissed: a reload must not resume it
+    set({
+      showLeadForm: false,
+      leadHeading: null,
+      leadError: false,
+      leadErrorMessage: null,
+      composerError: null,
+      gatheredLead,
+    });
+  };
+
   const clearComposerError = () => {
     if (state.composerError !== null) set({ composerError: null });
   };
@@ -366,7 +486,7 @@ function createController() {
   return {
     getState,
     subscribe,
-    actions: { handleOpen, send, chip, submitLead, clearComposerError },
+    actions: { handleOpen, send, chip, submitLead, dismissLeadForm, clearComposerError },
   };
 }
 

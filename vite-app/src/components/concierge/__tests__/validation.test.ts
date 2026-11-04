@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildTranscript,
+  formatPhone,
+  LIMITS,
   normalizePhone,
   sanitizeUtm,
   validateLead,
@@ -196,5 +198,27 @@ describe('sanitizeUtm', () => {
     const out = sanitizeUtm(raw);
     expect(Object.keys(out)).toHaveLength(10);
     expect(Object.values(out).every((v) => v.length === 100)).toBe(true);
+  });
+});
+
+describe('formatPhone', () => {
+  it('shows exactly 10 digits as (770) 555-0147', () => {
+    expect(formatPhone('7705550147')).toBe('(770) 555-0147');
+  });
+
+  it('leaves anything else as it is, so a half-typed or odd value is never mangled', () => {
+    for (const odd of ['', '77055', '770555014', '17705550147', '(770) 555-0147', 'call me']) {
+      expect(formatPhone(odd)).toBe(odd);
+    }
+  });
+
+  it('round-trips through normalizePhone', () => {
+    expect(normalizePhone(formatPhone('7705550147'))).toBe('7705550147');
+  });
+});
+
+describe('LIMITS', () => {
+  it('has the email limit used when cleaning model output', () => {
+    expect(LIMITS.emailMax).toBe(254);
   });
 });

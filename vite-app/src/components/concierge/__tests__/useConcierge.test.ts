@@ -11,7 +11,8 @@ import { getToken } from '../turnstile';
 import { track } from '../../../lib/track';
 import { isHandoffRequest, toChatTurns, useConcierge } from '../useConcierge';
 import type { OpenDetail } from '../events';
-import type { Message } from '../types';
+import type { Intent, LeadDraft, Message } from '../types';
+import { EMPTY_LEAD_DRAFT } from '../leadDraft';
 import { STORAGE_KEY } from '../storage';
 import * as copy from '../copy';
 
@@ -22,13 +23,20 @@ const trackMock = vi.mocked(track);
 
 const ok = (
   reply: string,
-  over: Partial<{ intent: string; offerCallback: boolean }> = {}
+  over: Partial<{
+    intent: Intent;
+    offerCallback: boolean;
+    readyToConfirm: boolean;
+    lead: Partial<LeadDraft>;
+  }> = {}
 ): ChatResult => ({
   kind: 'ok',
   data: {
     reply,
-    intent: (over.intent ?? 'answer') as 'answer',
+    intent: over.intent ?? 'answer',
     offerCallback: over.offerCallback ?? false,
+    readyToConfirm: over.readyToConfirm ?? false,
+    lead: { ...EMPTY_LEAD_DRAFT, ...over.lead },
   },
 });
 
@@ -693,6 +701,863 @@ describe('useConcierge: lead submit', () => {
     });
     expect(result.current.leadError).toBe(false);
     expect(result.current.leadDone).toBe(true);
+  });
+});
+
+describe('useConcierge: conversational lead capture (plan v1.1)', () => {
+  const formShownCount = () =>
+    trackMock.mock.calls.filter(([name]) => name === 'concierge_lead_form_shown').length;
+
+  const dana = { name: 'Dana Lee' };
+  const danaWithPhone = { name: 'Dana Lee', phone: '7705550147' };
+
+  it('shows a collecting reply like an answer: no form, no extra tracking', async () => {
+    postChatMock.mockResolvedValue(
+      ok('Thanks! What is the best number to reach you?', { intent: 'collecting', lead: dana })
+    );
+    const { result } = setup();
+    await open(result);
+    trackMock.mockClear();
+    await send(result, 'can you have someone call me?');
+    expect(result.current.messages.at(-1)).toMatchObject({
+      role: 'assistant',
+      content: 'Thanks! What is the best number to reach you?',
+    });
+    expect(result.current.status).toBe('idle');
+    expect(result.current.showLeadForm).toBe(false);
+    expect(trackMock.mock.calls.map(([name]) => name)).toEqual(['concierge_message_sent']);
+  });
+
+  it('remembers partial lead details across replies without ever dropping one', async () => {
+    postChatMock
+      .mockResolvedValueOnce(ok('Thanks Dana. And your number?', { intent: 'collecting', lead: dana }))
+      .mockResolvedValueOnce(
+        ok('Got it. Which business is this for?', {
+          intent: 'collecting',
+          lead: { phone: '7705550147' }, // name left empty in this reply
+        })
+      );
+    const { result } = setup();
+    await open(result);
+    expect(result.current.gatheredLead).toEqual(EMPTY_LEAD_DRAFT);
+    await send(result, 'Dana Lee');
+    expect(result.current.gatheredLead).toEqual({ ...EMPTY_LEAD_DRAFT, name: 'Dana Lee' });
+    await send(result, '770-555-0147');
+    expect(result.current.gatheredLead).toEqual({ ...EMPTY_LEAD_DRAFT, ...danaWithPhone });
+  });
+
+  it('readyToConfirm opens the lead form under the reply, pre-filled, with the heading', async () => {
+    postChatMock.mockResolvedValue(
+      ok("Here's what I've got. Check the box below and tap send.", {
+        intent: 'collecting',
+        readyToConfirm: true,
+        lead: { ...danaWithPhone, business: 'Lee Landscaping', callbackWindow: 'afternoon_1_3' },
+      })
+    );
+    const { result } = setup();
+    await open(result);
+    await send(result, '770-555-0147');
+
+    expect(result.current.showLeadForm).toBe(true);
+    expect(result.current.leadHeading).toBe(copy.LEAD_FORM_HEADING);
+    expect(result.current.gatheredLead).toEqual({
+      ...EMPTY_LEAD_DRAFT,
+      ...danaWithPhone,
+      business: 'Lee Landscaping',
+      callbackWindow: 'afternoon_1_3',
+    });
+    // The reply stays the last message, so the form sits directly beneath it.
+    expect(result.current.messages.at(-1)?.content).toBe(
+      "Here's what I've got. Check the box below and tap send."
+    );
+    expect(result.current.status).toBe('idle');
+    expect(result.current.chips).toEqual([]);
+  });
+
+  it('tracks concierge_lead_form_shown once for that appearance, even if another ready reply follows', async () => {
+    postChatMock.mockResolvedValue(
+      ok('Ready.', { intent: 'collecting', readyToConfirm: true, lead: danaWithPhone })
+    );
+    const { result } = setup();
+    await open(result);
+    await send(result, 'my number is 770-555-0147');
+    expect(formShownCount()).toBe(1);
+    await send(result, 'one more thing');
+    expect(result.current.showLeadForm).toBe(true);
+    expect(formShownCount()).toBe(1);
+  });
+
+  it('does not show the form for readyToConfirm once a lead was already submitted', async () => {
+    postLeadMock.mockResolvedValue({ kind: 'ok', delivery: 'email' });
+    const { result } = setup();
+    await open(result);
+    await act(async () => {
+      await result.current.chip('Request a callback');
+    });
+    await act(async () => {
+      await result.current.submitLead(leadInput);
+    });
+    expect(result.current.leadDone).toBe(true);
+    trackMock.mockClear();
+
+    postChatMock.mockResolvedValue(
+      ok('Ready again.', { intent: 'collecting', readyToConfirm: true, lead: danaWithPhone })
+    );
+    await send(result, 'my number is 770-555-0147');
+    expect(result.current.showLeadForm).toBe(false);
+    expect(formShownCount()).toBe(0);
+  });
+
+  it('keeps the form from a ready reply out of the offer chips, but still offers them for a plain callback offer', async () => {
+    postChatMock.mockResolvedValueOnce(
+      ok('Here you go.', { intent: 'collecting', readyToConfirm: true, offerCallback: true, lead: danaWithPhone })
+    );
+    const { result } = setup();
+    await open(result);
+    await send(result, 'hi');
+    expect(result.current.showLeadForm).toBe(true);
+    expect(result.current.chips).toEqual([]); // the form is already showing
+
+    window.sessionStorage.clear(); // a brand-new visitor: the first one's open form must not be resumed
+    const second = setup();
+    postChatMock.mockResolvedValueOnce(ok('Want me to have someone call you?', { offerCallback: true }));
+    await open(second.result);
+    await send(second.result, 'how do I get started');
+    expect(second.result.current.showLeadForm).toBe(false);
+    expect(second.result.current.chips).toEqual(copy.OFFER_CHIPS);
+  });
+
+  it('"Yes, call me" after partial data opens the form pre-filled, without the ready heading', async () => {
+    postChatMock
+      .mockResolvedValueOnce(ok('Thanks Dana. Want me to have someone call you?', {
+        intent: 'collecting',
+        offerCallback: true,
+        lead: { ...dana, business: 'Lee Landscaping' },
+      }));
+    const { result } = setup();
+    await open(result);
+    await send(result, "I'm Dana Lee from Lee Landscaping, how much does this cost");
+    expect(result.current.chips).toEqual(copy.OFFER_CHIPS);
+    expect(result.current.showLeadForm).toBe(false);
+
+    await act(async () => {
+      await result.current.chip('Yes, call me');
+    });
+    expect(result.current.showLeadForm).toBe(true);
+    expect(result.current.leadHeading).toBeNull();
+    expect(result.current.gatheredLead).toEqual({ ...EMPTY_LEAD_DRAFT, ...dana, business: 'Lee Landscaping' });
+    expect(result.current.messages.at(-1)?.content).toBe(copy.CALLBACK_INTRO);
+    expect(formShownCount()).toBe(1);
+  });
+
+  it('"Request a callback" after partial data pre-fills too', async () => {
+    postChatMock.mockResolvedValueOnce(ok('Nice to meet you.', { intent: 'collecting', lead: dana }));
+    const { result } = setup();
+    await open(result);
+    await send(result, "I'm Dana Lee");
+    await act(async () => {
+      await result.current.chip('Request a callback');
+    });
+    expect(result.current.showLeadForm).toBe(true);
+    expect(result.current.gatheredLead.name).toBe('Dana Lee');
+  });
+
+  it('the lead-only fallback form is pre-filled with whatever was gathered before the outage', async () => {
+    postChatMock
+      .mockResolvedValueOnce(ok('Thanks Dana.', { intent: 'collecting', lead: dana }))
+      .mockResolvedValueOnce({ kind: 'lead_only' });
+    const { result } = setup();
+    await open(result);
+    await send(result, "I'm Dana Lee");
+    await send(result, 'my number is 770-555-0147');
+    expect(result.current.status).toBe('leadOnly');
+    expect(result.current.showLeadForm).toBe(true);
+    expect(result.current.gatheredLead.name).toBe('Dana Lee');
+    expect(result.current.leadHeading).toBeNull();
+  });
+
+  it('shows the confirmation and drops the form and heading after a successful send', async () => {
+    postChatMock.mockResolvedValue(
+      ok('Ready.', { intent: 'collecting', readyToConfirm: true, lead: danaWithPhone })
+    );
+    postLeadMock.mockResolvedValue({ kind: 'ok', delivery: 'email' });
+    const { result } = setup();
+    await open(result);
+    await send(result, 'my number is 770-555-0147');
+    expect(result.current.leadHeading).toBe(copy.LEAD_FORM_HEADING);
+    await act(async () => {
+      await result.current.submitLead({ ...leadInput, name: 'Dana Lee', phone: '7705550147' });
+    });
+    expect(result.current.showLeadForm).toBe(false);
+    expect(result.current.leadHeading).toBeNull();
+    expect(result.current.leadDone).toBe(true);
+    expect(result.current.messages.at(-1)?.content).toBe(
+      copy.CONFIRM('Dana', copy.WINDOWS.midday_11_1)
+    );
+  });
+
+  describe('dismissing the form ("Not now, keep chatting")', () => {
+    const readyThenDismiss = async () => {
+      postChatMock.mockResolvedValueOnce(
+        ok("Here's what I've got.", {
+          intent: 'collecting',
+          readyToConfirm: true,
+          lead: { ...danaWithPhone, business: 'Lee Landscaping' },
+        })
+      );
+      const hook = setup();
+      await open(hook.result);
+      await send(hook.result, "Dana Lee, 770-555-0147");
+      expect(hook.result.current.showLeadForm).toBe(true);
+      trackMock.mockClear();
+      act(() => hook.result.current.dismissLeadForm());
+      return hook;
+    };
+
+    it('hides the form and its heading, back to a normal idle chat with no error', async () => {
+      const { result } = await readyThenDismiss();
+      expect(result.current.showLeadForm).toBe(false);
+      expect(result.current.leadHeading).toBeNull();
+      expect(result.current.status).toBe('idle');
+      expect(result.current.leadError).toBe(false);
+      expect(result.current.leadErrorMessage).toBeNull();
+      expect(result.current.composerError).toBeNull();
+      expect(result.current.leadDone).toBe(false);
+    });
+
+    it('keeps what the helper gathered, and the thread as it was', async () => {
+      const { result } = await readyThenDismiss();
+      expect(result.current.gatheredLead).toEqual({
+        ...EMPTY_LEAD_DRAFT,
+        ...danaWithPhone,
+        business: 'Lee Landscaping',
+      });
+      expect(result.current.messages.at(-1)?.content).toBe("Here's what I've got.");
+    });
+
+    it('fires no analytics event', async () => {
+      await readyThenDismiss();
+      expect(trackMock).not.toHaveBeenCalled();
+    });
+
+    it('lets the visitor chat on', async () => {
+      const { result } = await readyThenDismiss();
+      postChatMock.mockResolvedValueOnce(ok('Sure, ask away.'));
+      await send(result, 'actually, one more question');
+      expect(result.current.messages.at(-1)?.content).toBe('Sure, ask away.');
+      expect(postChatMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('a later "Yes, call me" opens the form pre-filled again, as a new appearance', async () => {
+      const { result } = await readyThenDismiss();
+      postChatMock.mockResolvedValueOnce(ok('Want me to have someone call you?', { offerCallback: true }));
+      await send(result, 'what does it cost');
+      expect(result.current.chips).toEqual(copy.OFFER_CHIPS);
+      trackMock.mockClear();
+      await act(async () => {
+        await result.current.chip('Yes, call me');
+      });
+      expect(result.current.showLeadForm).toBe(true);
+      expect(result.current.gatheredLead).toMatchObject({ ...danaWithPhone, business: 'Lee Landscaping' });
+      expect(trackMock.mock.calls.filter(([n]) => n === 'concierge_lead_form_shown')).toHaveLength(1);
+    });
+
+    describe('after a dismissal, readyToConfirm re-opens the form only for a new detail', () => {
+      const GATHERED = { ...danaWithPhone, business: 'Lee Landscaping' };
+
+      it('the same details again: the reply shows normally and the form stays closed', async () => {
+        const { result } = await readyThenDismiss();
+        postChatMock.mockResolvedValueOnce(
+          ok('Happy to explain call handling.', { intent: 'collecting', readyToConfirm: true, lead: GATHERED })
+        );
+        trackMock.mockClear();
+        await send(result, 'what does call handling do?');
+        expect(result.current.messages.at(-1)?.content).toBe('Happy to explain call handling.');
+        expect(result.current.showLeadForm).toBe(false);
+        expect(result.current.leadHeading).toBeNull();
+        expect(result.current.status).toBe('idle');
+        expect(trackMock.mock.calls.filter(([n]) => n === 'concierge_lead_form_shown')).toHaveLength(0);
+        // The visitor is not stranded if they now say "ok, go ahead": a one-tap way back to the form.
+        expect(result.current.chips).toEqual([copy.OFFER_YES]);
+      });
+
+      it('"ok, go ahead and call me" after a dismissal: the reply points at a box that is gone, so a Yes, call me chip opens it', async () => {
+        const { result } = await readyThenDismiss();
+        postChatMock.mockResolvedValueOnce(
+          ok("Great. Check the box below and tap send.", { intent: 'collecting', readyToConfirm: true, lead: GATHERED })
+        );
+        await send(result, 'ok, go ahead and call me');
+        expect(result.current.showLeadForm).toBe(false);
+        expect(result.current.chips).toEqual([copy.OFFER_YES]);
+
+        trackMock.mockClear();
+        await act(async () => {
+          await result.current.chip('Yes, call me');
+        });
+        expect(result.current.showLeadForm).toBe(true);
+        expect(result.current.leadHeading).toBeNull(); // the visitor asked, so no "here's what I have"
+        expect(result.current.gatheredLead).toEqual({ ...EMPTY_LEAD_DRAFT, ...GATHERED });
+        expect(result.current.messages.at(-1)?.content).toBe(copy.CALLBACK_INTRO);
+        expect(result.current.messages.at(-2)).toMatchObject({ role: 'user', content: 'Yes, call me' });
+        expect(result.current.chips).toEqual([]);
+        expect(trackMock.mock.calls.filter(([n]) => n === 'concierge_lead_form_shown')).toHaveLength(1);
+      });
+
+      it('keeps both chips when the same reply also offers a callback', async () => {
+        const { result } = await readyThenDismiss();
+        postChatMock.mockResolvedValueOnce(
+          ok('Want me to have someone call you?', { offerCallback: true, readyToConfirm: true, lead: GATHERED })
+        );
+        await send(result, 'hmm');
+        expect(result.current.chips).toEqual(copy.OFFER_CHIPS);
+      });
+
+      it('shows no chip when nothing is pending: not ready, or the form is already up, or the lead was sent', async () => {
+        const plain = setup();
+        postChatMock.mockResolvedValueOnce(ok('Just an answer.'));
+        await open(plain.result);
+        await send(plain.result, 'hello');
+        expect(plain.result.current.chips).toEqual([]);
+
+        const first = setup();
+        postChatMock.mockResolvedValueOnce(
+          ok('Ready.', { intent: 'collecting', readyToConfirm: true, lead: GATHERED })
+        );
+        await open(first.result);
+        await send(first.result, 'Dana Lee, 770-555-0147');
+        expect(first.result.current.showLeadForm).toBe(true);
+        expect(first.result.current.chips).toEqual([]);
+      });
+
+      it('a reply that repeats only some of the details, or none, does not re-open it either', async () => {
+        const { result } = await readyThenDismiss();
+        postChatMock
+          .mockResolvedValueOnce(ok('One.', { intent: 'collecting', readyToConfirm: true, lead: danaWithPhone }))
+          .mockResolvedValueOnce(ok('Two.', { intent: 'collecting', readyToConfirm: true, lead: {} }));
+        await send(result, 'first');
+        await send(result, 'second');
+        expect(result.current.showLeadForm).toBe(false);
+        expect(result.current.gatheredLead).toEqual({ ...EMPTY_LEAD_DRAFT, ...GATHERED });
+        expect(result.current.chips).toEqual([copy.OFFER_YES]);
+      });
+
+      it('a changed phone number re-opens it, pre-filled with the new number and the heading', async () => {
+        const { result } = await readyThenDismiss();
+        postChatMock.mockResolvedValueOnce(
+          ok('Got the new number.', {
+            intent: 'collecting',
+            readyToConfirm: true,
+            lead: { ...GATHERED, phone: '4045550100' },
+          })
+        );
+        trackMock.mockClear();
+        await send(result, 'use 404-555-0100 instead');
+        expect(result.current.showLeadForm).toBe(true);
+        expect(result.current.leadHeading).toBe(copy.LEAD_FORM_HEADING);
+        expect(result.current.gatheredLead).toEqual({ ...EMPTY_LEAD_DRAFT, ...GATHERED, phone: '4045550100' });
+        expect(trackMock.mock.calls.filter(([n]) => n === 'concierge_lead_form_shown')).toHaveLength(1);
+      });
+
+      it('a detail the visitor added (not gathered before) re-opens it', async () => {
+        const { result } = await readyThenDismiss();
+        postChatMock.mockResolvedValueOnce(
+          ok('Noted the window.', {
+            intent: 'collecting',
+            readyToConfirm: true,
+            lead: { ...GATHERED, callbackWindow: 'morning_9_11' },
+          })
+        );
+        await send(result, 'mornings are best');
+        expect(result.current.showLeadForm).toBe(true);
+        expect(result.current.gatheredLead.callbackWindow).toBe('morning_9_11');
+      });
+
+      it('dismissing again takes a fresh snapshot: the same details then stay closed', async () => {
+        const { result } = await readyThenDismiss();
+        postChatMock.mockResolvedValueOnce(
+          ok('New number.', { intent: 'collecting', readyToConfirm: true, lead: { ...GATHERED, phone: '4045550100' } })
+        );
+        await send(result, 'use 404-555-0100');
+        expect(result.current.showLeadForm).toBe(true);
+        act(() => result.current.dismissLeadForm());
+
+        postChatMock.mockResolvedValueOnce(
+          ok('Still the new number.', {
+            intent: 'collecting',
+            readyToConfirm: true,
+            lead: { ...GATHERED, phone: '4045550100' },
+          })
+        );
+        await send(result, 'and another question');
+        expect(result.current.showLeadForm).toBe(false);
+      });
+
+      it('"Yes, call me" and "Request a callback" always open it, whatever was dismissed', async () => {
+        const { result } = await readyThenDismiss();
+        await act(async () => {
+          await result.current.chip('Request a callback');
+        });
+        expect(result.current.showLeadForm).toBe(true);
+        expect(result.current.gatheredLead).toMatchObject(GATHERED);
+        act(() => result.current.dismissLeadForm());
+
+        postChatMock.mockResolvedValueOnce(ok('Want me to have someone call you?', { offerCallback: true }));
+        await send(result, 'how do I get started');
+        await act(async () => {
+          await result.current.chip('Yes, call me');
+        });
+        expect(result.current.showLeadForm).toBe(true);
+      });
+
+      it('lead-only mode always opens it', async () => {
+        const { result } = await readyThenDismiss();
+        postChatMock.mockResolvedValueOnce({ kind: 'lead_only' });
+        await send(result, 'hello again');
+        expect(result.current.status).toBe('leadOnly');
+        expect(result.current.showLeadForm).toBe(true);
+        expect(result.current.gatheredLead).toMatchObject(GATHERED);
+      });
+
+      it('before any dismissal, readyToConfirm opens it as before', async () => {
+        postChatMock.mockResolvedValueOnce(
+          ok('Ready.', { intent: 'collecting', readyToConfirm: true, lead: danaWithPhone })
+        );
+        const { result } = setup();
+        await open(result);
+        await send(result, 'Dana Lee, 770-555-0147');
+        expect(result.current.showLeadForm).toBe(true);
+      });
+    });
+
+    describe('a dismissal survives a reload', () => {
+      const dismissCallbackForm = async () => {
+        const hook = setup();
+        await open(hook.result);
+        await act(async () => {
+          await hook.result.current.chip('Request a callback');
+        });
+        expect(hook.result.current.showLeadForm).toBe(true);
+        const lastId = hook.result.current.messages.at(-1)?.id;
+        act(() => hook.result.current.dismissLeadForm());
+        return { ...hook, lastId };
+      };
+
+      it('stores the id of the last message at dismissal, additively in the v1 object', async () => {
+        const { lastId } = await dismissCallbackForm();
+        const stored = JSON.parse(window.sessionStorage.getItem(STORAGE_KEY) ?? '{}');
+        expect(stored.leadFormDismissedAfter).toBe(lastId);
+        expect(Object.keys(stored).sort()).toEqual([
+          'ended',
+          'leadFormDismissedAfter',
+          'leadSubmitted',
+          'messages',
+          'sessionId',
+          'utm',
+        ]);
+      });
+
+      it('reloading after dismissing the "Request a callback" form keeps it closed', async () => {
+        const first = await dismissCallbackForm();
+        first.unmount();
+        const second = setup();
+        expect(second.result.current.showLeadForm).toBe(false);
+        expect(second.result.current.status).toBe('idle');
+        expect(second.result.current.messages.at(-1)?.content).toBe(copy.CALLBACK_INTRO);
+      });
+
+      it('without a dismissal, the same reload still resumes the form (the v1 rule)', async () => {
+        const hook = setup();
+        await open(hook.result);
+        await act(async () => {
+          await hook.result.current.chip('Request a callback');
+        });
+        hook.unmount();
+        expect(setup().result.current.showLeadForm).toBe(true);
+      });
+
+      it('with a newer message after the dismissal, the normal rules apply again', async () => {
+        const first = await dismissCallbackForm();
+        // The visitor asks for the callback again: a newer "Happy to set that up" message.
+        await act(async () => {
+          await first.result.current.chip('Request a callback');
+        });
+        expect(first.result.current.showLeadForm).toBe(true);
+        first.unmount();
+        expect(setup().result.current.showLeadForm).toBe(true);
+      });
+
+      it('the stored id is cleared when the visitor opens the form again', async () => {
+        const first = await dismissCallbackForm();
+        await act(async () => {
+          await first.result.current.chip('Request a callback');
+        });
+        const stored = JSON.parse(window.sessionStorage.getItem(STORAGE_KEY) ?? '{}');
+        expect(stored.leadFormDismissedAfter).toBeUndefined();
+      });
+
+      it('an id that does not match the last message changes nothing', async () => {
+        const first = await dismissCallbackForm();
+        const stored = JSON.parse(window.sessionStorage.getItem(STORAGE_KEY) ?? '{}');
+        stored.leadFormDismissedAfter = 'some-older-message-id';
+        window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
+        first.unmount();
+        expect(setup().result.current.showLeadForm).toBe(true);
+      });
+    });
+
+    it('does nothing in lead-only mode: the form has to stay, there is nothing to chat with', async () => {
+      postChatMock.mockResolvedValueOnce({ kind: 'lead_only' });
+      const { result } = setup();
+      await open(result);
+      await send(result, 'hi');
+      expect(result.current.status).toBe('leadOnly');
+      act(() => result.current.dismissLeadForm());
+      expect(result.current.showLeadForm).toBe(true);
+      expect(result.current.status).toBe('leadOnly');
+    });
+
+    it('does nothing while a lead is being sent', async () => {
+      let release: (r: LeadResult) => void = () => {};
+      postLeadMock.mockImplementation(() => new Promise<LeadResult>((resolve) => (release = resolve)));
+      const { result } = setup();
+      await open(result);
+      await act(async () => {
+        await result.current.chip('Request a callback');
+      });
+      let pending: Promise<unknown> = Promise.resolve();
+      act(() => {
+        pending = result.current.submitLead(leadInput);
+      });
+      expect(result.current.leadSending).toBe(true);
+      await vi.waitFor(() => expect(postLeadMock).toHaveBeenCalled()); // past the token step
+      act(() => result.current.dismissLeadForm());
+      expect(result.current.showLeadForm).toBe(true);
+      await act(async () => {
+        release({ kind: 'ok', delivery: 'email' });
+        await pending;
+      });
+      expect(result.current.leadDone).toBe(true);
+    });
+  });
+
+  describe('defensive: only a clean name and 10-digit phone open the ready form', () => {
+    it('a ready reply with no phone does not open it (a chip offers the way in instead)', async () => {
+      postChatMock.mockResolvedValueOnce(
+        ok('Ready!', { intent: 'collecting', readyToConfirm: true, lead: { name: 'Dana Lee' } })
+      );
+      const { result } = setup();
+      await open(result);
+      await send(result, 'my name is Dana Lee');
+      expect(result.current.showLeadForm).toBe(false);
+      expect(result.current.chips).toEqual([copy.OFFER_YES]);
+      expect(result.current.gatheredLead.name).toBe('Dana Lee');
+    });
+
+    it('a ready reply with no name does not open it', async () => {
+      postChatMock.mockResolvedValueOnce(
+        ok('Ready!', { intent: 'collecting', readyToConfirm: true, lead: { phone: '7705550147' } })
+      );
+      const { result } = setup();
+      await open(result);
+      await send(result, '770-555-0147');
+      expect(result.current.showLeadForm).toBe(false);
+    });
+
+    it('a phone the cleaner rejects (not 10 digits) leaves the form closed', async () => {
+      postChatMock.mockResolvedValueOnce({
+        kind: 'ok',
+        data: {
+          reply: 'Ready!',
+          intent: 'collecting',
+          offerCallback: false,
+          readyToConfirm: true,
+          lead: { ...EMPTY_LEAD_DRAFT, name: 'Dana Lee', phone: '77055' }, // as a bypassed parser would deliver it
+        },
+      });
+      const { result } = setup();
+      await open(result);
+      await send(result, 'Dana Lee 77055');
+      expect(result.current.showLeadForm).toBe(false);
+    });
+
+    it('counts what was gathered over several replies: name earlier, phone now', async () => {
+      postChatMock
+        .mockResolvedValueOnce(ok('Thanks Dana.', { intent: 'collecting', lead: { name: 'Dana Lee' } }))
+        .mockResolvedValueOnce(
+          ok('Ready!', { intent: 'collecting', readyToConfirm: true, lead: { phone: '7705550147' } })
+        );
+      const { result } = setup();
+      await open(result);
+      await send(result, 'Dana Lee');
+      await send(result, '770-555-0147');
+      expect(result.current.showLeadForm).toBe(true);
+    });
+  });
+
+  describe('an open readyToConfirm form survives a reload', () => {
+    const GATHERED = { ...EMPTY_LEAD_DRAFT, name: 'Dana Lee', phone: '7705550147', business: 'Lee Landscaping', callbackWindow: 'afternoon_1_3' as const };
+    const openReadyForm = async () => {
+      postChatMock.mockResolvedValueOnce(
+        ok("Here's what I've got.", { intent: 'collecting', readyToConfirm: true, lead: GATHERED })
+      );
+      const hook = setup();
+      await open(hook.result);
+      await send(hook.result, 'Dana Lee, 770-555-0147');
+      expect(hook.result.current.showLeadForm).toBe(true);
+      return hook;
+    };
+    const stored = () => JSON.parse(window.sessionStorage.getItem(STORAGE_KEY) ?? '{}');
+
+    it('stores the last message id and the gathered draft, additively', async () => {
+      const hook = await openReadyForm();
+      const lastId = hook.result.current.messages.at(-1)?.id;
+      expect(stored().leadFormOpenAfter).toBe(lastId);
+      expect(stored().leadDraft).toEqual(GATHERED);
+      expect(Object.keys(stored()).sort()).toEqual([
+        'ended',
+        'leadDraft',
+        'leadFormOpenAfter',
+        'leadSubmitted',
+        'messages',
+        'sessionId',
+        'utm',
+      ]);
+    });
+
+    it('a reload brings the form back with its heading and the same details', async () => {
+      const first = await openReadyForm();
+      first.unmount();
+      const second = setup();
+      expect(second.result.current.showLeadForm).toBe(true);
+      expect(second.result.current.leadHeading).toBe(copy.LEAD_FORM_HEADING);
+      expect(second.result.current.gatheredLead).toEqual(GATHERED);
+      expect(second.result.current.status).toBe('idle');
+      expect(second.result.current.leadDone).toBe(false);
+    });
+
+    it('resuming does not count as a new appearance for analytics', async () => {
+      const first = await openReadyForm();
+      first.unmount();
+      trackMock.mockClear();
+      setup();
+      expect(trackMock).not.toHaveBeenCalled();
+    });
+
+    it('seeds the draft, so a "Request a callback" after dismissing the resumed form is pre-filled', async () => {
+      const first = await openReadyForm();
+      first.unmount();
+      const second = setup();
+      act(() => second.result.current.dismissLeadForm());
+      await act(async () => {
+        await second.result.current.chip('Request a callback');
+      });
+      expect(second.result.current.showLeadForm).toBe(true);
+      expect(second.result.current.gatheredLead).toEqual(GATHERED);
+    });
+
+    it('is cleared when the lead is sent, so a reload shows no form', async () => {
+      const hook = await openReadyForm();
+      postLeadMock.mockResolvedValue({ kind: 'ok', delivery: 'email' });
+      await act(async () => {
+        await hook.result.current.submitLead({ ...leadInput, name: 'Dana Lee', phone: '7705550147' });
+      });
+      expect(stored().leadFormOpenAfter).toBeUndefined();
+      expect(stored().leadDraft).toBeUndefined();
+      hook.unmount();
+      expect(setup().result.current.showLeadForm).toBe(false);
+    });
+
+    it('is cleared when the form is dismissed, and the dismissal keeps it closed after a reload', async () => {
+      const hook = await openReadyForm();
+      act(() => hook.result.current.dismissLeadForm());
+      expect(stored().leadFormOpenAfter).toBeUndefined();
+      expect(stored().leadDraft).toBeUndefined();
+      expect(stored().leadFormDismissedAfter).toBe(hook.result.current.messages.at(-1)?.id);
+      hook.unmount();
+      expect(setup().result.current.showLeadForm).toBe(false);
+    });
+
+    it('is not resumed when the marker no longer matches the last message', async () => {
+      const hook = await openReadyForm();
+      const s = stored();
+      s.leadFormOpenAfter = 'an-older-message-id';
+      window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(s));
+      hook.unmount();
+      const second = setup();
+      expect(second.result.current.showLeadForm).toBe(false);
+      expect(second.result.current.leadHeading).toBeNull();
+    });
+
+    it('is not resumed once a lead was already sent or the chat ended', async () => {
+      const hook = await openReadyForm();
+      hook.unmount();
+      for (const flag of [{ leadSubmitted: true }, { ended: true }]) {
+        window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ ...stored(), ...flag }));
+        expect(setup().result.current.showLeadForm, JSON.stringify(flag)).toBe(false);
+      }
+    });
+
+    it('a reload of a chat with no such form shows none and has no heading', async () => {
+      const hook = setup();
+      await open(hook.result);
+      hook.unmount();
+      const second = setup();
+      expect(second.result.current.showLeadForm).toBe(false);
+      expect(second.result.current.leadHeading).toBeNull();
+      expect(second.result.current.gatheredLead).toEqual(EMPTY_LEAD_DRAFT);
+    });
+  });
+
+  describe('typed edits survive "Not now" (visitor-edited fields)', () => {
+    const MODEL = { ...EMPTY_LEAD_DRAFT, name: 'Dana Lee', phone: '7705550147', business: 'Lee Landscaping' };
+    const readyThenDismissWith = async (edits?: Partial<typeof MODEL>) => {
+      postChatMock.mockResolvedValueOnce(
+        ok("Here's what I've got.", { intent: 'collecting', readyToConfirm: true, lead: MODEL })
+      );
+      const hook = setup();
+      await open(hook.result);
+      await send(hook.result, 'Dana Lee, 770-555-0147');
+      act(() => hook.result.current.dismissLeadForm(edits ? { ...MODEL, ...edits } : undefined));
+      return hook;
+    };
+
+    it('merges what the visitor typed into the gathered details', async () => {
+      const { result } = await readyThenDismissWith({ business: 'Lee Lawn and Garden', need: 'fewer missed calls' });
+      expect(result.current.gatheredLead).toEqual({
+        ...MODEL,
+        business: 'Lee Lawn and Garden',
+        need: 'fewer missed calls',
+      });
+    });
+
+    it('the form re-opens pre-filled with the typed values, not the model\'s', async () => {
+      const { result } = await readyThenDismissWith({ phone: '4045550100' });
+      await act(async () => {
+        await result.current.chip('Request a callback');
+      });
+      expect(result.current.showLeadForm).toBe(true);
+      expect(result.current.gatheredLead.phone).toBe('4045550100');
+    });
+
+    it('a later model reply cannot overwrite a value the visitor typed', async () => {
+      const { result } = await readyThenDismissWith({ business: 'Lee Lawn and Garden' });
+      postChatMock.mockResolvedValueOnce(
+        ok('Noted.', { intent: 'collecting', lead: { business: 'Lee Landscaping LLC', need: 'calls' } })
+      );
+      await send(result, 'we do lawns and gardens');
+      expect(result.current.gatheredLead.business).toBe('Lee Lawn and Garden'); // locked
+      expect(result.current.gatheredLead.need).toBe('calls'); // unlocked field still fills
+    });
+
+    it('the model re-sending its old value for an edited field is not "a new detail"', async () => {
+      const { result } = await readyThenDismissWith({ phone: '4045550100' });
+      postChatMock.mockResolvedValueOnce(
+        ok('Anything else?', { intent: 'collecting', readyToConfirm: true, lead: MODEL }) // old phone
+      );
+      trackMock.mockClear();
+      await send(result, 'one more question');
+      expect(result.current.showLeadForm).toBe(false);
+      expect(result.current.gatheredLead.phone).toBe('4045550100');
+      expect(result.current.chips).toEqual([copy.OFFER_YES]);
+      expect(trackMock.mock.calls.filter(([n]) => n === 'concierge_lead_form_shown')).toHaveLength(0);
+    });
+
+    it('a genuinely new detail in an unedited field still re-opens the form', async () => {
+      const { result } = await readyThenDismissWith({ phone: '4045550100' });
+      postChatMock.mockResolvedValueOnce(
+        ok('Noted the window.', {
+          intent: 'collecting',
+          readyToConfirm: true,
+          lead: { ...MODEL, callbackWindow: 'morning_9_11' },
+        })
+      );
+      await send(result, 'mornings are best');
+      expect(result.current.showLeadForm).toBe(true);
+      expect(result.current.gatheredLead).toMatchObject({ phone: '4045550100', callbackWindow: 'morning_9_11' });
+    });
+
+    it('a field the visitor cleared is empty, and the model may fill it again', async () => {
+      const { result } = await readyThenDismissWith({ business: '' });
+      expect(result.current.gatheredLead.business).toBe('');
+      postChatMock.mockResolvedValueOnce(
+        ok('Which business?', { intent: 'collecting', lead: { business: 'Lee Landscaping' } })
+      );
+      await send(result, 'Lee Landscaping');
+      expect(result.current.gatheredLead.business).toBe('Lee Landscaping');
+    });
+
+    it('values left as the model gave them are not locked: a model correction still applies', async () => {
+      const { result } = await readyThenDismissWith({ need: 'calls' }); // only need typed
+      postChatMock.mockResolvedValueOnce(
+        ok('Got it.', { intent: 'collecting', readyToConfirm: true, lead: { ...MODEL, phone: '4045550100' } })
+      );
+      await send(result, 'use 404-555-0100');
+      expect(result.current.showLeadForm).toBe(true);
+      expect(result.current.gatheredLead.phone).toBe('4045550100');
+      expect(result.current.gatheredLead.need).toBe('calls');
+    });
+
+    it('dismissing with no edits behaves as before', async () => {
+      const { result } = await readyThenDismissWith();
+      expect(result.current.gatheredLead).toEqual(MODEL);
+    });
+  });
+
+  it('never passes lead details to analytics, anywhere in a full conversational flow', async () => {
+    const lead = {
+      name: 'Dana Lee',
+      phone: '7705550147',
+      email: 'dana@example.com',
+      business: 'Lee Landscaping',
+      need: 'missed after-hours calls',
+      callbackWindow: 'afternoon_1_3' as const,
+    };
+    postChatMock
+      .mockResolvedValueOnce(ok("Here's what I've got.", { intent: 'collecting', readyToConfirm: true, lead }))
+      .mockResolvedValueOnce(ok('Fine.', { intent: 'collecting', readyToConfirm: true, lead }));
+    postLeadMock.mockResolvedValue({ kind: 'ok', delivery: 'email' });
+    const { result } = setup();
+    await open(result);
+    await send(result, 'Dana Lee, 770-555-0147, dana@example.com, Lee Landscaping');
+    act(() => result.current.dismissLeadForm({ ...lead, phone: '4045550100', business: 'Lee Lawn and Garden' }));
+    await send(result, 'ok go ahead and call me');
+    await act(async () => {
+      await result.current.chip('Yes, call me');
+    });
+    await act(async () => {
+      await result.current.submitLead({ ...leadInput, name: 'Dana Lee', phone: '4045550100' });
+    });
+
+    const everything = JSON.stringify(trackMock.mock.calls);
+    expect(trackMock.mock.calls.length).toBeGreaterThan(3); // there were events to scan
+    for (const secret of ['Dana', 'Lee', '7705550147', '770', '404', '4045550100', 'example.com', 'Landscaping', 'Garden', 'after-hours']) {
+      expect(everything, secret).not.toContain(secret);
+    }
+  });
+
+  it('does not persist what was gathered: a reload starts with an empty draft', async () => {
+    postChatMock.mockResolvedValueOnce(ok('Thanks Dana.', { intent: 'collecting', lead: danaWithPhone }));
+    const first = setup();
+    await open(first.result);
+    await send(first.result, "I'm Dana Lee, 770-555-0147");
+    expect(first.result.current.gatheredLead.phone).toBe('7705550147');
+    first.unmount();
+
+    const second = setup();
+    expect(second.result.current.gatheredLead).toEqual(EMPTY_LEAD_DRAFT);
+    expect(window.sessionStorage.getItem(STORAGE_KEY)).not.toContain('7705550147');
+  });
+
+  it('a plain reply with no lead details and not ready changes nothing about the form or the draft', async () => {
+    postChatMock.mockResolvedValue({
+      kind: 'ok',
+      data: { reply: 'Plain.', intent: 'answer', offerCallback: false, readyToConfirm: false, lead: EMPTY_LEAD_DRAFT },
+    });
+    const { result } = setup();
+    await open(result);
+    await send(result, 'hello');
+    expect(result.current.showLeadForm).toBe(false);
+    expect(result.current.gatheredLead).toEqual(EMPTY_LEAD_DRAFT);
   });
 });
 

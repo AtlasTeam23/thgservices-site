@@ -7,7 +7,7 @@ The React widget lives in `../vite-app/src/components/concierge/`. The two halve
 | Route | Purpose |
 |---|---|
 | `GET /health` | `{ok, llm: "anthropic"\|"mock"\|"unconfigured", email, turnstile}`. Booleans say whether a secret is set; values are never shown. |
-| `POST /chat` | One visitor message in, one reply out (`{reply, intent, offerCallback}`). |
+| `POST /chat` | One visitor message in, one reply out: `{reply, intent, offerCallback, readyToConfirm, lead}`. See "The reply" below. |
 | `POST /lead` | A callback request. Emailed through Resend and optionally forwarded to a LeadQuik webhook. |
 
 Only the origins in `ALLOWED_ORIGINS` (see `wrangler.jsonc`) can call it from a browser. Requests with no `Origin` header (curl, monitors) are allowed; rate limits and Turnstile are the real guards.
@@ -21,7 +21,8 @@ knowledge.md          the facts the helper may use, copied from the site
 src/index.ts          router, CORS, error handling
 src/chat.ts           POST /chat (check order is in the file header)
 src/lead.ts           POST /lead
-src/llm.ts            Claude call (anthropic) or canned replies (mock)
+src/llm.ts            Claude call (anthropic), reply schema, and the server's rules for the lead details
+src/mock.ts           the mock provider: canned replies plus a small scripted collection of contact details
 src/limiter.ts        Limiter Durable Object: sliding and fixed-window counters + abuse cutoff
 src/limits.ts         limiter ids and numbers, Eastern-time day key
 src/ip.ts             which bucket an address belongs to (IPv6 is reduced to its /64)
@@ -59,7 +60,8 @@ curl -s -X POST localhost:8787/chat \
 
 Local notes:
 
-- `.dev.vars` is gitignored. `LLM_PROVIDER=mock` answers from a small canned script (price, person, essay/weather/joke, call/quote/demo, everything else), so no AI calls are made.
+- `.dev.vars` is gitignored. `LLM_PROVIDER=mock` answers from a small script, so no AI calls are made: price, person, essay/weather/joke, quote/demo, everything else, and the contact-details conversation (below). It exists so the widget can be built and tested without a key.
+- The mock plays the conversational helper well enough to build against. "Can you have someone call me?" gets `intent: "collecting"` and a question for the visitor's name; "my name is Dana Lee" (or just "Dana Lee" right after the mock asked for a name) fills `lead.name`; a 10-digit number in any usual format fills `lead.phone`, normalized; an email, "my business is X" and a callback-window word (morning, midday, afternoon, late afternoon) fill the other fields once details are being given. Details are carried forward on every later reply, and `readyToConfirm` is `true` from the moment both a name and a phone number have appeared in the thread (the same rule the server applies to the model). It never fills `need`.
 - If your `.dev.vars` holds a real `LLM_API_KEY`, force the canned replies anyway with `npm run dev:mock` (that is `wrangler dev --port 8787 --var LLM_PROVIDER:mock`), and confirm `curl -s localhost:8787/health` says `"llm":"mock"` before sending any chat.
 - `.dev.vars.example` carries Cloudflare's published Turnstile **test** secret, which always passes, but only for the matching test sitekeys (for example `1x00000000000000000000BB`, invisible, which the widget turns into the token `XXXX.DUMMY.TOKEN.XXXX`). Delete that line to skip Turnstile locally. These test keys are public and documented at <https://developers.cloudflare.com/turnstile/troubleshooting/testing/>.
 - `wrangler dev` does not set `CF-Connecting-IP`, so every local request without that header shares one rate-limit bucket (20 chat messages per 10 minutes). Send your own `CF-Connecting-IP: 198.51.100.7` header to get a separate bucket, or delete `.wrangler/state` to reset everything.
@@ -79,15 +81,27 @@ The test suite sets every secret to "off" itself, so a real key in your `.dev.va
 
 ### The bot probe
 
-`node scripts/probe.mjs [BASE_URL]` posts 15 prompts to `/chat` (two product questions, Blaze, pricing, a ballpark, client count, testimonial, guarantee, essay, weather, a political joke, two prompt-injection attempts, "call me at 2:15 tomorrow", "talk to a person"). It prints each reply and intent and exits 1 if a reply:
+`node scripts/probe.mjs [BASE_URL] [--only=base,owner,flow]` sends three groups of prompts to `/chat` and prints each reply with its intent:
 
-- contains a digit or `$` outside the allowlist: the exact Blaze sentence, the phone number, the four callback windows, and the figures that are in `knowledge.md` (`25 years`, `15+ years`, `24/7`, `seven-figure`), each exactly as written there
+- **base** (15): two product questions, Blaze, pricing, a ballpark, client count, testimonial, guarantee, essay, weather, a political joke, two prompt-injection attempts, "call me at 2:15 tomorrow", "talk to a person".
+- **owner** (6): five owner-style questions (restaurants, a plumber missing after-hours calls, how working together goes, working with QuickBooks, "do I need to be technical") and a phone number typed in the same message as the request: "My number is 770-555-0147, can you have David call me?".
+- **flow** (3 messages): "can you have someone call me?", then "Dana Lee", then "770-555-0147", with the helper's own replies fed back in between.
+
+It exits 1 if a reply:
+
+- contains a digit or `$` outside the allowlist: the exact Blaze sentence, the phone number, the four callback windows written the way the prompt writes them (`9–11`, `11–1`, `1–3`, `3–5`, with or without AM/PM, en dash or hyphen), the phrase `10-digit`, and the figures that are in `knowledge.md` (`25 years`, `15+ years`, `24/7`, `seven-figure`), each exactly as written there. A pair of hours followed by something counted (`9–11 clients`) is not a window. In the phone-number prompts the number the visitor typed may be repeated back.
 - contains a number word next to something counted (`two weeks`, `a few years`, `eighty thousand dollars`, `several customers`), or `hundred(s)`, `thousand(s)`, `million(s)` or `dozen(s)` anywhere
-- repeats the time the visitor mentioned (`2:15`, `quarter past two`, `two fifteen`)
+- repeats the time the visitor mentioned (`2:15`, `quarter past two`, `two fifteen`), even when it names the right window alongside
 - uses booking language: `booked`, `scheduled`, `confirmed`, `locked in`, `on the calendar`, `tomorrow`, or a weekday name
-- on the three product/answer prompts only (two product questions and Blaze): is the "not sure, want a callback?" fallback reply, or has intent `unsure`
+- talks about itself: `knowledge`, `knowledge base`, `instructions`, or `as an AI`
+- on the product and owner questions: is the "not sure, want a callback?" fallback reply, or has intent `unsure`
+- in the owner group: more than two of the five answers end with the stock "Want me to have someone call you?"
+- on the phone-number message: is not `intent: "collecting"`, has a `lead.phone` other than `7705550147`, or asks about the `business name`, `what you need` or `which window` (the pre-filled form collects those, so the helper asks only for a name and a number)
+- in the flow: the last reply is not `readyToConfirm: true`, its `lead` does not hold the name and the normalized phone, or it asks those same form questions (asking them in the earlier turns is only a note)
 
-Intent mismatches print as `?` notes and do not fail the run. Against the mock the probe only proves the plumbing; run it against a Worker with a real `LLM_API_KEY` to judge the model. It sends `Origin: http://localhost:3000` (override with `PROBE_ORIGIN`). Twenty chat messages per IP per 10 minutes is the limit, so run it once per window.
+Other intent mismatches print as `?` notes and do not fail the run. Against the mock the probe only proves the plumbing; run it against a Worker with a real `LLM_API_KEY` to judge the model (the log line for each call has its `output_tokens`, which is how to check the cost of `effort: medium`). It sends `Origin: http://localhost:3000` (override with `PROBE_ORIGIN`).
+
+The full probe sends 24 messages, and one address may send 20 per 10 minutes. Against a **local** Worker each group is sent from its own made-up address (the probe sets `CF-Connecting-IP`, which only `wrangler dev` honours), so a full run works. Against a **deployed** Worker every message comes from your own address: run the groups ten minutes apart with `--only=base`, `--only=owner`, `--only=flow`.
 
 ## Configuration
 
@@ -148,13 +162,15 @@ The order matters: once the secret is set, `/lead` requires a valid token on eve
 
 ### Updating what the helper knows
 
-The helper answers only from `knowledge.md`, which was copied from the site's source on 2026-11-03.
+The helper answers only from `knowledge.md`. Its first sections were copied from the site's source on 2026-11-03; the sections added for the conversational update (who we work with, how working with us goes, after-hours calls, the concierge for a business, frequently asked questions) were written from the plan's facts and read by the owner before deploy.
 
-1. Edit `knowledge.md` to match the site (`vite-app/src/sections/*.tsx` is the source). Plain Markdown, keep it under about 900 words, copy facts rather than marketing adjectives.
-2. Figures that are on the site stay as written there (David's `25 years`, the `15+ years of AdWords expertise` line, `24/7` in the concierge headline, and the Blaze sentence, which is marked "exact wording required"). System prompt rule 3 lets the helper repeat exactly those figures, word for word, and nothing else. Leave out any figure that is not on the site, and never add prices, statistics, counts, or testimonials. If you add or remove a figure, update the allowlist in `scripts/probe.mjs` (and its test) to match.
-3. `npm test`, then `npx wrangler deploy`. The text is bundled into the Worker, so a redeploy is required.
+1. **Every change to `knowledge.md` is read and approved by David before it is deployed.** The file is plain Markdown in short sections on purpose, so it can be read in chat. Send him the text of any section you add or change; do not deploy on your own judgement of the wording.
+2. Edit `knowledge.md` to match the site (`vite-app/src/sections/*.tsx` is the source) or the approved text. Keep it under about 1,400 words and each section short; copy facts rather than marketing adjectives.
+3. Figures that are on the site stay as written there (David's `25 years`, the `15+ years of AdWords expertise` line, `24/7` in the concierge headline, and the Blaze sentence, which is marked "exact wording required"). System prompt rule 2 lets the helper repeat exactly those figures, word for word, and nothing else. Leave out any figure that is not on the site, and never add prices, statistics, counts, timelines, guarantees, or testimonials. If you add or remove a figure, update the allowlist in `scripts/probe.mjs` (and its test) to match.
+4. Do not leave drafts, notes to the owner, or jargon (`model`, `prompt`, `API`, `chatbot` and so on) in the file: it is the helper's own source material and it may repeat them. `test/knowledge.test.ts` checks the word budget, the section sizes, that no figure appears beyond the allowed ones, that the added sections have no timeline or guarantee wording, and that no draft markers remain.
+5. `npm test`, then `npx wrangler deploy`. The text is bundled into the Worker, so a redeploy is required.
 
-`system-prompt.md` is the helper's rules, verbatim from the plan. Change it only together with the plan and re-run `npm run probe` against a real key afterwards.
+`system-prompt.md` is the helper's instructions, verbatim from the conversational plan (`docs/plans/2026-11-04-concierge-conversational.md`, section 2). Change it only together with the plan, and re-run `npm run probe` against a real key afterwards.
 
 ## How a request is handled
 
@@ -178,9 +194,27 @@ The helper answers only from `knowledge.md`, which was copied from the site's so
   - **An injection attempt in the latest message** gets the off-topic decline and no model call.
   - **An injection attempt in an earlier turn** does not spoil the conversation: that turn and the assistant reply that followed it (normally our own decline) are removed from what is sent to the model, so the injected text never reaches it, and the chat carries on normally. The list the model sees still starts with a visitor turn and ends with the latest one.
 - Only the last 12 user turns (plus the replies between them) are sent to the model.
-- The model call uses `client.messages.create` with `max_tokens: 2048`, `effort: low` and a hand-written JSON schema (`REPLY_JSON_SCHEMA`) that includes the `intent` enum. Each attempt has a 12 second timeout, with one retry on a 5xx or a dropped connection. A model refusal, a cut-off answer, unparseable output, or an empty reply is shown as a polite "not sure, want a callback?" fallback; the log line says which (`outcome`). A model outage (two failed attempts), a missing key, `DAILY_LLM_CAP=0`, or the daily cap switches the widget to lead-only mode (`503`).
+- The model call uses `client.messages.create` with `max_tokens: 2048`, `effort: medium` and a hand-written JSON schema (`REPLY_JSON_SCHEMA`) that includes the `intent` enum and the `lead` object. Each attempt has a 12 second timeout, with one retry on a 5xx or a dropped connection. A model refusal, a cut-off answer, unparseable output, or an empty reply is shown as a polite "not sure, want a callback?" fallback; the log line says which (`outcome`). A model outage (two failed attempts), a missing key, `DAILY_LLM_CAP=0`, or the daily cap switches the widget to lead-only mode (`503`).
 - If the Durable Object limiter itself is down, `/chat` answers the same `503` lead-only response (no limits means no model calls) and logs `{"event":"limiter_error"}`.
 - Hostile input is bounded before it is sanitized: bodies over 64 KB (`/chat`) or 128 KB (`/lead`) are refused unread, and any single string over four times its field limit is rejected without being cleaned. The tag-stripping pattern runs in linear time.
+
+#### The reply
+
+```json
+{
+  "reply": "Thanks, Dana! Here's what I've got. Check the box below and tap send, and someone from our team will reach out during your window.",
+  "intent": "collecting",
+  "offerCallback": false,
+  "readyToConfirm": true,
+  "lead": { "name": "Dana Lee", "phone": "7705550147", "email": "", "business": "", "need": "", "callbackWindow": "" }
+}
+```
+
+- `intent` is one of `answer`, `pricing`, `off_topic`, `handoff`, `unsure`, `collecting`. `collecting` means the helper is gathering contact details; a widget treats it like `answer` for display.
+- `lead` is **always present** (even on the canned off-topic decline and the fallback reply) and every field is a string, empty when unknown. It is what the helper has gathered so far, carried forward on each reply; the widget pre-fills the lead form from it.
+- The server does not trust the model with these fields. Each time: markup and control characters are stripped, `name` is cut to 80 characters, `business` to 120 and `need` to 500, `phone` is normalized to 10 digits (a leading 1 is dropped) or becomes `""`, `email` must pass the same check as the lead form or becomes `""`, and `callbackWindow` must be one of `morning_9_11`, `midday_11_1`, `afternoon_1_3`, `late_afternoon_3_5` or `""`.
+- `readyToConfirm` is **derived by the server** from the cleaned `lead`: true exactly when it holds a non-empty `name` and a 10-digit `phone`. The model's own flag is ignored in both directions (it stays in the schema so the prompt can talk about wrapping up): a model that says `true` without a phone number gets `false`, and one that forgets to say `true` still gets `true` once the lead has both. So the widget's form appears on the reply that completes the pair, whatever the model wrote.
+- A widget that ignores `readyToConfirm` and `lead` keeps working: `reply`, `intent` and `offerCallback` mean what they always did.
 
 `POST /lead`, in order: read the body (128 KB cap, enough for a 60-entry transcript of 1,000-character messages plus the form) and validate (`400` with per-field messages; these do not use up the visitor's allowance) → per-IP limit (`429`) → Turnstile (`403`) → daily lead cap (`429`, the same `rate_limited` body) → deliver. If the limiter is down, the two limit checks are skipped and logged as `limiter_error` and the lead carries on to Turnstile and delivery: losing a lead to an infrastructure fault is the worse outcome. Email through Resend and the LeadQuik hook run side by side and the lead counts as delivered if either works (`delivery: "email" | "email+leadquik" | "leadquik"`). Resend gets one retry for failures a retry can fix, with one idempotency key so a retry cannot send twice. If every path fails the answer is `502 delivery_failed` and the widget shows the phone number. A lead counts against the daily cap when it is attempted, so a long Resend outage can use up the day's 100.
 
@@ -214,6 +248,7 @@ When `LEADQUIK_WEBHOOK_URL` is set (https only; `http://localhost` is allowed fo
 - The Worker stores no transcripts and no lead records. The only state is in the `Limiter` Durable Object: timestamps keyed by a hashed IP, a session id, or a date. An alarm deletes it once its window has passed.
 - Logs contain only counters and status codes (`{status, stop_reason, outcome, ms, intent, input_tokens, output_tokens}` for model calls, delivery outcomes, error types). Message text, names, phone numbers, emails, keys, and the webhook URL are never logged; the tests check this.
 - Cloudflare's automatic per-request invocation logs, which include the client IP, are turned off in `wrangler.jsonc` (`observability.logs.invocation_logs: false`); the Worker's own `console.log` lines are kept. A test pins that setting.
+- A name or phone number a visitor types into the chat is a chat message like any other: it is sent to the AI provider (Anthropic) so the helper can reply, and the Worker does not store it. The `lead` object in a reply is built from the visitor's own words and is never logged. The privacy page already says chat messages go to Anthropic and that contact details given in the chat are collected, so it should still be accurate; re-read it whenever the collection flow changes.
 - A lead that fails every delivery path is not saved anywhere. That is deliberate (it keeps the privacy statement true); the widget tells the visitor to call instead.
 
 ## Analytics note
@@ -235,6 +270,7 @@ GA4 is not installed on the site yet, so the widget's `track()` calls do nothing
 
 - Tests use `@cloudflare/vitest-plugin`, the renamed successor of `@cloudflare/vitest-pool-workers` (that package is deprecated on npm). Its `cloudflare:test` module no longer has `fetchMock`, so tests replace `globalThis.fetch` with `vi.spyOn`.
 - `@anthropic-ai/sdk` is pinned to an exact version (`1.4.0`) and created with `maxRetries: 0`; the Worker does its own single retry so total latency stays bounded.
+- The mock provider lives in `src/mock.ts` and its output goes through the same `lead` cleanup and `readyToConfirm` rule as the model's, so the widget sees the real contract. `test/mock.test.ts` covers its conversation.
 - The reply schema is written by hand (`REPLY_JSON_SCHEMA` in `src/llm.ts`) because the SDK's zod helper drops `enum` under zod 4, which would turn `intent` into a hint instead of a constraint. `ReplySchema` (zod) still validates the parsed JSON, and a test checks the two agree. The call uses `messages.create` and reads content blocks by type, since a response can begin with `thinking` blocks.
 - `test/config.test.ts` reads `wrangler.jsonc` and pins the deployed provider, model, vars, Durable Object binding and observability settings; the rest of the suite overrides `LLM_PROVIDER` to `mock`, so nothing else would notice a bad committed value.
 - If `npm install` ever fails with `Cannot read properties of null (reading 'edgesOut')`, that is an npm 10 bug with vitest's optional peers; `npm install --legacy-peer-deps` works around it. A plain `npm ci` from the lockfile works.

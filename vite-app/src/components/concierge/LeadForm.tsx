@@ -1,9 +1,17 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
-import { CONSENT, DELIVERY_FAILED, FOOTER_CALL, WINDOW_KEYS, WINDOWS } from './copy';
+import {
+  CONSENT,
+  DELIVERY_FAILED,
+  FOOTER_CALL,
+  LEAD_FORM_DISMISS,
+  WINDOW_KEYS,
+  WINDOWS,
+} from './copy';
+import { LEAD_DRAFT_KEYS, parseLeadDraft } from './leadDraft';
 import PhoneText from './PhoneText';
-import type { FieldErrors, LeadInput } from './types';
+import type { FieldErrors, LeadDraft, LeadInput } from './types';
 import type { SubmitLeadOutcome } from './useConcierge';
-import { validateLead, type LeadFormValues } from './validation';
+import { formatPhone, validateLead, type LeadFormValues } from './validation';
 
 type Props = {
   onSubmit: (input: LeadInput) => Promise<SubmitLeadOutcome>;
@@ -13,9 +21,25 @@ type Props = {
   deliveryFailed: boolean;
   /** Replaces the default delivery-failed text (for example a server message). */
   failureMessage?: string | null;
+  /**
+   * Details the helper gathered in conversation. Used only for the first render;
+   * after that the visitor's own edits win. Consent is never part of it.
+   */
+  prefill?: LeadDraft;
+  /** One line above the fields, for example when the helper opened the form itself. */
+  heading?: string | null;
+  /**
+   * Shows a "Not now, keep chatting" button under the submit button. Leave it out
+   * when there is nothing to go back to (lead-only mode). It receives what the visitor
+   * has typed so far, cleaned like a model draft, so their edits are not lost.
+   */
+  onDismiss?: (draft: LeadDraft) => void;
 };
 
 type Field = keyof LeadFormValues;
+
+/** The fields that must be filled before the form can be sent, in order (consent comes after). */
+const REQUIRED_FIELDS = ['name', 'phone', 'business', 'callbackWindow'] as const;
 
 const FIELD_ORDER: Field[] = [
   'name',
@@ -27,35 +51,77 @@ const FIELD_ORDER: Field[] = [
   'consent',
 ];
 
-const EMPTY: LeadFormValues = {
-  name: '',
-  phone: '',
-  email: '',
-  business: '',
-  need: '',
-  callbackWindow: '',
-  consent: false,
+const initialValues = (prefill?: LeadDraft): LeadFormValues => {
+  const values: LeadFormValues = {
+    name: '',
+    phone: '',
+    email: '',
+    business: '',
+    need: '',
+    callbackWindow: '',
+    // Never pre-checked: the visitor must tick it themselves.
+    consent: false,
+  };
+  if (prefill) for (const key of LEAD_DRAFT_KEYS) values[key] = prefill[key];
+  // A clean 10-digit number reads better as (770) 555-0147; submitting normalizes it back.
+  values.phone = formatPhone(values.phone);
+  return values;
 };
 
-export default function LeadForm({ onSubmit, sending, deliveryFailed, failureMessage }: Props) {
-  const [values, setValues] = useState<LeadFormValues>(EMPTY);
+/** The first required field still empty, or 'consent' when only the box is left. */
+const firstUnfilled = (values: LeadFormValues): (typeof REQUIRED_FIELDS)[number] | 'consent' =>
+  REQUIRED_FIELDS.find((name) => !values[name].trim()) ?? 'consent';
+
+export default function LeadForm({
+  onSubmit,
+  sending,
+  deliveryFailed,
+  failureMessage,
+  prefill,
+  heading,
+  onDismiss,
+}: Props) {
+  const [values, setValues] = useState<LeadFormValues>(() => initialValues(prefill));
+  // Where focus goes when the form appears; decided once, from the pre-filled values.
+  const [focusTarget] = useState(() => firstUnfilled(initialValues(prefill)));
   const [errors, setErrors] = useState<FieldErrors>({});
   const formRef = useRef<HTMLFormElement>(null);
   const alertRef = useRef<HTMLDivElement>(null);
   const uid = useId();
+  const headingId = `${uid}-heading`;
 
   const idOf = (field: Field) => `${uid}-${field}`;
   const errorIdOf = (field: Field) => `${uid}-${field}-error`;
 
   // The chip that opened the form has just disappeared, so move focus into it, but
   // only if focus was in the chat (or nowhere): never take it from the rest of the page.
+  // Where it lands: the first required field that is still empty; if the helper filled
+  // name, phone and business already, the consent box, which is the one thing left to do.
   useEffect(() => {
     const form = formRef.current;
     if (!form || deliveryFailed) return; // a failure notice takes focus instead
     const active = document.activeElement;
     const panel = form.closest('[role="dialog"]');
     const ownsFocus = !active || active === document.body || !!panel?.contains(active);
-    if (ownsFocus) form.querySelector<HTMLElement>('[name="name"]')?.focus({ preventScroll: true });
+    if (!ownsFocus) return;
+
+    const target = form.querySelector<HTMLElement>(`[name="${focusTarget}"]`);
+    target?.focus({ preventScroll: true });
+
+    // A pre-filled form is taller than the chat area, so the target can sit below the fold.
+    // Wait a frame so the list's own scroll-to-the-reply has started, then reveal it. For the
+    // consent box reveal the end of the form, so consent, send and "not now" show together.
+    if (!target || focusTarget === 'name') return;
+    const reveal = focusTarget === 'consent' ? (form.lastElementChild ?? target) : target;
+    let frame = 0;
+    if (typeof requestAnimationFrame === 'function') {
+      frame = requestAnimationFrame(() => {
+        if (typeof reveal.scrollIntoView === 'function') reveal.scrollIntoView({ block: 'nearest' });
+      });
+    }
+    return () => {
+      if (frame) cancelAnimationFrame(frame);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only when the form first appears
   }, []);
 
@@ -99,10 +165,18 @@ export default function LeadForm({ onSubmit, sending, deliveryFailed, failureMes
     }
   };
 
-  const describe = (field: Field) => ({
-    'aria-invalid': errors[field] ? (true as const) : undefined,
-    'aria-describedby': errors[field] ? errorIdOf(field) : undefined,
-  });
+  const describe = (field: Field) => {
+    // When focus lands on the consent box, the heading ("Check the box and tap send") is
+    // what a screen reader should hear with it; keep the field's own error in there too.
+    const ids = [
+      errors[field] ? errorIdOf(field) : null,
+      field === 'consent' && focusTarget === 'consent' && heading ? headingId : null,
+    ].filter(Boolean);
+    return {
+      'aria-invalid': errors[field] ? (true as const) : undefined,
+      'aria-describedby': ids.length > 0 ? ids.join(' ') : undefined,
+    };
+  };
 
   const fieldError = (field: Field) =>
     errors[field] ? (
@@ -117,9 +191,16 @@ export default function LeadForm({ onSubmit, sending, deliveryFailed, failureMes
       className="thg-cc-form"
       data-cc-form
       aria-label="Callback request"
+      aria-describedby={heading ? headingId : undefined}
       noValidate
       onSubmit={handleSubmit}
     >
+      {heading && (
+        <p id={headingId} className="thg-cc-form-heading">
+          {heading}
+        </p>
+      )}
+
       {deliveryFailed && (
         <div ref={alertRef} role="alert" tabIndex={-1} className="thg-cc-alert">
           {failureMessage ? (
@@ -254,6 +335,17 @@ export default function LeadForm({ onSubmit, sending, deliveryFailed, failureMes
       <button type="submit" className="thg-cc-submit" disabled={sending}>
         {sending ? 'Sending…' : 'Request my callback'}
       </button>
+
+      {onDismiss && (
+        <button
+          type="button"
+          className="thg-cc-form-dismiss"
+          disabled={sending}
+          onClick={() => onDismiss(parseLeadDraft(values))}
+        >
+          {LEAD_FORM_DISMISS}
+        </button>
+      )}
     </form>
   );
 }

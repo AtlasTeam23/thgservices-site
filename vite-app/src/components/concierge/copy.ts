@@ -50,6 +50,12 @@ export const FOOTER_CALL = `Prefer to talk? Call ${PHONE_DISPLAY}`;
 export const FOOTER_AI = 'AI assistant — may make mistakes.';
 export const FOOTER_PRIVACY = 'Privacy';
 
+/** One line above the lead form when the helper has gathered the details itself. */
+export const LEAD_FORM_HEADING = "Here's what I have. Check the box and tap send.";
+
+/** Under the form's submit button: close the form and carry on chatting. */
+export const LEAD_FORM_DISMISS = 'Not now, keep chatting';
+
 export const CONSENT = 'OK to contact me by phone, text, or email about my request.';
 
 export const WINDOW_KEYS = [

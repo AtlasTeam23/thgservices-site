@@ -160,6 +160,119 @@ describe('storage', () => {
     expect(() => captureLanding()).not.toThrow();
   });
 
+  describe('leadFormDismissedAfter (additive field)', () => {
+    const base = { sessionId: '3f2b8c1e-5d4a-4e7b-9c6d-1a2b3c4d5e6f', messages: [], leadSubmitted: false, ended: false, utm: {} };
+
+    it('round-trips when set', () => {
+      saveState({ ...base, leadFormDismissedAfter: 'msg-42' });
+      expect(JSON.parse(window.sessionStorage.getItem(STORAGE_KEY) ?? '{}').leadFormDismissedAfter).toBe('msg-42');
+      expect(loadState().leadFormDismissedAfter).toBe('msg-42');
+    });
+
+    it('is left out of the stored object when not set, so the v1 shape is unchanged', () => {
+      saveState(base);
+      expect(Object.keys(JSON.parse(window.sessionStorage.getItem(STORAGE_KEY) ?? '{}')).sort()).toEqual([
+        'ended',
+        'leadSubmitted',
+        'messages',
+        'sessionId',
+        'utm',
+      ]);
+      expect(loadState().leadFormDismissedAfter).toBeUndefined();
+    });
+
+    it('a stored v1 object without it still loads, with its messages and flags intact', () => {
+      const v1 = {
+        sessionId: base.sessionId,
+        messages: [
+          { id: 'a', role: 'assistant', content: 'Hi', at: '2026-11-04T15:00:00.000Z', greeting: true },
+          { id: 'b', role: 'user', content: 'Hello', at: '2026-11-04T15:00:05.000Z' },
+        ],
+        leadSubmitted: true,
+        ended: true,
+        utm: { utm_source: 'google' },
+      };
+      window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(v1));
+      const loaded = loadState();
+      expect(loaded).toMatchObject(v1);
+      expect(loaded.messages).toHaveLength(2);
+      expect(loaded.leadSubmitted).toBe(true);
+      expect(loaded.ended).toBe(true);
+      expect(loaded.leadFormDismissedAfter).toBeUndefined();
+      expect(loaded.leadFormOpenAfter).toBeUndefined();
+      expect(loaded.leadDraft).toBeUndefined();
+    });
+
+    it('ignores a value that is not a non-empty string', () => {
+      for (const bad of [5, null, '', {}, ['x'], true]) {
+        window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ ...base, leadFormDismissedAfter: bad }));
+        expect(loadState().leadFormDismissedAfter, JSON.stringify(bad)).toBeUndefined();
+      }
+    });
+  });
+
+  describe('leadFormOpenAfter and leadDraft (additive fields for an open readyToConfirm form)', () => {
+    const base = { sessionId: '3f2b8c1e-5d4a-4e7b-9c6d-1a2b3c4d5e6f', messages: [], leadSubmitted: false, ended: false, utm: {} };
+    const draft = {
+      name: 'Dana Lee',
+      phone: '7705550147',
+      email: '',
+      business: 'Lee Landscaping',
+      need: '',
+      callbackWindow: 'afternoon_1_3' as const,
+    };
+
+    it('round-trips together', () => {
+      saveState({ ...base, leadFormOpenAfter: 'msg-9', leadDraft: draft });
+      const raw = JSON.parse(window.sessionStorage.getItem(STORAGE_KEY) ?? '{}');
+      expect(raw.leadFormOpenAfter).toBe('msg-9');
+      expect(raw.leadDraft).toEqual(draft);
+      const loaded = loadState();
+      expect(loaded.leadFormOpenAfter).toBe('msg-9');
+      expect(loaded.leadDraft).toEqual(draft);
+    });
+
+    it('is absent from the stored object when not set', () => {
+      saveState(base);
+      const keys = Object.keys(JSON.parse(window.sessionStorage.getItem(STORAGE_KEY) ?? '{}'));
+      expect(keys).not.toContain('leadFormOpenAfter');
+      expect(keys).not.toContain('leadDraft');
+    });
+
+    it('cleans a stored draft the same way as one from the server', () => {
+      window.sessionStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({
+          ...base,
+          leadFormOpenAfter: 'msg-9',
+          leadDraft: { name: ' Dana ', phone: '(770) 555-0147', email: 'nope', callbackWindow: 'evening', extra: 1 },
+        })
+      );
+      expect(loadState().leadDraft).toEqual({
+        name: 'Dana',
+        phone: '7705550147',
+        email: '',
+        business: '',
+        need: '',
+        callbackWindow: '',
+      });
+    });
+
+    it('ignores a marker that is not a non-empty string, and a draft that is not an object', () => {
+      for (const bad of [5, null, '', {}, ['x'], true]) {
+        window.sessionStorage.setItem(
+          STORAGE_KEY,
+          JSON.stringify({ ...base, leadFormOpenAfter: bad, leadDraft: bad })
+        );
+        const loaded = loadState();
+        expect(loaded.leadFormOpenAfter, JSON.stringify(bad)).toBeUndefined();
+        if (bad === null || typeof bad !== 'object' || Array.isArray(bad) || Object.keys(bad).length === 0) {
+          expect(loaded.leadDraft, JSON.stringify(bad)).toBeUndefined();
+        }
+      }
+    });
+  });
+
   it('works when sessionStorage throws on every access', () => {
     vi.spyOn(window, 'sessionStorage', 'get').mockImplementation(() => {
       throw new DOMException('denied', 'SecurityError');
