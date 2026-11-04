@@ -1,0 +1,27 @@
+# Local development settings for `npm run dev` (wrangler dev).
+#
+#   cp .dev.vars.example .dev.vars
+#
+# .dev.vars is gitignored. Never commit real values, and never paste real keys
+# into this example file.
+
+# "mock" answers from a tiny canned script and makes no outbound AI calls.
+# To test against the real model, delete this line and fill in LLM_API_KEY.
+LLM_PROVIDER=mock
+
+# Secrets. Empty means "not configured":
+#   LLM_API_KEY          Anthropic key (console.anthropic.com). Empty + provider
+#                        "anthropic" -> /chat answers 503 lead_only.
+#   RESEND_API_KEY       Resend key scoped to sending from leadquik.com. Empty ->
+#                        /lead answers 502 delivery_failed (unless LeadQuik succeeds).
+#   LEADQUIK_WEBHOOK_URL Optional https URL that receives each lead as JSON.
+LLM_API_KEY=
+RESEND_API_KEY=
+LEADQUIK_WEBHOOK_URL=
+
+# Cloudflare's published Turnstile TEST secret key: always passes, but only
+# accepts the dummy token XXXX.DUMMY.TOKEN.XXXX that the matching test sitekeys
+# (for example 1x00000000000000000000BB, invisible) generate in the browser.
+# https://developers.cloudflare.com/turnstile/troubleshooting/testing/
+# Remove this line to skip Turnstile locally; production uses the real secret.
+TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA

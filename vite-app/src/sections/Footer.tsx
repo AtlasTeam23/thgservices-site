@@ -65,7 +65,10 @@ export default function Footer() {
         width: '100%',
         backgroundColor: 'var(--thg-bg-footer)',
         transition: 'background-color 0.3s ease',
-        padding: '80px clamp(24px, 5vw, 80px) 40px',
+        // Extra bottom room (56px) so the fixed chat bubble (56px + 16px inset) never
+        // sits on top of the Privacy / Terms links when the page is scrolled to the end.
+        padding:
+          '80px clamp(24px, 5vw, 80px) calc(96px + env(safe-area-inset-bottom, 0px))',
       }}
     >
       <div style={{ maxWidth: '1440px', margin: '0 auto' }}>
