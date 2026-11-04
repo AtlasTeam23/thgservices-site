@@ -17,10 +17,10 @@ export default function Home() {
     <>
       <main>
         <Hero />
+        <AiConcierge />
         <Work />
         <FeaturedApp />
         <Consulting />
-        <AiConcierge />
         <Problem />
         <Capabilities />
         <About />
