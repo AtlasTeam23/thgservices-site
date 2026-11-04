@@ -125,7 +125,7 @@ Public settings, committed in `wrangler.jsonc`:
 | `LEAD_TO_EMAIL` / `LEAD_FROM_EMAIL` | `developer@leadquik.com` / `THG AI Services <concierge@leadquik.com>` |
 | `RATE_SALT` | Random string used only to hash IPs into Durable Object names. Not a secret. |
 | `LLM_PROVIDER` | `anthropic` (local runs use `mock`) |
-| `VOICE_TTS` | `browser`. Who reads replies aloud: `browser` (free, in the visitor's browser), `aura` (Workers AI) or `elevenlabs`. The last two switch on `POST /tts` (see "Voice"). Any other value means `browser`. |
+| `VOICE_TTS` | `elevenlabs`. Who reads replies aloud: `elevenlabs`, `aura` (Workers AI), or `browser`, which means nobody: the widget has no voice of its own, so replies stay text. The first two switch on `POST /tts` (see "Voice"). Any other value means `browser`. |
 | `VOICE_TTS_MODEL` | `aura-1`. Which Aura model speaks when `VOICE_TTS=aura`: `aura-1` or `aura-2` (`@cf/deepgram/aura-2-en`, more natural, twice the price). Anything else means `aura-1`. |
 | `VOICE_SPEAKER` | `asteria`. The premium voice, a name from the selected model's list (below). If it is not on that list the model's default is used and the Worker logs `tts_speaker_fallback`. |
 | `VOICE_DAILY_STT_SECONDS` | `9000` audio seconds of speech-to-text per Eastern-time day, all visitors (150 minutes). `0` switches voice input off; a missing, blank, non-numeric or negative value falls back to 9000. |
@@ -276,7 +276,7 @@ When `LEADQUIK_WEBHOOK_URL` is set (https only; `http://localhost` is allowed fo
 
 ## Voice (push-to-talk)
 
-The widget records one short utterance while the visitor holds the mic button, `POST /stt` turns it into text with Whisper (`@cf/openai/whisper-large-v3-turbo` on Workers AI), and the text goes through the ordinary `/chat` flow as the visitor's message, so every guard, limit and analytics event applies to it. Replies are read aloud by the browser (`speechSynthesis`: free, and no Worker call at all). `POST /tts` is a paid server voice, off by default: Deepgram Aura through Workers AI, or ElevenLabs, whichever `VOICE_TTS` names, with a small per-visitor daily cap. Voice is an extra: when it is unavailable the widget hides the mic and the text chat is exactly as before. The text chat never calls Workers AI.
+The widget records one short utterance while the visitor holds the mic button, `POST /stt` turns it into text with Whisper (`@cf/openai/whisper-large-v3-turbo` on Workers AI), and the text goes through the ordinary `/chat` flow as the visitor's message, so every guard, limit and analytics event applies to it. Replies are read aloud only by `POST /tts`, a paid server voice: ElevenLabs (the shipped setting) or Deepgram Aura through Workers AI, whichever `VOICE_TTS` names, with a small per-visitor daily cap. There is no browser voice: when `/tts` is off or fails, the reply simply stays text. Voice is an extra: when it is unavailable the widget hides the mic and the text chat is exactly as before. The text chat never calls Workers AI.
 
 ### `POST /stt`
 
@@ -421,7 +421,7 @@ GA4 is not installed on the site yet, so the widget's `track()` calls do nothing
 | `/lead` answers `403 verification_failed` | Turnstile is on but the page sent no token. See "Enabling Turnstile later". |
 | `/stt` answers `503 voice_unavailable` | `reason: "budget"`: the session's 180 seconds or the day's 9,000 are used up, or a `VOICE_*` budget is 0. `reason: "server"`: there is no `ai` binding (`/health` says `voice.stt: false`), Workers AI failed twice (`stt_error` lines in `npx wrangler tail`), or the limiter was unreachable (`limiter_error`). Under `wrangler dev`, also check `npx wrangler whoami`: the binding runs on your account. |
 | `/stt` answers `400 bad_audio` for a real recording | The file's label is not `audio/webm`, `audio/mp4`, `audio/ogg` or `audio/wav`. With curl add `;type=audio/wav`. |
-| `/tts` answers `404 not_found` | `VOICE_TTS` is not `aura`. This is the default. |
+| `/tts` answers `404 not_found` | `VOICE_TTS` is neither `elevenlabs` nor `aura` (the shipped value is `elevenlabs`). |
 | `/tts` answers `503` reason `server` with ElevenLabs selected | `/health` shows `configured: false` (no `ELEVENLABS_API_KEY` secret, or `VOICE_ELEVEN_VOICE_ID` is empty or has characters a URL path cannot hold), or ElevenLabs answered something other than 200: look for `{"event":"tts_error","provider":"elevenlabs","status":...}` in `npx wrangler tail`. 401 is a rejected key; 402 or 429 is usually the plan's quota or concurrency. |
 | `/tts` answers `429 tts_limit` | The visitor used today's spoken replies (`VOICE_TTS_PER_IP_PER_DAY`, plus the bonus if it was earned). It clears at Eastern midnight (`Retry-After`). It is shared by everyone behind the same address, which includes an office or a mobile carrier. |
 | `tts_speaker_fallback` in `npx wrangler tail` | `VOICE_SPEAKER` is not a speaker of the model `VOICE_TTS_MODEL` selects (for example `angus` on `aura-2`, or `thalia` on `aura-1`), so replies are spoken in the model's default voice. Pick a name from the lists under "Choosing the premium model and voice". |

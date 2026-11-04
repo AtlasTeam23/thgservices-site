@@ -20,6 +20,11 @@ export const testEnv = (overrides: Partial<Record<keyof Env, unknown>> = {}): En
     TURNSTILE_SECRET_KEY: undefined,
     LEADQUIK_WEBHOOK_URL: undefined,
     ELEVENLABS_API_KEY: undefined,
+    // The shipped config names a paid voice; the suite's baseline is no spoken replies, and the voice tests
+    // switch a provider on per test (elevenEnv(), aura overrides), so the production voice id never
+    // changes a result.
+    VOICE_TTS: 'browser',
+    VOICE_ELEVEN_VOICE_ID: '',
     // Workers AI runs on Cloudflare's network, never in the test runtime: voice tests pass `aiStub().ai`.
     AI: undefined,
     ...overrides,

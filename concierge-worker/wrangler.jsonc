@@ -30,17 +30,18 @@
     "LLM_PROVIDER": "anthropic",
 
     // Push-to-talk voice (see README "Voice"). Speech-to-text is on whenever the AI binding below
-    // exists; replies are read aloud by the browser unless VOICE_TTS is "aura" or "elevenlabs", which
-    // switch on POST /tts (a paid voice; Aura also needs the Workers Paid plan).
-    "VOICE_TTS": "browser",
+    // exists. Replies are spoken only when VOICE_TTS is "aura" or "elevenlabs", which switch on POST /tts
+    // (a paid voice; Aura also needs the Workers Paid plan); "browser" means no spoken replies at all.
+    "VOICE_TTS": "elevenlabs",
     // Which Aura model speaks when VOICE_TTS is "aura": "aura-1" ($0.015 per 1,000 characters) or "aura-2"
     // (more natural, $0.030). VOICE_SPEAKER must be one of that model's speakers or the model's default is
     // used and the Worker logs tts_speaker_fallback. "asteria" exists on both.
     "VOICE_TTS_MODEL": "aura-1",
     "VOICE_SPEAKER": "asteria",
-    // ElevenLabs, when VOICE_TTS is "elevenlabs" (the key is the secret ELEVENLABS_API_KEY). Leave the voice id
-    // empty until you have picked one with `npm run eleven:voices`; while it is empty the route answers 503.
-    "VOICE_ELEVEN_VOICE_ID": "",
+    // ElevenLabs, when VOICE_TTS is "elevenlabs" (the key is the secret ELEVENLABS_API_KEY). The voice id comes
+    // from `npm run eleven:voices`; while it is empty the route answers 503. This one is the premade voice
+    // "Matilda - Knowledgable, Professional", chosen by listening on 2026-11-04.
+    "VOICE_ELEVEN_VOICE_ID": "XrExE9yKIg1WjnnlVkGX",
     "VOICE_ELEVEN_MODEL": "eleven_flash_v2_5",
     "VOICE_ELEVEN_FORMAT": "mp3_22050_32",
     // Spoken replies per visitor (one address) per Eastern-time day on either paid voice, and the extra replies

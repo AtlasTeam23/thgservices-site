@@ -44,9 +44,11 @@ describe('wrangler.jsonc', () => {
     expect(parseJsonc('{ // note\n "a": "x//y", /* c */ "b": [1, 2,], }')).toEqual({ a: 'x//y', b: [1, 2] });
   });
 
-  it('ships with the browser voice: the paid reply voice is a deliberate switch, not a default', () => {
-    expect(config.vars.VOICE_TTS).toBe('browser');
-    expect(config.vars.VOICE_ELEVEN_VOICE_ID).toBe(''); // a voice id is chosen with `npm run eleven:voices`, never guessed
+  it('ships with the ElevenLabs voice that was chosen by listening, not a guessed id', () => {
+    expect(config.vars.VOICE_TTS).toBe('elevenlabs');
+    // "Matilda - Knowledgable, Professional", picked from `npm run eleven:voices` on 2026-11-04.
+    expect(config.vars.VOICE_ELEVEN_VOICE_ID).toBe('XrExE9yKIg1WjnnlVkGX');
+    expect(config.vars.VOICE_ELEVEN_VOICE_ID).toMatch(/^[A-Za-z0-9]{20}$/); // the shape elevenConfig() accepts
   });
 
   it('deploys with the real provider and the contracted model, not the test mock', () => {
@@ -73,12 +75,12 @@ describe('wrangler.jsonc', () => {
     expect(config.ai).toEqual({ binding: 'AI', remote: true });
   });
 
-  it('carries the contracted voice vars: browser voice by default, free-plan budgets', () => {
+  it('carries the contracted voice vars: ElevenLabs Flash, small per-visitor and daily budgets', () => {
     expect(config.vars).toMatchObject({
-      VOICE_TTS: 'browser',
+      VOICE_TTS: 'elevenlabs',
       VOICE_TTS_MODEL: 'aura-1',
       VOICE_SPEAKER: 'asteria',
-      VOICE_ELEVEN_VOICE_ID: '',
+      VOICE_ELEVEN_VOICE_ID: 'XrExE9yKIg1WjnnlVkGX',
       VOICE_ELEVEN_MODEL: 'eleven_flash_v2_5',
       VOICE_ELEVEN_FORMAT: 'mp3_22050_32',
       VOICE_TTS_PER_IP_PER_DAY: '5',

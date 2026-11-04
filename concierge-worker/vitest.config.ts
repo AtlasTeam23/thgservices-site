@@ -16,6 +16,9 @@ export default defineConfig({
       miniflare: {
         bindings: {
           LLM_PROVIDER: 'mock',
+          // Baseline: no paid voice. Voice tests switch a provider on per test; see testEnv() in test/helpers.ts.
+          VOICE_TTS: 'browser',
+          VOICE_ELEVEN_VOICE_ID: '',
         },
       },
     }),
