@@ -16,7 +16,8 @@
  */
 
 .thg-cc-root,
-.thg-cc-card {
+.thg-cc-card,
+.thg-cc-card-button {
   --cc-bg: var(--thg-bg-section);
   --cc-fg: var(--thg-text-primary);
   --cc-fg-2: var(--thg-text-secondary);
@@ -35,7 +36,8 @@
 }
 
 [data-theme='light'] .thg-cc-root,
-[data-theme='light'] .thg-cc-card {
+[data-theme='light'] .thg-cc-card,
+[data-theme='light'] .thg-cc-card-button {
   --cc-field-border: #6b7280;
   --cc-surface: rgba(15, 23, 42, 0.07);
   --cc-accent: #1d4ed8;
@@ -397,6 +399,99 @@
   color: var(--cc-fg-2);
 }
 
+/* The preview card as a button: clicking it opens the real chat. Reset the browser's
+   button styles so it looks exactly like the plain card, then add the affordances. */
+.thg-cc-card-button {
+  position: relative;
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 440px;
+  padding: 0;
+  border: 0;
+  border-radius: 16px; /* matches .thg-cc-surface so the focus ring follows the corners */
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.2s ease;
+}
+
+.thg-cc-card-button .thg-cc-card {
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.thg-cc-card-button:focus-visible {
+  outline: 3px solid var(--cc-focus);
+  outline-offset: 5px;
+}
+
+/* Hover only where there is a real hover (touch devices would leave it stuck on after a tap). */
+@media (hover: hover) {
+  .thg-cc-card-button:hover {
+    transform: translateY(-4px);
+  }
+  .thg-cc-card-button:hover .thg-cc-card {
+    border-color: var(--cc-brand);
+    box-shadow: 0 0 0 1px var(--cc-brand), 0 0 32px rgba(37, 99, 235, 0.35), var(--cc-shadow);
+  }
+}
+
+.thg-cc-card-button:focus-visible {
+  transform: translateY(-4px);
+}
+
+.thg-cc-card-button:focus-visible .thg-cc-card {
+  border-color: var(--cc-brand);
+  box-shadow: 0 0 0 1px var(--cc-brand), 0 0 32px rgba(37, 99, 235, 0.35), var(--cc-shadow);
+}
+
+/* "Click to try it": revealed on hover and keyboard focus; always shown on touch screens. */
+.thg-cc-card-pill {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  z-index: 1;
+  padding: 9px 16px;
+  border-radius: 999px;
+  background: #2563eb; /* white on this is 5.17:1 */
+  color: #fff;
+  font-family: 'Outfit', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+  white-space: nowrap;
+  box-shadow: 0 8px 24px rgba(37, 99, 235, 0.4);
+  opacity: 0;
+  transform: translate(-50%, 6px);
+  pointer-events: none;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+@media (hover: hover) {
+  .thg-cc-card-button:hover .thg-cc-card-pill {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+.thg-cc-card-button:focus-visible .thg-cc-card-pill {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+@media (hover: none), (pointer: coarse) {
+  .thg-cc-card-pill {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
 /* ---------- Notice: "Loading chat" and the failed-download fallback ---------- */
 
 .thg-cc-notice {
@@ -444,11 +539,23 @@
 
 @media (prefers-reduced-motion: reduce) {
   .thg-cc-bubble,
-  .thg-cc-bubble svg {
+  .thg-cc-bubble svg,
+  .thg-cc-card-button,
+  .thg-cc-card-button .thg-cc-card,
+  .thg-cc-card-pill {
     transition: none !important;
   }
 
-  .thg-cc-bubble:hover {
+  .thg-cc-bubble:hover,
+  .thg-cc-card-button:hover,
+  .thg-cc-card-button:focus-visible {
     transform: none;
+  }
+
+  /* No slide: the pill just appears. */
+  .thg-cc-card-pill,
+  .thg-cc-card-button:hover .thg-cc-card-pill,
+  .thg-cc-card-button:focus-visible .thg-cc-card-pill {
+    transform: translate(-50%, 0);
   }
 }
