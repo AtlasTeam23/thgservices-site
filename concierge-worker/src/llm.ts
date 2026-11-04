@@ -6,7 +6,6 @@ import { FALLBACK_REPLY, OFF_TOPIC_REPLY } from './copy';
 import { isMockProvider, llmApiKey, type Env } from './env';
 import { mockReply } from './mock';
 import { clampLength, sanitizeText } from './sanitize';
-import { sleep } from './util';
 import { CALLBACK_WINDOWS, EMPTY_LEAD, sanitizeLeadFields, type ChatMessage } from './validation';
 
 // --- reply shape -----------------------------------------------------------------
@@ -181,6 +180,7 @@ const isRetryable = (error: unknown): boolean =>
 const statusOf = (error: unknown): number =>
   error instanceof Anthropic.APIError && typeof error.status === 'number' ? error.status : 0;
 
+const sleep = (ms: number): Promise<void> => (ms > 0 ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve());
 
 /**
  * Turns a model response into a reply. Order matters: a refusal and a max_tokens stop are

@@ -11,6 +11,10 @@ import {
   PHONE_ECHO,
   PHONE_PROMPT,
   PROMPTS,
+  REMOTE_EXPECTED_WORDS,
+  REMOTE_FORBIDDEN_PHRASES,
+  REMOTE_PROMPT,
+  checkForbiddenPhrases,
   checkFormQuestions,
   checkReply,
   chatRequestBody,
@@ -274,6 +278,60 @@ test('evaluateOwnerGroup allows at most two of the five answers to end with the 
   assert.ok(problems[0].includes('3 of 5'), problems[0]);
   assert.ok(evaluateOwnerGroup([ask, ask, ask, ask, ask])[0].includes('5 of 5'));
   assert.deepEqual(evaluateOwnerGroup([]), []);
+});
+
+// --- remote only: no in-person visit ---------------------------------------------------
+
+const REMOTE_OK = 'We do everything online. We start with a quick call, then a video meeting, and set things up remotely.';
+
+test('the shop-visit prompt is an owner prompt that expects an ordinary answer, and is not one of the five', () => {
+  assert.equal(REMOTE_PROMPT[1], 'Can you come out to my shop and take a look?');
+  assert.equal(REMOTE_PROMPT[2], 'answer');
+  assert.deepEqual(REMOTE_FORBIDDEN_PHRASES, ['in person', 'come out', 'stop by', 'visit you', 'on site']);
+  assert.deepEqual(REMOTE_EXPECTED_WORDS, ['online', 'video', 'virtual']);
+  assert.ok(!OWNER_PROMPTS.some(([, prompt]) => prompt === REMOTE_PROMPT[1]));
+});
+
+test('evaluate: an online-only answer to the shop-visit question is clean', () => {
+  assert.deepEqual(evaluate(REMOTE_PROMPT, 200, ownerBody(REMOTE_OK)), { problems: [], notes: [] });
+  for (const word of ['online', 'video', 'virtual']) {
+    assert.deepEqual(evaluate(REMOTE_PROMPT, 200, ownerBody(`We keep it ${word}, with a quick call first.`)), { problems: [], notes: [] }, word);
+  }
+});
+
+test('evaluate: offering or implying an in-person visit is a hard failure, in any case or with a hyphen', () => {
+  const replies = [
+    ['Happy to meet in person and take a look.', 'in person'],
+    ['Sure, we can come out to your shop next week.', 'come out'],
+    ['We can stop by and see the setup.', 'stop by'],
+    ['Someone can visit you at the shop.', 'visit you'],
+    ['We can do an on site walkthrough.', 'on site'],
+    ['We offer IN PERSON meetings.', 'in person'],
+    ['We do in-person meetings around Woodstock.', 'in person'],
+    ['A quick on-site look is possible.', 'on site'],
+  ];
+  for (const [reply, phrase] of replies) {
+    const result = evaluate(REMOTE_PROMPT, 200, ownerBody(`${reply} It can also happen online.`));
+    assert.ok(result.problems.some((p) => p.includes(`"${phrase}"`)), `${reply} -> ${JSON.stringify(result)}`);
+  }
+});
+
+test('evaluate: a reply that never mentions online, video or virtual is only a note', () => {
+  const result = evaluate(REMOTE_PROMPT, 200, ownerBody('We set everything up remotely, starting with a quick phone call.'));
+  assert.deepEqual(result.problems, []);
+  assert.equal(result.notes.length, 1);
+  assert.ok(result.notes[0].includes('"online"') && result.notes[0].includes('"video"') && result.notes[0].includes('"virtual"'), result.notes[0]);
+});
+
+test('evaluate: the fallback or "unsure" is still a hard failure on the shop-visit question', () => {
+  assert.ok(evaluate(REMOTE_PROMPT, 200, { ...ownerBody(FALLBACK_REPLY), intent: 'unsure' }).problems.length >= 1);
+});
+
+test('the phrase check is scoped to the prompts that ask for it, and ignores a missing reply', () => {
+  const answer = evaluate(OWNER_PROMPTS[2], 200, ownerBody('Honestly, many owners want to meet in person, but we work online.'));
+  assert.deepEqual(answer.problems, []);
+  assert.deepEqual(checkForbiddenPhrases(undefined, REMOTE_FORBIDDEN_PHRASES), []);
+  assert.deepEqual(checkForbiddenPhrases(REMOTE_OK, REMOTE_FORBIDDEN_PHRASES), []);
 });
 
 // --- the form asks for business, need and window now ----------------------------------
