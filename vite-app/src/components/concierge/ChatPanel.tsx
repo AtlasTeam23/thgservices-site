@@ -121,6 +121,7 @@ export default function ChatPanel({ open, request, onClose, returnFocusRef }: Ch
       // Lenis must leave wheel and touch alone anywhere over the panel, not only in the
       // scrolling list, or it smooth-scrolls the page underneath.
       data-lenis-prevent
+      data-analytics-location="concierge"
       data-short={short ? 'true' : undefined}
       tabIndex={-1}
       hidden={!open}

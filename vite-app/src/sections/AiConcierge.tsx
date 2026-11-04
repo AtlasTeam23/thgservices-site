@@ -271,6 +271,8 @@ export default function AiConcierge() {
               {enabled && (
                 <button
                   type="button"
+                  data-cta-id="concierge_try"
+                  data-cta-label="Try it now"
                   onClick={openTryChat}
                   style={{
                     ...buttonBase,

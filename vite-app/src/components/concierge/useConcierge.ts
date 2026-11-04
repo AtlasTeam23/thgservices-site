@@ -321,6 +321,7 @@ function createController() {
         callback_window: input.callbackWindow,
         delivery: res.delivery,
       });
+      track('concierge_lead');
       const first = input.name.split(/\s+/)[0];
       push(makeMessage('assistant', CONFIRM(first, WINDOWS[input.callbackWindow])), {
         showLeadForm: false,

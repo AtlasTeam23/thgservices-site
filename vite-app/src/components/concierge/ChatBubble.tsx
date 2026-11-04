@@ -193,7 +193,7 @@ export default function ChatBubble({ panelLoader = defaultLoader }: { panelLoade
   );
 
   return (
-    <div className="thg-cc-root">
+    <div className="thg-cc-root" data-analytics-location="concierge">
       <button
         ref={bubbleRef}
         type="button"

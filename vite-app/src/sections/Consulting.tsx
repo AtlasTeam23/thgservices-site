@@ -299,6 +299,8 @@ export default function Consulting() {
           </div>
           <a
             href="#contact"
+            data-cta-id="consulting_book"
+            data-cta-label="Book a Conversation"
             onClick={(e) => {
               e.preventDefault();
               document

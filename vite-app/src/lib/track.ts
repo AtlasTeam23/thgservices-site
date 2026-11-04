@@ -1,24 +1,7 @@
-// Thin analytics wrapper. GA4 is not installed on the site yet, so this calls
-// window.gtag when it exists and otherwise does nothing. Never pass names,
-// phone numbers, emails, or message text as params.
+// The concierge's tracking entry point. It is an alias of analytics.trackEvent()
+// so every concierge_* event gets the brand, the DNT/GPC gate and the dev
+// logging from one place. Never pass names, phone numbers, emails or message
+// text as params.
+import { trackEvent, type Params } from './analytics';
 
-type TrackParams = Record<string, string | number | boolean>;
-
-declare global {
-  interface Window {
-    gtag?: (...args: unknown[]) => void;
-  }
-}
-
-export function track(name: string, params?: TrackParams): void {
-  if (import.meta.env.DEV) {
-    console.debug('[track]', name, params);
-  }
-  try {
-    if (typeof window !== 'undefined' && typeof window.gtag === 'function') {
-      window.gtag('event', name, params);
-    }
-  } catch {
-    // Analytics must never break the UI.
-  }
-}
+export const track = (name: string, params?: Params): void => trackEvent(name, params);

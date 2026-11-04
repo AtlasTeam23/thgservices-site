@@ -380,6 +380,8 @@ export default function Work() {
         {p.cta && (
           <a
             href={p.cta.href}
+            data-cta-id="products_start_conversation"
+            data-cta-label="Start a Conversation"
             onClick={(e) => {
               if (p.cta!.href.startsWith('#')) {
                 e.preventDefault();
