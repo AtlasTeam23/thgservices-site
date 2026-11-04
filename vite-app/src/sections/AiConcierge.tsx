@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { isConciergeEnabled, openConcierge } from '../components/concierge';
@@ -10,6 +10,7 @@ import {
   PHONE_DISPLAY,
   PHONE_HREF,
 } from '../components/concierge/copy';
+import { useMediaQuery } from '../components/concierge/useMediaQuery';
 import { track } from '../lib/track';
 
 gsap.registerPlugin(ScrollTrigger);
@@ -28,6 +29,100 @@ const PREVIEW_ANSWER =
 // "Try it now" and the preview card ask for exactly the same thing.
 const TRY_REQUEST = { source: 'section_cta', quickReply: 'Try the AI Concierge' } as const;
 const openTryChat = () => openConcierge(TRY_REQUEST);
+
+// The card is desktop-only (see the .aic-card-wrap CSS below). Phones never get the clip.
+const DESKTOP_QUERY = '(min-width: 900px)';
+const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)';
+
+// The clip is cropped to the card's outer border (792 x 946 px), so this box is exactly the card:
+// it fills the button (the card's width) and has the card's corner radius. Its background is the
+// card surface, so nothing shows before the poster paints. The shadow and the hover and focus
+// glow are in the <style> block below, because inline styles cannot answer :hover.
+const clipBoxStyle: React.CSSProperties = {
+  display: 'block',
+  width: '100%',
+  aspectRatio: '792 / 946',
+  borderRadius: '16px',
+  overflow: 'hidden',
+  background: 'var(--cc-bg)',
+};
+const clipVideoStyle: React.CSSProperties = {
+  display: 'block',
+  width: '100%',
+  height: '100%',
+  objectFit: 'cover',
+  pointerEvents: 'none',
+};
+
+/**
+ * A short looping video of the same chat card, shown in place of the DOM mock on desktop. It is
+ * decoration: the button around it carries the accessible name. If it cannot load or play, it
+ * calls onFail and the section goes back to the DOM mock.
+ */
+function CardClip({ onFail }: { onFail: () => void }) {
+  const boxRef = useRef<HTMLSpanElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  // Play only while the card is on screen and the tab is visible.
+  useEffect(() => {
+    const box = boxRef.current;
+    const video = videoRef.current;
+    if (!box || !video) return;
+
+    let onScreen = true; // until the observer says otherwise
+    const sync = () => {
+      if (!onScreen || document.hidden) {
+        video.pause();
+        return;
+      }
+      const started = video.play() as Promise<void> | undefined;
+      // AbortError just means a pause() cut a play() short; anything else (autoplay blocked,
+      // unsupported media) means the clip will not run, so fall back to the DOM mock.
+      started?.catch?.((err: unknown) => {
+        if ((err as { name?: string } | null)?.name !== 'AbortError') onFail();
+      });
+    };
+
+    let observer: IntersectionObserver | undefined;
+    if (typeof IntersectionObserver === 'function') {
+      observer = new IntersectionObserver(
+        (entries) => {
+          onScreen = entries[entries.length - 1].isIntersecting;
+          sync();
+        },
+        { threshold: 0.1 }
+      );
+      observer.observe(box);
+    }
+    document.addEventListener('visibilitychange', sync);
+    sync();
+
+    return () => {
+      observer?.disconnect();
+      document.removeEventListener('visibilitychange', sync);
+    };
+  }, [onFail]);
+
+  return (
+    <span ref={boxRef} className="aic-clip" aria-hidden="true" style={clipBoxStyle}>
+      <video
+        ref={videoRef}
+        style={clipVideoStyle}
+        autoPlay
+        muted
+        loop
+        playsInline
+        preload="metadata"
+        poster="/concierge-card-poster.jpg"
+        disablePictureInPicture
+        aria-hidden="true"
+        onError={onFail}
+      >
+        <source src="/concierge-card-loop.mp4" type="video/mp4" onError={onFail} />
+      </video>
+    </span>
+  );
+}
 
 const buttonBase: React.CSSProperties = {
   display: 'inline-flex',
@@ -52,6 +147,14 @@ export default function AiConcierge() {
   const sectionRef = useRef<HTMLElement>(null);
   const copyRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
+
+  // Desktop with motion allowed gets the looping clip; everyone else, and anyone whose browser
+  // cannot load or play it, gets the DOM mock (previewContent).
+  const isDesktop = useMediaQuery(DESKTOP_QUERY);
+  const reduceMotion = useMediaQuery(REDUCED_MOTION_QUERY);
+  const [clipFailed, setClipFailed] = useState(false);
+  const onClipFail = useCallback(() => setClipFailed(true), []);
+  const showClip = isDesktop && !reduceMotion && !clipFailed;
 
   // Deep link. The page is rendered client-side, so the browser's own jump to
   // #ai-concierge on a fresh load runs before this section exists. Jump once
@@ -325,10 +428,11 @@ export default function AiConcierge() {
             </p>
           </div>
 
-          {/* Static preview of the real widget, built from the same .thg-cc-* styles. When the
-              chat is live it is one big button that opens it; otherwise it is decoration.
-              Everything inside is a span (valid inside a button) and hidden from assistive
-              tech, so a screen reader gets a single, clearly named control. */}
+          {/* Preview of the real widget. On desktop it is a looping clip of the card; otherwise
+              (phones are hidden by CSS, reduced motion, clip fails) a DOM mock built from the same
+              .thg-cc-* styles. When the chat is live it is one big button that opens it; otherwise
+              it is decoration. Everything inside is a span (or the muted video) and hidden from
+              assistive tech, so a screen reader gets a single, clearly named control. */}
           <div ref={cardRef} className="aic-card-wrap" style={{ opacity: 0, minWidth: 0 }} aria-hidden={enabled ? undefined : 'true'}>
             {enabled ? (
               <button
@@ -337,9 +441,13 @@ export default function AiConcierge() {
                 aria-label="Try the AI Website Concierge"
                 onClick={openTryChat}
               >
-                <span className="thg-cc-card thg-cc-surface" aria-hidden="true">
-                  {previewContent}
-                </span>
+                {showClip ? (
+                  <CardClip onFail={onClipFail} />
+                ) : (
+                  <span className="thg-cc-card thg-cc-surface" aria-hidden="true">
+                    {previewContent}
+                  </span>
+                )}
                 <span className="thg-cc-card-pill" aria-hidden="true">
                   Click to try it
                 </span>
@@ -359,6 +467,20 @@ export default function AiConcierge() {
           align-items: center;
         }
         .aic-card { margin: 0; }
+        /* The looping clip gets the card's shadow and the same glow on hover and focus. (No
+           percent signs in this block: the section's tests read its text for stray statistics.) */
+        .aic-clip {
+          box-shadow: var(--cc-shadow);
+          transition: box-shadow 0.2s ease;
+        }
+        @media (hover: hover) {
+          .thg-cc-card-button:hover .aic-clip {
+            box-shadow: 0 0 0 1px var(--cc-brand), 0 0 32px rgba(37, 99, 235, 0.35), var(--cc-shadow);
+          }
+        }
+        .thg-cc-card-button:focus-visible .aic-clip {
+          box-shadow: 0 0 0 1px var(--cc-brand), 0 0 32px rgba(37, 99, 235, 0.35), var(--cc-shadow);
+        }
         /* Phones get the copy and the buttons only; the preview card is desktop-only. */
         @media (max-width: 899px) {
           .aic-card-wrap { display: none; }
