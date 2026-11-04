@@ -11,6 +11,7 @@
     "test:probe": "node --test \"scripts/*.test.mjs\"",
     "typecheck": "tsc --noEmit",
     "probe": "node scripts/probe.mjs",
+    "eleven:voices": "node scripts/eleven-voices.mjs",
     "deploy": "wrangler deploy"
   },
   "dependencies": {

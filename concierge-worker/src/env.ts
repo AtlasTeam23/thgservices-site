@@ -16,10 +16,22 @@ export interface Env {
   RATE_SALT: string;
   /** "anthropic" in production, "mock" for local runs and tests. */
   LLM_PROVIDER: string;
-  /** "browser" (default) or "aura". Anything but "aura" means the browser reads replies aloud. */
+  /** Who reads replies aloud: "browser" (default), "aura" or "elevenlabs". Anything else means the browser does. */
   VOICE_TTS: string;
-  /** An Aura-1 speaker name; unknown values fall back to "asteria". */
+  /** Which Aura model speaks when VOICE_TTS is "aura": "aura-1" (default) or "aura-2". Anything else means "aura-1". */
+  VOICE_TTS_MODEL: string;
+  /** A speaker name valid for that model; anything else falls back to the model's default (and is logged). */
   VOICE_SPEAKER: string;
+  /** An ElevenLabs voice id (from `npm run eleven:voices`). Empty until one is chosen. */
+  VOICE_ELEVEN_VOICE_ID: string;
+  /** The ElevenLabs model for replies; defaults to eleven_flash_v2_5. */
+  VOICE_ELEVEN_MODEL: string;
+  /** One of the MP3 output formats (default mp3_22050_32). */
+  VOICE_ELEVEN_FORMAT: string;
+  /** Spoken replies one address gets per Eastern-time day on the paid voice (default 5). */
+  VOICE_TTS_PER_IP_PER_DAY: string;
+  /** Extra spoken replies that address earns the same day by leaving its contact details (default 5). */
+  VOICE_TTS_BONUS: string;
   /** Speech-to-text audio seconds per Eastern-time day. */
   VOICE_DAILY_STT_SECONDS: string;
   /** Speech-to-text audio seconds per chat session. */
@@ -38,6 +50,7 @@ export interface Env {
   RESEND_API_KEY?: string;
   TURNSTILE_SECRET_KEY?: string;
   LEADQUIK_WEBHOOK_URL?: string;
+  ELEVENLABS_API_KEY?: string;
 }
 
 // Make `import { env } from 'cloudflare:workers'` carry the same type.
@@ -64,6 +77,7 @@ export const llmApiKey = (env: Env): string | undefined => trimmed(env.LLM_API_K
 export const resendApiKey = (env: Env): string | undefined => trimmed(env.RESEND_API_KEY);
 export const turnstileSecret = (env: Env): string | undefined => trimmed(env.TURNSTILE_SECRET_KEY);
 export const leadquikUrl = (env: Env): string | undefined => trimmed(env.LEADQUIK_WEBHOOK_URL);
+export const elevenLabsKey = (env: Env): string | undefined => trimmed(env.ELEVENLABS_API_KEY);
 
 export const isMockProvider = (env: Env): boolean =>
   env.LLM_PROVIDER?.trim().toLowerCase() === 'mock';
@@ -107,18 +121,31 @@ export const dailySttSeconds = (env: Env): number => wholeNumber(env.VOICE_DAILY
 export const sessionVoiceSeconds = (env: Env): number => wholeNumber(env.VOICE_SESSION_SECONDS, 180);
 
 /**
- * Characters of premium text-to-speech per Eastern-time day (default 100000: about 300 replies of
- * 330 characters, $1.50 a day at Aura-1's $0.015 per 1,000). 0 uses up the day's budget at once.
+ * Characters of paid text-to-speech per Eastern-time day, all visitors together (default 25000, the same as
+ * wrangler.jsonc: about 80 replies of 330 characters, at most about $1 a day on ElevenLabs Flash at $0.04 per
+ * 1,000). 0 uses up the day's budget at once.
  */
-export const dailyTtsChars = (env: Env): number => wholeNumber(env.VOICE_DAILY_TTS_CHARS, 100_000);
+export const dailyTtsChars = (env: Env): number => wholeNumber(env.VOICE_DAILY_TTS_CHARS, 25_000);
 
-export type TtsMode = 'browser' | 'aura';
+export type TtsProvider = 'browser' | 'aura' | 'elevenlabs';
 
-/** The configured voice for replies: "aura" only when VOICE_TTS says so. This does not check the AI binding. */
-export const ttsMode = (env: Env): TtsMode => (env.VOICE_TTS?.trim().toLowerCase() === 'aura' ? 'aura' : 'browser');
+/** Who reads replies aloud: "aura" or "elevenlabs" only when VOICE_TTS says exactly that; otherwise the browser does. */
+export const ttsProvider = (env: Env): TtsProvider => {
+  const value = env.VOICE_TTS?.trim().toLowerCase();
+  return value === 'aura' || value === 'elevenlabs' ? value : 'browser';
+};
 
-/** Aura-1's speaker names, as the model accepts them. */
-export const AURA_SPEAKERS = [
+export type TtsModelName = 'aura-1' | 'aura-2';
+
+type Aura1Speaker = NonNullable<Ai_Cf_Deepgram_Aura_1_Input['speaker']>;
+type Aura2Speaker = NonNullable<Ai_Cf_Deepgram_Aura_2_En_Input['speaker']>;
+
+// Workers AI takes BARE speaker names. The "aura-2-thalia-en" form Deepgram uses on its own API is rejected
+// with a 400 ("enum aura-2-thalia-en not in ..."), and so is a name from the other model's list. Both lists
+// were confirmed on 2026-11-03 against Cloudflare's model pages, @cloudflare/workers-types and the enum the
+// runtime itself prints for a bad speaker. `satisfies` makes the compiler check every name against the
+// model's own type, so a typo here does not build.
+export const AURA_1_SPEAKERS = [
   'angus',
   'asteria',
   'arcas',
@@ -131,17 +158,168 @@ export const AURA_SPEAKERS = [
   'helios',
   'hera',
   'stella',
-] as const;
-export type AuraSpeaker = (typeof AURA_SPEAKERS)[number];
+] as const satisfies readonly Aura1Speaker[];
 
-export const voiceSpeaker = (env: Env): AuraSpeaker => {
-  const wanted = env.VOICE_SPEAKER?.trim().toLowerCase();
-  return AURA_SPEAKERS.find((speaker) => speaker === wanted) ?? 'asteria';
+export const AURA_2_SPEAKERS = [
+  'amalthea',
+  'andromeda',
+  'apollo',
+  'arcas',
+  'aries',
+  'asteria',
+  'athena',
+  'atlas',
+  'aurora',
+  'callista',
+  'cora',
+  'cordelia',
+  'delia',
+  'draco',
+  'electra',
+  'harmonia',
+  'helena',
+  'hera',
+  'hermes',
+  'hyperion',
+  'iris',
+  'janus',
+  'juno',
+  'jupiter',
+  'luna',
+  'mars',
+  'minerva',
+  'neptune',
+  'odysseus',
+  'ophelia',
+  'orion',
+  'orpheus',
+  'pandora',
+  'phoebe',
+  'pluto',
+  'saturn',
+  'thalia',
+  'theia',
+  'vesta',
+  'zeus',
+] as const satisfies readonly Aura2Speaker[];
+
+/**
+ * Aura-1's default stays "asteria", the voice this Worker has always used (Workers AI's own default for the
+ * model is "angus"). Aura-2's is "luna", the model's documented default.
+ */
+const AURA_1_DEFAULT_SPEAKER = 'asteria' satisfies Aura1Speaker;
+const AURA_2_DEFAULT_SPEAKER = 'luna' satisfies Aura2Speaker;
+
+/** "aura-2" only when VOICE_TTS_MODEL says exactly that (ignoring case and spaces); anything else is "aura-1". */
+export const ttsModelName = (env: Env): TtsModelName => (env.VOICE_TTS_MODEL?.trim().toLowerCase() === 'aura-2' ? 'aura-2' : 'aura-1');
+
+/**
+ * The premium voice to use: the model and a speaker that is valid for it. `fellBack` is true when
+ * VOICE_SPEAKER named something else (a speaker of the other model, a typo, Deepgram's long form) and the
+ * model's default was used instead, so the caller can log it. A blank or missing VOICE_SPEAKER is just the
+ * default, not a fallback. `requested` is the cleaned value of VOICE_SPEAKER, if any. A union keyed on
+ * `model`, so each speaker is typed for the model it goes to.
+ */
+export type TtsVoice = { requested: string | undefined; fellBack: boolean } & (
+  | { model: 'aura-1'; modelId: '@cf/deepgram/aura-1'; speaker: Aura1Speaker }
+  | { model: 'aura-2'; modelId: '@cf/deepgram/aura-2-en'; speaker: Aura2Speaker }
+);
+
+export const ttsVoice = (env: Env): TtsVoice => {
+  const requested = env.VOICE_SPEAKER?.trim().toLowerCase() || undefined;
+  if (ttsModelName(env) === 'aura-2') {
+    const speaker = AURA_2_SPEAKERS.find((name) => name === requested);
+    return { model: 'aura-2', modelId: '@cf/deepgram/aura-2-en', speaker: speaker ?? AURA_2_DEFAULT_SPEAKER, requested, fellBack: requested !== undefined && speaker === undefined };
+  }
+  const speaker = AURA_1_SPEAKERS.find((name) => name === requested);
+  return { model: 'aura-1', modelId: '@cf/deepgram/aura-1', speaker: speaker ?? AURA_1_DEFAULT_SPEAKER, requested, fellBack: requested !== undefined && speaker === undefined };
 };
 
 /** True when `/stt` can transcribe: the AI binding exists and both speech budgets are above zero. */
 export const isSttAvailable = (env: Env): boolean =>
   env.AI !== undefined && dailySttSeconds(env) > 0 && sessionVoiceSeconds(env) > 0;
 
-/** True when `/tts` can speak: selected with VOICE_TTS=aura, and the AI binding exists. */
-export const isAuraAvailable = (env: Env): boolean => env.AI !== undefined && ttsMode(env) === 'aura';
+// --- ElevenLabs --------------------------------------------------------------------
+
+/**
+ * The MP3 `output_format` values (codec_sample-rate_bitrate). Only MP3 is allowed because /tts labels the
+ * audio `audio/mpeg`, which the widget plays directly. mp3_44100_192 needs a Creator plan or above; the rest
+ * work on every plan (ElevenLabs API reference, read 2026-11-03).
+ */
+export const ELEVEN_MP3_FORMATS = [
+  'mp3_22050_32',
+  'mp3_24000_48',
+  'mp3_44100_32',
+  'mp3_44100_64',
+  'mp3_44100_96',
+  'mp3_44100_128',
+  'mp3_44100_192',
+] as const;
+export type ElevenFormat = (typeof ELEVEN_MP3_FORMATS)[number];
+
+const DEFAULT_ELEVEN_MODEL = 'eleven_flash_v2_5';
+const DEFAULT_ELEVEN_FORMAT: ElevenFormat = 'mp3_22050_32';
+// A voice id goes into a URL path, so only plain characters pass. Real ids are 20 letters and digits.
+const VOICE_ID = /^[A-Za-z0-9_-]{8,64}$/;
+const MODEL_ID = /^[A-Za-z0-9_.-]{1,64}$/;
+
+export interface ElevenConfig {
+  apiKey: string;
+  voiceId: string;
+  model: string;
+  format: ElevenFormat;
+}
+
+/**
+ * Everything `/tts` needs to call ElevenLabs, or null when it cannot: no key, or no (valid) voice id. The
+ * model falls back to Flash and the format to a 22 kHz 32 kbps MP3 when the var is blank or not allowed.
+ */
+export const elevenConfig = (env: Env): ElevenConfig | null => {
+  const apiKey = elevenLabsKey(env);
+  const voiceId = env.VOICE_ELEVEN_VOICE_ID?.trim();
+  if (apiKey === undefined || voiceId === undefined || !VOICE_ID.test(voiceId)) return null;
+  const model = env.VOICE_ELEVEN_MODEL?.trim() ?? '';
+  const wanted = env.VOICE_ELEVEN_FORMAT?.trim().toLowerCase();
+  return {
+    apiKey,
+    voiceId,
+    model: MODEL_ID.test(model) ? model : DEFAULT_ELEVEN_MODEL,
+    format: ELEVEN_MP3_FORMATS.find((format) => format === wanted) ?? DEFAULT_ELEVEN_FORMAT,
+  };
+};
+
+/** The model name shown by /health, which works without a key or voice id. */
+const elevenModelName = (env: Env): string => {
+  const model = env.VOICE_ELEVEN_MODEL?.trim() ?? '';
+  return MODEL_ID.test(model) ? model : DEFAULT_ELEVEN_MODEL;
+};
+
+// --- the per-visitor cap on the paid reply voice -------------------------------------
+
+/** Spoken replies one address gets per Eastern-time day on the paid voice (default 5). 0 leaves only the bonus. */
+export const ttsPerIpPerDay = (env: Env): number => wholeNumber(env.VOICE_TTS_PER_IP_PER_DAY, 5);
+
+/** Extra spoken replies an address earns that day by leaving its contact details (default 5). */
+export const ttsBonus = (env: Env): number => wholeNumber(env.VOICE_TTS_BONUS, 5);
+
+// --- /health -----------------------------------------------------------------------
+
+export type VoiceHealth =
+  | { stt: boolean; tts: 'browser' }
+  | { stt: boolean; tts: 'server'; provider: 'aura' | 'elevenlabs'; configured: boolean; ttsModel: string };
+
+/**
+ * The `voice` block of /health. `tts` is "browser" until a paid voice is selected, then "server" for either
+ * provider; `configured` says whether that provider can actually run (Aura: the binding exists; ElevenLabs:
+ * a key and a voice id are set), so a widget can fall back to the browser voice instead of asking and failing.
+ * `ttsModel` is the model the Worker will really use. Nothing secret is shown.
+ */
+export const voiceHealth = (env: Env): VoiceHealth => {
+  const stt = isSttAvailable(env);
+  const provider = ttsProvider(env);
+  if (provider === 'aura') return { stt, tts: 'server', provider, configured: env.AI !== undefined, ttsModel: ttsModelName(env) };
+  if (provider === 'elevenlabs') {
+    return { stt, tts: 'server', provider, configured: elevenConfig(env) !== null, ttsModel: elevenModelName(env) };
+  }
+  return { stt, tts: 'browser' };
+};

@@ -44,6 +44,11 @@ describe('wrangler.jsonc', () => {
     expect(parseJsonc('{ // note\n "a": "x//y", /* c */ "b": [1, 2,], }')).toEqual({ a: 'x//y', b: [1, 2] });
   });
 
+  it('ships with the browser voice: the paid reply voice is a deliberate switch, not a default', () => {
+    expect(config.vars.VOICE_TTS).toBe('browser');
+    expect(config.vars.VOICE_ELEVEN_VOICE_ID).toBe(''); // a voice id is chosen with `npm run eleven:voices`, never guessed
+  });
+
   it('deploys with the real provider and the contracted model, not the test mock', () => {
     expect(config.vars.LLM_PROVIDER).toBe('anthropic');
     expect(config.vars.MODEL).toBe('claude-haiku-5-5');
@@ -71,18 +76,24 @@ describe('wrangler.jsonc', () => {
   it('carries the contracted voice vars: browser voice by default, free-plan budgets', () => {
     expect(config.vars).toMatchObject({
       VOICE_TTS: 'browser',
+      VOICE_TTS_MODEL: 'aura-1',
       VOICE_SPEAKER: 'asteria',
+      VOICE_ELEVEN_VOICE_ID: '',
+      VOICE_ELEVEN_MODEL: 'eleven_flash_v2_5',
+      VOICE_ELEVEN_FORMAT: 'mp3_22050_32',
+      VOICE_TTS_PER_IP_PER_DAY: '5',
+      VOICE_TTS_BONUS: '5',
       VOICE_DAILY_STT_SECONDS: '9000',
       VOICE_SESSION_SECONDS: '180',
-      VOICE_DAILY_TTS_CHARS: '100000',
+      VOICE_DAILY_TTS_CHARS: '25000',
     });
   });
 
   it('never puts a secret in the committed vars', () => {
-    for (const secret of ['LLM_API_KEY', 'RESEND_API_KEY', 'TURNSTILE_SECRET_KEY', 'LEADQUIK_WEBHOOK_URL']) {
+    for (const secret of ['LLM_API_KEY', 'RESEND_API_KEY', 'TURNSTILE_SECRET_KEY', 'LEADQUIK_WEBHOOK_URL', 'ELEVENLABS_API_KEY']) {
       expect(config.vars, secret).not.toHaveProperty(secret);
     }
-    expect(JSON.stringify(config.vars)).not.toMatch(/sk-ant|re_[A-Za-z0-9]{16}|whsec_/);
+    expect(JSON.stringify(config.vars)).not.toMatch(/sk-ant|re_[A-Za-z0-9]{16}|whsec_|sk_[a-f0-9]{20}/);
   });
 
   it('binds the SQLite-backed Limiter Durable Object', () => {

@@ -6,6 +6,8 @@ export interface VoiceDeps {
   retryDelayMs?: number;
   /** Per-attempt timeout for a Workers AI call. */
   timeoutMs?: number;
+  /** The clock for the per-visitor daily counters (they end at Eastern midnight). */
+  now?: () => Date;
 }
 
 /**

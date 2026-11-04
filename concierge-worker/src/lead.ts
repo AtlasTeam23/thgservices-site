@@ -4,6 +4,7 @@ import { json, readJson, retryAfterSeconds } from './http';
 import { sendToLeadQuik, type LeadQuikResult } from './leadquik';
 import type { HitResult } from './limiter';
 import { LEAD_DAILY, LEAD_IP, globalLeadName, hitLimiter, leadIpName, type LimitRule } from './limits';
+import { earnsSpeechBonus, grantSpeechBonus } from './tts';
 import { verifyTurnstile } from './turnstile';
 import { validateLead } from './validation';
 
@@ -15,6 +16,8 @@ export type Delivery = 'email' | 'email+leadquik' | 'leadquik';
 
 export interface LeadDeps {
   email?: SendOptions;
+  /** The clock for the spoken-reply bonus, which ends at Eastern midnight. */
+  now?: () => Date;
 }
 
 const delivered = (email: boolean, leadquik: LeadQuikResult): Delivery | null => {
@@ -80,5 +83,11 @@ export const handleLead = async (request: Request, env: Env, deps: LeadDeps | un
     return json({ ok: false, error: 'delivery_failed' }, 502);
   }
   console.log(JSON.stringify({ event: 'lead_delivered', delivery }));
+
+  // Leaving real contact details earns this address more spoken replies today (see tts.ts). Best effort:
+  // the lead is already delivered, and this never changes the answer.
+  // The clock is read now, after delivery, not when the lead arrived: delivery can take long enough to cross
+  // Eastern midnight, and the bonus belongs to the day it is granted on.
+  if (earnsSpeechBonus(lead)) await grantSpeechBonus(env, ip, deps?.now?.() ?? new Date());
   return json({ ok: true, delivery });
 };

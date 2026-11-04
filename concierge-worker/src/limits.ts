@@ -72,6 +72,14 @@ export const sttIpName = async (ip: string, salt: string): Promise<string> =>
 export const ttsIpName = async (ip: string, salt: string): Promise<string> =>
   `ip:tts:${await sha256Hex(ipBucketKey(ip) + salt)}`;
 
+/** Spoken replies served to one address today: the per-visitor cap on the paid voice (see untilMidnightRule). */
+export const ttsSpokenIpName = async (ip: string, salt: string): Promise<string> =>
+  `ip:tts-spoken:${await sha256Hex(ipBucketKey(ip) + salt)}`;
+
+/** Set to 1 once an address has earned today's bonus replies by leaving its contact details. */
+export const ttsBonusIpName = async (ip: string, salt: string): Promise<string> =>
+  `ip:tts-bonus:${await sha256Hex(ipBucketKey(ip) + salt)}`;
+
 export const sessionName = (sessionId: string): string => `session:${sessionId}`;
 
 /** Seconds of speech-to-text used by one chat session (a separate counter from its message count). */
@@ -87,6 +95,36 @@ const etDayFormat = new Intl.DateTimeFormat('en-CA', {
 /** Calendar day (YYYY-MM-DD) in America/New_York, so the daily caps roll over at Eastern midnight. */
 export const etDay = (now: Date = new Date()): string => etDayFormat.format(now);
 
+/**
+ * The first instant (epoch ms, on a whole second) of the next Eastern-time calendar day. Found by search,
+ * not arithmetic, because an Eastern day is 23 or 25 hours long twice a year.
+ */
+export const nextEtMidnight = (now: Date = new Date()): number => {
+  const today = etDay(now);
+  let lo = Math.floor(now.getTime() / 1000); // a second that is still today
+  let hi = lo + 26 * 3600; // an Eastern day is at most 25 hours, so this is tomorrow
+  while (hi - lo > 1) {
+    const mid = Math.floor((lo + hi) / 2);
+    if (etDay(new Date(mid * 1000)) === today) lo = mid;
+    else hi = mid;
+  }
+  return hi * 1000;
+};
+
+/** Whole seconds until Eastern midnight, rounded up, at least 1: a window length and a Retry-After value. */
+export const secondsToEtMidnight = (now: Date = new Date()): number =>
+  Math.max(1, Math.ceil((nextEtMidnight(now) - now.getTime()) / 1000));
+
+/**
+ * A fixed-window rule whose window ends at the next Eastern midnight, so a per-address daily counter starts
+ * over with the day (the window opens at the first hit, with the time left in the day as its length).
+ */
+export const untilMidnightRule = (limit: number, now: Date = new Date()): LimitRule => ({
+  limit,
+  windowSeconds: secondsToEtMidnight(now),
+  mode: 'fixed',
+});
+
 export const globalName = (now: Date = new Date()): string => `global:${etDay(now)}`;
 
 export const globalLeadName = (now: Date = new Date()): string => `global:lead:${etDay(now)}`;
@@ -98,6 +136,13 @@ export const globalTtsName = (now: Date = new Date()): string => `global:tts:${e
 /** Reads a counter without recording a hit (see Limiter.peek). */
 export const peekLimiter = (env: Env, name: string, rule: LimitRule): Promise<PeekResult> =>
   env.LIMITER.getByName(name).peek(rule.windowSeconds, rule.mode ?? 'sliding');
+
+/**
+ * Gives `cost` units back to a fixed counter, if its window still ends at `expectedResetAt`, the `resetAt` the
+ * reserving hit returned (see Limiter.refund).
+ */
+export const refundLimiter = (env: Env, name: string, cost: number, expectedResetAt: number): Promise<number> =>
+  env.LIMITER.getByName(name).refund(cost, expectedResetAt);
 
 /** A Durable Object call failed. The route cannot enforce its limits, so it stops taking requests. */
 export class LimiterError extends Error {

@@ -5,7 +5,7 @@ import { ENDED } from '../src/copy';
 import type { Env } from '../src/env';
 import { createApp } from '../src/index';
 import { etDay, globalVoiceName, sessionName, sessionVoiceName } from '../src/limits';
-import { aiStub, call, randomIp, randomUuid, testEnv, type AiHandler } from './helpers';
+import { aiStub, call, captureLogs, fixedCount, messagesUsed, randomIp, randomUuid, testEnv, type AiHandler } from './helpers';
 
 const TEST_TURNSTILE_SECRET = '1x0000000000000000000000000000000AA'; // Cloudflare's published always-pass test secret
 const MODEL = '@cf/openai/whisper-large-v3-turbo';
@@ -50,38 +50,9 @@ const sameBytes = (a: Uint8Array, b: Uint8Array): boolean => a.length === b.leng
 /** A recognizer that hears `text` and says the recording lasted `seconds` (whatever that value is). */
 const reports = (seconds: unknown, text = 'hi') => hears(text, { transcription_info: { duration: seconds } });
 
-/** Reads a fixed counter's value without touching it (0 before its first hit). */
-const fixedCount = (env: Env, name: string): Promise<number> =>
-  runInDurableObject(env.LIMITER.getByName(name), (_instance, ctx) => {
-    try {
-      return ctx.storage.sql.exec<{ count: number }>('SELECT count FROM counter WHERE id = 0').toArray()[0]?.count ?? 0;
-    } catch {
-      return 0; // the tables are created by the first hit
-    }
-  });
-
 /** Seconds counted so far today against the daily voice budget. */
 const dailyUsed = (env: Env): Promise<number> => fixedCount(env, globalVoiceName());
 const sessionUsed = (env: Env, sessionId: string): Promise<number> => fixedCount(env, sessionVoiceName(sessionId));
-/** Messages counted so far against the session's 40-message cap. */
-const messagesUsed = (env: Env, sessionId: string): Promise<number> =>
-  runInDurableObject(env.LIMITER.getByName(sessionName(sessionId)), (_instance, ctx) => {
-    try {
-      return ctx.storage.sql.exec<{ c: number }>('SELECT COUNT(*) AS c FROM hits').one().c;
-    } catch {
-      return 0;
-    }
-  });
-
-const captureLogs = () => {
-  const lines: string[] = [];
-  const grab = (...args: unknown[]) => void lines.push(args.map(String).join(' '));
-  vi.spyOn(console, 'log').mockImplementation(grab);
-  vi.spyOn(console, 'error').mockImplementation(grab);
-  vi.spyOn(console, 'warn').mockImplementation(grab);
-  return lines;
-};
-
 beforeEach(async () => {
   await reset(); // fresh Durable Object state, including today's global voice counter
 });

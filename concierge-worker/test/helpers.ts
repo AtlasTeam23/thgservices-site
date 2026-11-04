@@ -1,8 +1,9 @@
-import { createExecutionContext, waitOnExecutionContext } from 'cloudflare:test';
+import { createExecutionContext, runInDurableObject, waitOnExecutionContext } from 'cloudflare:test';
 import { env as baseEnv } from 'cloudflare:workers';
 import { vi } from 'vitest';
 import worker from '../src/index';
 import type { Env } from '../src/env';
+import { sessionName } from '../src/limits';
 
 /**
  * A hermetic Env for tests: bindings and public vars come from wrangler.jsonc
@@ -18,6 +19,7 @@ export const testEnv = (overrides: Partial<Record<keyof Env, unknown>> = {}): En
     RESEND_API_KEY: undefined,
     TURNSTILE_SECRET_KEY: undefined,
     LEADQUIK_WEBHOOK_URL: undefined,
+    ELEVENLABS_API_KEY: undefined,
     // Workers AI runs on Cloudflare's network, never in the test runtime: voice tests pass `aiStub().ai`.
     AI: undefined,
     ...overrides,
@@ -76,4 +78,50 @@ export const call = async (path: string, options: CallOptions = {}): Promise<Res
   const response = await (options.app ?? worker).fetch(request, options.env ?? testEnv(), ctx);
   await waitOnExecutionContext(ctx);
   return response;
+};
+
+/** Captures everything the Worker writes with console.log / error / warn, so a test can read it (and keep the output quiet). */
+export const captureLogs = (): string[] => {
+  const lines: string[] = [];
+  const grab = (...args: unknown[]) => void lines.push(args.map(String).join(' '));
+  vi.spyOn(console, 'log').mockImplementation(grab);
+  vi.spyOn(console, 'error').mockImplementation(grab);
+  vi.spyOn(console, 'warn').mockImplementation(grab);
+  return lines;
+};
+
+/** Reads a fixed counter's value without touching it (0 before its first hit). */
+export const fixedCount = (env: Env, name: string): Promise<number> =>
+  runInDurableObject(env.LIMITER.getByName(name), (_instance, ctx) => {
+    try {
+      return ctx.storage.sql.exec<{ count: number }>('SELECT count FROM counter WHERE id = 0').toArray()[0]?.count ?? 0;
+    } catch {
+      return 0; // the tables are created by the first hit
+    }
+  });
+
+/** Hits recorded so far on a sliding counter, read without touching it (0 before its first hit). */
+export const slidingCount = (env: Env, name: string): Promise<number> =>
+  runInDurableObject(env.LIMITER.getByName(name), (_instance, ctx) => {
+    try {
+      return ctx.storage.sql.exec<{ c: number }>('SELECT COUNT(*) AS c FROM hits').one().c;
+    } catch {
+      return 0;
+    }
+  });
+
+/** Messages counted so far against the session's 40-message cap, read without touching it. */
+export const messagesUsed = (env: Env, sessionId: string): Promise<number> => slidingCount(env, sessionName(sessionId));
+
+/** Sets the end of a fixed counter's window, the way the passing of a day (or of a few seconds) would. */
+export const setWindowEnd = (env: Env, name: string, resetAt: number): Promise<void> =>
+  runInDurableObject(env.LIMITER.getByName(name), (_instance, ctx) => {
+    ctx.storage.sql.exec('UPDATE counter SET reset_at = ? WHERE id = 0', resetAt);
+  });
+
+/** Sends one chat message so the session exists as far as /tts is concerned (it only speaks for sessions that have chatted). */
+export const chatOnce = async (sessionId: string = randomUuid()): Promise<string> => {
+  const res = await call('/chat', { body: { sessionId, messages: [{ role: 'user', content: 'hello' }] } });
+  if (res.status !== 200) throw new Error(`chatOnce: /chat answered ${res.status}`);
+  return sessionId;
 };

@@ -1,10 +1,10 @@
-import { reset, runInDurableObject } from 'cloudflare:test';
+import { reset } from 'cloudflare:test';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ENDED } from '../src/copy';
 import type { Env } from '../src/env';
 import { createApp } from '../src/index';
-import { globalTtsName, sessionName } from '../src/limits';
-import { aiStub, call, randomIp, randomUuid, testEnv } from './helpers';
+import { globalTtsName } from '../src/limits';
+import { aiStub, call, captureLogs, chatOnce, fixedCount, messagesUsed, randomIp, randomUuid, testEnv } from './helpers';
 
 const MODEL = '@cf/deepgram/aura-1';
 
@@ -16,44 +16,12 @@ const app = createApp({ voice: { retryDelayMs: 0, timeoutMs: 40 } });
 
 // /tts speaks replies, so it only serves a session that has chatted: `session` has sent one message.
 let session = '';
-const chatOnce = async (sessionId: string = randomUuid()): Promise<string> => {
-  const res = await call('/chat', { body: { sessionId, messages: [{ role: 'user', content: 'hello' }] } });
-  expect(res.status).toBe(200);
-  return sessionId;
-};
-
 const body = (text: unknown, sessionId: unknown = session) => ({ sessionId, text });
 const post = (payload: unknown, options: Parameters<typeof call>[1] = {}) => call('/tts', { body: payload, app, ...options });
 
 /** Premium voice switched on, with a stub that returns an MPEG response. */
 const auraEnv = (ai: Env['AI'] = aiStub(speech).ai, extra: Record<string, unknown> = {}) =>
-  testEnv({ AI: ai, VOICE_TTS: 'aura', ...extra });
-
-const fixedCount = (env: Env, name: string): Promise<number> =>
-  runInDurableObject(env.LIMITER.getByName(name), (_instance, ctx) => {
-    try {
-      return ctx.storage.sql.exec<{ count: number }>('SELECT count FROM counter WHERE id = 0').toArray()[0]?.count ?? 0;
-    } catch {
-      return 0;
-    }
-  });
-const messagesUsed = (env: Env, sessionId: string): Promise<number> =>
-  runInDurableObject(env.LIMITER.getByName(sessionName(sessionId)), (_instance, ctx) => {
-    try {
-      return ctx.storage.sql.exec<{ c: number }>('SELECT COUNT(*) AS c FROM hits').one().c;
-    } catch {
-      return 0;
-    }
-  });
-
-const captureLogs = () => {
-  const lines: string[] = [];
-  const grab = (...args: unknown[]) => void lines.push(args.map(String).join(' '));
-  vi.spyOn(console, 'log').mockImplementation(grab);
-  vi.spyOn(console, 'error').mockImplementation(grab);
-  vi.spyOn(console, 'warn').mockImplementation(grab);
-  return lines;
-};
+  testEnv({ AI: ai, VOICE_TTS: 'aura', VOICE_TTS_PER_IP_PER_DAY: '1000', ...extra }); // the per-visitor cap has its own tests
 
 beforeEach(async () => {
   await reset();
@@ -65,7 +33,7 @@ describe('POST /tts behind the flag', () => {
   it.each([
     ['VOICE_TTS is browser', { VOICE_TTS: 'browser' }],
     ['VOICE_TTS is missing', { VOICE_TTS: undefined }],
-    ['VOICE_TTS is something else', { VOICE_TTS: 'elevenlabs' }],
+    ['VOICE_TTS is something else', { VOICE_TTS: 'eleven' }],
   ])('answers 404 when %s, without touching the model or a counter', async (_label, vars) => {
     const stub = aiStub(speech);
     const sessionId = randomUuid();
@@ -128,6 +96,7 @@ describe('POST /tts happy path', () => {
   });
 
   it('uses VOICE_SPEAKER when it names an Aura speaker, and asteria otherwise', async () => {
+    captureLogs(); // the second call logs the fallback
     const stub = aiStub(speech);
     await post(body('One.'), { env: auraEnv(stub.ai, { VOICE_SPEAKER: 'luna' }) });
     await post(body('Two.'), { env: auraEnv(stub.ai, { VOICE_SPEAKER: 'not-a-voice' }) });
@@ -228,6 +197,143 @@ describe('POST /tts needs a session that has chatted and is not ended', () => {
   });
 });
 
+describe('POST /tts model and voice', () => {
+  const AURA_1_ID = '@cf/deepgram/aura-1';
+  const AURA_2_ID = '@cf/deepgram/aura-2-en';
+
+  /** The model call a request made, given the voice vars. */
+  const modelCall = async (vars: Record<string, unknown>) => {
+    const stub = aiStub(speech);
+    const res = await post(body('Hello there.'), { env: auraEnv(stub.ai, vars) });
+    expect(res.status).toBe(200);
+    expect(stub.run).toHaveBeenCalledTimes(1);
+    const [model, input, options] = stub.run.mock.calls[0]!;
+    return { model, input, options };
+  };
+
+  it.each([
+    ['unset', undefined],
+    ['aura-1', 'aura-1'],
+    ['an unknown name', 'aura-3'],
+    ['a model id instead of the short name', '@cf/deepgram/aura-2-en'],
+  ])('uses Aura-1 when VOICE_TTS_MODEL is %s', async (_label, value) => {
+    const { model, input } = await modelCall({ VOICE_TTS_MODEL: value });
+    expect(model).toBe(AURA_1_ID);
+    expect(input).toEqual({ text: 'Hello there.', speaker: 'asteria', encoding: 'mp3' });
+  });
+
+  it.each(['aura-2', ' AURA-2 '])('uses Aura-2 (%j), with the same encoding and raw-response options', async (value) => {
+    const { model, input, options } = await modelCall({ VOICE_TTS_MODEL: value });
+    expect(model).toBe(AURA_2_ID);
+    expect(input).toEqual({ text: 'Hello there.', speaker: 'asteria', encoding: 'mp3' });
+    expect(options).toMatchObject({ returnRawResponse: true });
+    expect(options?.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it.each(['thalia', 'andromeda', 'helena', 'apollo', 'arcas', 'orion'])('sends the Aura-2 speaker %s as a bare name', async (speaker) => {
+    const { model, input } = await modelCall({ VOICE_TTS_MODEL: 'aura-2', VOICE_SPEAKER: speaker });
+    expect(model).toBe(AURA_2_ID);
+    expect(input.speaker).toBe(speaker);
+  });
+
+  it('uses Aura-2\'s own default speaker when none is configured', async () => {
+    const { input } = await modelCall({ VOICE_TTS_MODEL: 'aura-2', VOICE_SPEAKER: undefined });
+    expect(input.speaker).toBe('luna');
+  });
+
+  it('never sends the model a speaker that belongs to the other model: Aura-1 names to Aura-2 get luna, Aura-2 names to Aura-1 get asteria', async () => {
+    captureLogs();
+    for (const speaker of ['angus', 'perseus', 'helios', 'stella']) {
+      expect((await modelCall({ VOICE_TTS_MODEL: 'aura-2', VOICE_SPEAKER: speaker })).input.speaker, speaker).toBe('luna');
+      await reset();
+      session = await chatOnce();
+    }
+    for (const speaker of ['thalia', 'andromeda', 'aura-2-thalia-en']) {
+      expect((await modelCall({ VOICE_TTS_MODEL: 'aura-1', VOICE_SPEAKER: speaker })).input.speaker, speaker).toBe('asteria');
+      await reset();
+      session = await chatOnce();
+    }
+  });
+
+  it('serves Aura-2 audio the same way, and charges the same character budget', async () => {
+    const stub = aiStub(speech);
+    const env = auraEnv(stub.ai, { VOICE_TTS_MODEL: 'aura-2' });
+    const res = await post(body('Hello there.'), { env });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Content-Type')).toBe('audio/mpeg');
+    expect(Array.from(new Uint8Array(await res.arrayBuffer()))).toEqual(Array.from(MP3));
+    expect(await fixedCount(env, globalTtsName())).toBe(12); // 'Hello there.'
+  });
+
+  it('keeps the character budget and its refusal the same on Aura-2', async () => {
+    const stub = aiStub(speech);
+    const env = auraEnv(stub.ai, { VOICE_TTS_MODEL: 'aura-2', VOICE_DAILY_TTS_CHARS: '20' });
+    expect((await post(body('Hello there.'), { env })).status).toBe(200); // 12
+    const over = await post(body('Hello there.'), { env }); // 12 + 12 is more than 20
+    expect(over.status).toBe(503);
+    expect(await over.json()).toEqual({ error: 'voice_unavailable', reason: 'budget' });
+    expect(stub.run).toHaveBeenCalledTimes(1);
+  });
+
+  describe('logging a speaker fallback', () => {
+    const fallbackLines = (logs: string[]) => logs.filter((line) => line.includes('"event":"tts_speaker_fallback"'));
+
+    it('logs one tts_speaker_fallback line, with no text, when VOICE_SPEAKER does not fit the model', async () => {
+      const logs = captureLogs();
+      const ip = randomIp();
+      const stub = aiStub(speech);
+      const res = await post(body('My card ends in four two four two.'), {
+        env: auraEnv(stub.ai, { VOICE_TTS_MODEL: 'aura-2', VOICE_SPEAKER: 'angus' }),
+        ip,
+      });
+      expect(res.status).toBe(200); // the reply is still spoken, in the model's default voice
+      expect(stub.run.mock.calls[0]![1].speaker).toBe('luna');
+      const lines = fallbackLines(logs);
+      expect(lines).toHaveLength(1);
+      expect(JSON.parse(lines[0]!)).toEqual({ event: 'tts_speaker_fallback', model: 'aura-2', requested: 'angus', used: 'luna' });
+      const all = logs.join('\n');
+      expect(all).not.toContain('card ends');
+      expect(all).not.toContain(session);
+      expect(all).not.toContain(ip);
+    });
+
+    it('logs it for Aura-1 too', async () => {
+      const logs = captureLogs();
+      await post(body('Hello there.'), { env: auraEnv(undefined, { VOICE_TTS_MODEL: 'aura-1', VOICE_SPEAKER: 'thalia' }) });
+      expect(fallbackLines(logs).map((line) => JSON.parse(line))).toEqual([
+        { event: 'tts_speaker_fallback', model: 'aura-1', requested: 'thalia', used: 'asteria' },
+      ]);
+    });
+
+    it('cuts a long rejected value so the log line stays small', async () => {
+      const logs = captureLogs();
+      await post(body('Hello there.'), { env: auraEnv(undefined, { VOICE_SPEAKER: 'x'.repeat(500) }) });
+      const parsed = JSON.parse(fallbackLines(logs)[0]!);
+      expect(parsed.requested.length).toBeLessThanOrEqual(32);
+    });
+
+    it.each([
+      ['a speaker that fits Aura-1', { VOICE_TTS_MODEL: 'aura-1', VOICE_SPEAKER: 'angus' }],
+      ['a speaker that fits Aura-2', { VOICE_TTS_MODEL: 'aura-2', VOICE_SPEAKER: 'thalia' }],
+      ['no speaker at all', { VOICE_TTS_MODEL: 'aura-2', VOICE_SPEAKER: undefined }],
+      ['a blank speaker', { VOICE_TTS_MODEL: 'aura-2', VOICE_SPEAKER: '  ' }],
+      ['a speaker both models have', { VOICE_TTS_MODEL: 'aura-2', VOICE_SPEAKER: 'asteria' }],
+    ])('logs no fallback for %s', async (_label, vars) => {
+      const logs = captureLogs();
+      await post(body('Hello there.'), { env: auraEnv(undefined, vars) });
+      expect(fallbackLines(logs)).toHaveLength(0);
+    });
+
+    it('logs nothing for a request refused before the model call', async () => {
+      const logs = captureLogs();
+      const env = auraEnv(undefined, { VOICE_SPEAKER: 'nobody' });
+      await post(body('Hello there.', randomUuid()), { env }); // no chat yet: 403
+      await post(body('Hello there.'), { env: auraEnv(undefined, { VOICE_SPEAKER: 'nobody', VOICE_DAILY_TTS_CHARS: '0' }) }); // budget: 503
+      expect(fallbackLines(logs)).toHaveLength(0);
+    });
+  });
+});
+
 describe('POST /tts request checks', () => {
   const rejected = async (payload: unknown) => {
     const stub = aiStub(speech);
@@ -271,20 +377,20 @@ describe('POST /tts request checks', () => {
 });
 
 describe('POST /tts limits', () => {
-  it('counts characters against the day: 100,000 by default, then stops with 503 and reason "budget"', async () => {
+  it('counts characters against the day: 25,000 by default, then stops with 503 and reason "budget"', async () => {
     const stub = aiStub(speech);
     const env = auraEnv(stub.ai, { VOICE_DAILY_TTS_CHARS: undefined });
     const full = 'a'.repeat(1000);
-    for (let i = 0; i < 99; i += 1) {
-      expect((await post(body(full), { env, ip: randomIp() })).status, `request ${i + 1}`).toBe(200); // 99,000
+    for (let i = 0; i < 24; i += 1) {
+      expect((await post(body(full), { env, ip: randomIp() })).status, `request ${i + 1}`).toBe(200); // 24,000
     }
-    expect(await fixedCount(env, globalTtsName())).toBe(99_000);
+    expect(await fixedCount(env, globalTtsName())).toBe(24_000);
     expect((await post(body('a'.repeat(1000) + 'b'), { env, ip: randomIp() })).status).toBe(400); // over the text cap, not the budget
-    expect((await post(body('a'.repeat(1000)), { env, ip: randomIp() })).status).toBe(200); // exactly 100,000
+    expect((await post(body('a'.repeat(1000)), { env, ip: randomIp() })).status).toBe(200); // exactly 25,000
     const spent = await post(body('b'), { env, ip: randomIp() });
     expect(spent.status).toBe(503);
     expect(await spent.json()).toEqual({ error: 'voice_unavailable', reason: 'budget' });
-    expect(stub.run).toHaveBeenCalledTimes(100);
+    expect(stub.run).toHaveBeenCalledTimes(25);
   });
 
   it('uses VOICE_DAILY_TTS_CHARS and counts the sanitized length', async () => {
@@ -394,8 +500,8 @@ describe('POST /tts logging', () => {
     const lines = logs.filter((line) => line.includes('"event":"tts"'));
     expect(lines).toHaveLength(1);
     const parsed = JSON.parse(lines[0]!);
-    expect(Object.keys(parsed).sort()).toEqual(['chars', 'event', 'ms', 'status']);
-    expect(parsed).toMatchObject({ event: 'tts', status: 200, chars: 34 });
+    expect(Object.keys(parsed).sort()).toEqual(['chars', 'event', 'ms', 'provider', 'status']);
+    expect(parsed).toMatchObject({ event: 'tts', provider: 'aura', status: 200, chars: 34 });
     const all = logs.join('\n');
     expect(all).not.toContain('card ends');
     expect(all).not.toContain(sessionId);

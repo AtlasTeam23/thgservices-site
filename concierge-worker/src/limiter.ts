@@ -59,6 +59,10 @@ export class Limiter extends DurableObject<Env> {
     this.#schemaReady = true;
   }
 
+  #tableExists(table: string): boolean {
+    return this.ctx.storage.sql.exec("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", table).toArray().length > 0;
+  }
+
   #getMeta(key: string): number | null {
     const rows = this.ctx.storage.sql.exec<{ v: number }>('SELECT v FROM meta WHERE k = ?', key).toArray();
     return rows[0]?.v ?? null;
@@ -139,8 +143,7 @@ export class Limiter extends DurableObject<Env> {
     const seconds = Number.isFinite(windowSeconds) ? Math.floor(windowSeconds) : 1;
     const windowMs = Math.max(1, seconds) * 1000;
     const sql = this.ctx.storage.sql;
-    const exists = (table: string): boolean =>
-      sql.exec("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", table).toArray().length > 0;
+    const exists = (table: string): boolean => this.#tableExists(table);
 
     const endedUntil = exists('meta') ? this.#getMeta('ended_until') : null;
     const ended = endedUntil !== null && endedUntil > now;
@@ -163,6 +166,29 @@ export class Limiter extends DurableObject<Env> {
       if (row.oldest !== null) resetAt = row.oldest + windowMs;
     }
     return { count, ended, resetAt: ended && endedUntil !== null ? endedUntil : resetAt };
+  }
+
+  /**
+   * Gives units back to a fixed counter, but only the window they were taken from: `expectedResetAt` is the
+   * `resetAt` the reserving `hit()` returned. If the counter's current window ends at some other time (the one
+   * that held the unit has expired and a new one has begun, as when a provider call straddles Eastern
+   * midnight), the unit is not in this window and nothing changes. Never goes below zero, never moves the
+   * window, writes nothing for an id with no live counter. The amount is whole units of at least 1. Returns
+   * the count now (0 when there is no live counter).
+   *
+   * Used to hand back a unit reserved with `hit()` that turned out not to be used (a provider call that
+   * failed): the check-and-count stays atomic, and a failure costs the visitor nothing.
+   */
+  async refund(amount: number, expectedResetAt: number): Promise<number> {
+    const units = Number.isFinite(amount) ? Math.max(1, Math.floor(amount)) : 1;
+    if (!this.#tableExists('counter')) return 0;
+    const sql = this.ctx.storage.sql;
+    const row = sql.exec<{ count: number; reset_at: number }>('SELECT count, reset_at FROM counter WHERE id = 0').toArray()[0];
+    if (row === undefined || row.reset_at <= Date.now()) return 0;
+    if (row.reset_at !== expectedResetAt) return row.count; // a different window: nothing of ours is in it
+    const count = Math.max(0, row.count - units);
+    sql.exec('UPDATE counter SET count = ? WHERE id = 0', count);
+    return count;
   }
 
   /** Cuts a session off: every later `hit()` reports `ended: true` until `ttlSeconds` pass. */

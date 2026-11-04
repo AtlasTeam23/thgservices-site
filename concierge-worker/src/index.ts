@@ -1,7 +1,7 @@
 import type { VoiceDeps } from './ai';
 import { handleChat } from './chat';
 import { checkOrigin, originDenied, preflight, withCors } from './cors';
-import { isAuraAvailable, isEmailConfigured, isSttAvailable, isTurnstileConfigured, llmStatus, ttsMode, type Env } from './env';
+import { isEmailConfigured, isTurnstileConfigured, llmStatus, ttsProvider, voiceHealth, type Env } from './env';
 import { json, methodNotAllowed } from './http';
 import { handleLead, type LeadDeps } from './lead';
 import type { GenerateDeps } from './llm';
@@ -28,7 +28,7 @@ const route = async (request: Request, env: Env, deps: AppDeps): Promise<Respons
         llm: llmStatus(env),
         email: isEmailConfigured(env),
         turnstile: isTurnstileConfigured(env),
-        voice: { stt: isSttAvailable(env), tts: isAuraAvailable(env) ? 'aura' : 'browser' },
+        voice: voiceHealth(env),
       });
 
     case '/chat':
@@ -44,8 +44,8 @@ const route = async (request: Request, env: Env, deps: AppDeps): Promise<Respons
       return handleStt(request, env, deps.voice);
 
     case '/tts':
-      // The premium voice is off unless VOICE_TTS=aura, and then the route does not exist at all.
-      if (ttsMode(env) !== 'aura') return json({ error: 'not_found' }, 404);
+      // The paid voice is off unless VOICE_TTS names a provider, and then the route does not exist at all.
+      if (ttsProvider(env) === 'browser') return json({ error: 'not_found' }, 404);
       if (request.method !== 'POST') return methodNotAllowed('POST, OPTIONS');
       return handleTts(request, env, deps.voice);
 

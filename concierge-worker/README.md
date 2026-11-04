@@ -6,11 +6,11 @@ The React widget lives in `../vite-app/src/components/concierge/`. The two halve
 
 | Route | Purpose |
 |---|---|
-| `GET /health` | `{ok, llm: "anthropic"\|"mock"\|"unconfigured", email, turnstile, voice: {stt, tts: "browser"\|"aura"}}`. Booleans say whether a secret is set (and whether speech-to-text can run); values are never shown. |
+| `GET /health` | `{ok, llm: "anthropic"\|"mock"\|"unconfigured", email, turnstile, voice}`. Booleans say whether a secret is set; values are never shown. `voice` is `{stt: boolean, tts: "browser"}` while the browser reads replies aloud, and `{stt, tts: "server", provider: "aura"\|"elevenlabs", configured: boolean, ttsModel: string}` once a paid voice is selected: `configured` says whether it can really run (Aura: the AI binding exists; ElevenLabs: the key and a voice id are set), `ttsModel` is the model it will use. See "Voice". |
 | `POST /chat` | One visitor message in, one reply out: `{reply, intent, offerCallback, readyToConfirm, lead}`. See "The reply" below. |
 | `POST /lead` | A callback request. Emailed through Resend and optionally forwarded to a LeadQuik webhook. |
 | `POST /stt` | Push-to-talk voice: one short recording in, `{text, durationMs}` out (Whisper on Workers AI). See "Voice". |
-| `POST /tts` | Premium reply voice (Aura-1 on Workers AI), an MPEG stream out. A `404` unless `VOICE_TTS=aura`. See "Voice". |
+| `POST /tts` | The paid reply voice (Aura on Workers AI, or ElevenLabs), an MPEG stream out, capped per visitor. A `404` unless `VOICE_TTS` is `aura` or `elevenlabs`. See "Voice". |
 
 Only the origins in `ALLOWED_ORIGINS` (see `wrangler.jsonc`) can call it from a browser. Requests with no `Origin` header (curl, monitors) are allowed; rate limits and Turnstile are the real guards.
 
@@ -24,7 +24,8 @@ src/index.ts          router, CORS, error handling
 src/chat.ts           POST /chat (check order is in the file header)
 src/lead.ts           POST /lead
 src/stt.ts            POST /stt (multipart upload -> Whisper -> transcript)
-src/tts.ts            POST /tts (Aura-1 stream, behind VOICE_TTS=aura)
+src/tts.ts            POST /tts (Aura or ElevenLabs stream; per-visitor cap; the lead bonus)
+src/elevenlabs.ts     the ElevenLabs streaming call
 src/ai.ts             8 s timeout/abort helper, the voice_unavailable 503, and test seams shared by /stt and /tts
 src/util.ts           isRecord and sleep, used by several modules
 src/node-buffer.d.ts  the one slice of node:buffer's types the Worker uses
@@ -42,6 +43,7 @@ src/leadquik.ts       LeadQuik webhook sender and payload type
 src/turnstile.ts      Turnstile siteverify
 src/copy.ts           visitor-facing strings the Worker returns itself
 scripts/probe.mjs     bot-behavior checklist against a running Worker
+scripts/eleven-voices.mjs  lists the ElevenLabs voices to choose from (`npm run eleven:voices`)
 test/                 vitest suites that run inside the Workers runtime
 ```
 
@@ -85,7 +87,7 @@ npm run test:probe  # unit tests for the probe script's own assertions
 npm run probe       # bot checklist against http://localhost:8787 (see below)
 ```
 
-The test suite sets every secret to "off" itself, so a real key in your `.dev.vars` cannot change a result. Outbound calls (Anthropic, Resend, Turnstile, LeadQuik) are stubbed by replacing `fetch`, and Workers AI is replaced by a stub binding (`aiStub` in `test/helpers.ts`; `testEnv` removes the real one and `vitest.config.ts` sets `remoteBindings: false`, so the suite never opens a session on your Cloudflare account); nothing in `npm test` touches the network or spends neurons.
+The test suite sets every secret to "off" itself, so a real key in your `.dev.vars` cannot change a result. Outbound calls (Anthropic, Resend, Turnstile, LeadQuik) are stubbed by replacing `fetch`, and ElevenLabs is the same stubbed `fetch` (no key is needed, and none is used), and Workers AI is replaced by a stub binding (`aiStub` in `test/helpers.ts`; `testEnv` removes the real one and `vitest.config.ts` sets `remoteBindings: false`, so the suite never opens a session on your Cloudflare account); nothing in `npm test` touches the network or spends neurons.
 
 ### The bot probe
 
@@ -123,11 +125,17 @@ Public settings, committed in `wrangler.jsonc`:
 | `LEAD_TO_EMAIL` / `LEAD_FROM_EMAIL` | `developer@leadquik.com` / `THG AI Services <concierge@leadquik.com>` |
 | `RATE_SALT` | Random string used only to hash IPs into Durable Object names. Not a secret. |
 | `LLM_PROVIDER` | `anthropic` (local runs use `mock`) |
-| `VOICE_TTS` | `browser`. `aura` switches on `POST /tts` (see "Turning on the premium voice"). Any other value means `browser`. |
-| `VOICE_SPEAKER` | `asteria`. The Aura-1 voice; one of `angus asteria arcas orion orpheus athena luna zeus perseus helios hera stella`, anything else falls back to `asteria`. |
+| `VOICE_TTS` | `browser`. Who reads replies aloud: `browser` (free, in the visitor's browser), `aura` (Workers AI) or `elevenlabs`. The last two switch on `POST /tts` (see "Voice"). Any other value means `browser`. |
+| `VOICE_TTS_MODEL` | `aura-1`. Which Aura model speaks when `VOICE_TTS=aura`: `aura-1` or `aura-2` (`@cf/deepgram/aura-2-en`, more natural, twice the price). Anything else means `aura-1`. |
+| `VOICE_SPEAKER` | `asteria`. The premium voice, a name from the selected model's list (below). If it is not on that list the model's default is used and the Worker logs `tts_speaker_fallback`. |
 | `VOICE_DAILY_STT_SECONDS` | `9000` audio seconds of speech-to-text per Eastern-time day, all visitors (150 minutes). `0` switches voice input off; a missing, blank, non-numeric or negative value falls back to 9000. |
 | `VOICE_SESSION_SECONDS` | `180` audio seconds per chat session. `0` switches voice input off; bad values fall back to 180. |
-| `VOICE_DAILY_TTS_CHARS` | `100000` characters of premium text-to-speech per Eastern-time day (about 300 replies, about $1.50 a day). `0` refuses every request; bad values fall back to 100000. |
+| `VOICE_ELEVEN_VOICE_ID` | empty. The ElevenLabs voice to use, chosen with `npm run eleven:voices`. While it is empty `/tts` answers `503` (reason `server`) and `/health` shows `configured: false`. Only letters, digits, `_` and `-` (8 to 64) are accepted, since it goes into a URL path. |
+| `VOICE_ELEVEN_MODEL` | `eleven_flash_v2_5` (about 75 to 100 ms to first audio, built for conversation; $0.04 per 1,000 characters as of Nov 2026, see "What it costs"). Any other model name is passed through; a blank or odd value means Flash. |
+| `VOICE_ELEVEN_FORMAT` | `mp3_22050_32`. One of the MP3 `output_format` values: `mp3_22050_32 mp3_24000_48 mp3_44100_32 mp3_44100_64 mp3_44100_96 mp3_44100_128 mp3_44100_192`. All work on every plan except `mp3_44100_192`, which needs Creator or above. Only MP3 is allowed because the audio is labelled `audio/mpeg`; anything else means `mp3_22050_32`. |
+| `VOICE_TTS_PER_IP_PER_DAY` | `5`. Spoken replies one visitor (one address) gets per Eastern-time day on a paid voice. `0` leaves only the bonus. See "The per-visitor cap". |
+| `VOICE_TTS_BONUS` | `5`. Extra spoken replies that address earns the same day by leaving its contact details through the lead form. |
+| `VOICE_DAILY_TTS_CHARS` | `25000` characters of paid text-to-speech per Eastern-time day, all visitors together: about 80 spoken replies, at most about $1 a day on ElevenLabs Flash ($0.375 on Aura-1, $0.75 on Aura-2). `0` refuses every request. If the var is removed, blank or not a whole number the code falls back to the same `25000`. See "What it costs". |
 
 The `ai` binding (`{ "binding": "AI", "remote": true }`) needs no secret. `remote: true` only says what is already true, that Workers AI runs on Cloudflare's network even under `wrangler dev`, and keeps Wrangler from warning about it.
 
@@ -139,6 +147,7 @@ Secrets, set with Wrangler and never stored in the repo:
 | `RESEND_API_KEY` | yes | `/lead` answers `502 delivery_failed` unless the LeadQuik hook succeeded |
 | `TURNSTILE_SECRET_KEY` | recommended | Verification is skipped (one warning per isolate); `/health` shows `turnstile: false` |
 | `LEADQUIK_WEBHOOK_URL` | optional | The LeadQuik hook is skipped |
+| `ELEVENLABS_API_KEY` | only for `VOICE_TTS=elevenlabs` | `/tts` answers `503` (reason `server`) and `/health` shows `configured: false`. Never in the repo, never logged, never in a response. |
 
 ## Deploy
 
@@ -160,6 +169,7 @@ npx wrangler secret put LLM_API_KEY          # Anthropic key named thg-concierge
 npx wrangler secret put RESEND_API_KEY       # Resend key scoped to sending from leadquik.com
 npx wrangler secret put TURNSTILE_SECRET_KEY # only once Turnstile is enabled, see below
 npx wrangler secret put LEADQUIK_WEBHOOK_URL # optional
+npx wrangler secret put ELEVENLABS_API_KEY   # only for the ElevenLabs voice, see "Setting up ElevenLabs"
 npx wrangler secret list                     # names only, never values
 ```
 
@@ -199,6 +209,8 @@ The helper answers only from `knowledge.md`. Its first sections were copied from
 | Global model calls | `global:<YYYY-MM-DD in America/New_York>` | `DAILY_LLM_CAP`, fixed window, counted only when a model call is about to happen |
 | Global leads | `global:lead:<YYYY-MM-DD in America/New_York>` | 100 per Eastern-time day (Resend's free tier), fixed window |
 | Voice per IP | `ip:stt:<hash>` and `ip:tts:<hash>` | 30 requests each, sliding 10 minutes (hashed like the chat one) |
+| Spoken replies per visitor | `ip:tts-spoken:<hash>` | `VOICE_TTS_PER_IP_PER_DAY` (+ `VOICE_TTS_BONUS` once earned), fixed window that ends at Eastern midnight |
+| Bonus earned | `ip:tts-bonus:<hash>` | set to 1 by a qualifying lead; fixed window that ends at Eastern midnight |
 | Voice per session | `session-voice:<sessionId>` | `VOICE_SESSION_SECONDS` audio seconds, fixed 24 hours |
 | Global speech-to-text | `global:voice:<YYYY-MM-DD in America/New_York>` | `VOICE_DAILY_STT_SECONDS` audio seconds, fixed window |
 | Global premium voice | `global:tts:<YYYY-MM-DD in America/New_York>` | `VOICE_DAILY_TTS_CHARS` characters, fixed window |
@@ -264,7 +276,7 @@ When `LEADQUIK_WEBHOOK_URL` is set (https only; `http://localhost` is allowed fo
 
 ## Voice (push-to-talk)
 
-The widget records one short utterance while the visitor holds the mic button, `POST /stt` turns it into text with Whisper (`@cf/openai/whisper-large-v3-turbo` on Workers AI), and the text goes through the ordinary `/chat` flow as the visitor's message, so every guard, limit and analytics event applies to it. Replies are read aloud by the browser (`speechSynthesis`: free, and no Worker call at all). `POST /tts` (Deepgram Aura-1) is a premium server voice that is built and tested but off. Voice is an extra: when it is unavailable the widget hides the mic and the text chat is exactly as before. The text chat never calls Workers AI.
+The widget records one short utterance while the visitor holds the mic button, `POST /stt` turns it into text with Whisper (`@cf/openai/whisper-large-v3-turbo` on Workers AI), and the text goes through the ordinary `/chat` flow as the visitor's message, so every guard, limit and analytics event applies to it. Replies are read aloud by the browser (`speechSynthesis`: free, and no Worker call at all). `POST /tts` is a paid server voice, off by default: Deepgram Aura through Workers AI, or ElevenLabs, whichever `VOICE_TTS` names, with a small per-visitor daily cap. Voice is an extra: when it is unavailable the widget hides the mic and the text chat is exactly as before. The text chat never calls Workers AI.
 
 ### `POST /stt`
 
@@ -298,9 +310,40 @@ What is charged: the budgets are not trusted to the client. Before the call `/st
 
 The Whisper call has an 8 second timeout per attempt. A failure that is not a timeout is retried once, 400 ms later; a timeout is never retried. The worst case is a failure just under 8 s, the pause, and a second full timeout, about 16.4 s, inside the widget's 20 s. It runs with `vad_filter: true`: without voice-activity detection Whisper answers silence or room noise with an invented "Thank you.", which would arrive in the chat as something the visitor said. The audio is base64-encoded with `Buffer` (the `nodejs_compat` flag is on); a JavaScript loop over a megabyte costs tens of milliseconds of CPU time per request.
 
-### `POST /tts` (only with `VOICE_TTS=aura`)
+### `POST /tts` (only while `VOICE_TTS` is `aura` or `elevenlabs`)
 
-Body `{"sessionId": "<uuid>", "text": "..."}`, text 1 to 1,000 characters after markup is stripped (1,000 is the longest reply `/chat` produces, so any reply can be spoken; longer is `400 bad_request`). The answer is the Aura-1 MPEG stream (the Worker asks for `encoding: "mp3"` by name), passed through as it arrives with `Content-Type: audio/mpeg`. It only speaks replies, so the session must have sent at least one chat message (`403 {"error": "no_chat"}` otherwise) and must not have been ended by `/chat` (`403 {"error": "ended", "reply": ...}`); like `/stt` it only reads the session, and a speech request is not a chat message. `429 rate_limited` is the address's 30 requests per 10 minutes, checked first, so probing with made-up sessions is bounded too. `503 voice_unavailable` carries `"reason": "budget"` when the day's characters are used up (or `VOICE_DAILY_TTS_CHARS` is 0), and `"reason": "server"` when there is no binding, the model failed or took over 8 seconds (no retry: the widget uses the browser voice instead), or the limiter is down. While `VOICE_TTS` is not `aura` the route answers `404 not_found` for every method except `OPTIONS`: the CORS preflight is answered before routing, so a browser's preflight to `/tts` succeeds even then, and the `POST` that follows is the 404.
+Body `{"sessionId": "<uuid>", "text": "..."}`, text 1 to 1,000 characters after markup is stripped (1,000 is the longest reply `/chat` produces, so any reply can be spoken; longer is `400 bad_request`). The answer is the provider's MPEG stream, passed through as it arrives with `Content-Type: audio/mpeg` (the Worker sets that itself: ElevenLabs does not document one), `Cache-Control: no-store`, and none of the provider's own headers. It only speaks replies, so the session must have sent at least one chat message (`403 {"error": "no_chat"}` otherwise) and must not have been ended by `/chat` (`403 {"error": "ended", "reply": ...}`); like `/stt` it only reads the session, and a speech request is not a chat message.
+
+| Answer | Meaning |
+|---|---|
+| `200` audio | A spoken reply. Counts one against the visitor's daily allowance. |
+| `429 {"error": "rate_limited"}` | The address's 30 requests per 10 minutes (the abuse backstop), checked first, so probing with made-up sessions is bounded too. |
+| `429 {"error": "tts_limit", "bonusAvailable": true\|false, "bonus": 5}` | The visitor has used today's spoken replies (see below). `Retry-After` is taken from the refusing counter's own window end (the next Eastern midnight), not from the wall clock. `bonus` is the number of extra replies a lead earns (`VOICE_TTS_BONUS`), for the widget to display; `bonusAvailable` is true only while the address has not earned today's bonus **and** that bonus is worth something (`VOICE_TTS_BONUS` above 0), so a zero bonus never offers the form. The widget falls back to the browser voice and, when it can, offers the bonus. |
+| `503 {"error": "voice_unavailable", "reason": "budget"}` | The day's character budget (`VOICE_DAILY_TTS_CHARS`) is used up or set to 0. |
+| `503 {"error": "voice_unavailable", "reason": "server"}` | The provider is not set up (no AI binding; or no ElevenLabs key or voice id), answered anything but HTTP 200 (ElevenLabs quota and limit answers are not documented, so every other status counts as a failure), failed, took over 8 seconds (no retry: the widget uses the browser voice instead), or the limiter is down. |
+
+While `VOICE_TTS` is `browser`, or any value other than `aura` or `elevenlabs` (a typo included), the route answers `404 not_found` for every method except `OPTIONS`: the CORS preflight is answered before routing, so a browser's preflight to `/tts` succeeds even then, and the `POST` that follows is the 404.
+
+Check order: provider set up -> read and check the request -> address limit (30 per 10 minutes) -> the session has chatted and is not ended -> the visitor's daily allowance -> the day's character budget -> the provider.
+
+### The per-visitor cap and the bonus
+
+Each address (an IPv6 `/64` counts as one) may hear `VOICE_TTS_PER_IP_PER_DAY` spoken replies per Eastern-time day, **5** by default. It applies to both paid voices. The count restarts at Eastern midnight, including on the 23- and 25-hour days when the clocks change (the counter's window is sized to the time left in the day).
+
+A visitor can earn `VOICE_TTS_BONUS` more (**5**) the same day by leaving contact details: when `/lead` **delivers** successfully and the lead has a non-empty name, a valid email and a 10-digit phone number, the Worker sets a daily counter `ip:tts-bonus:<hash>` to 1 for that address. Setting it again changes nothing, so a second lead does not stack. A lead without an email (the email is the optional field), a lead that is refused, and a lead that cannot be delivered earn nothing. The grant happens after delivery and can never fail a lead: if the limiter errors, `limiter_error` is logged and the lead still succeeds. While the browser voice is in use nothing is recorded.
+
+When the allowance is gone `/tts` answers `429 tts_limit` with `bonus` (the size of the bonus) and `bonusAvailable: true` if no bonus has been granted to that address today and `VOICE_TTS_BONUS` is above 0 (so the widget can offer the form), and `false` once it has been granted or when there is nothing to offer. The 30-per-10-minutes limit and the daily character budget stay in force as backstops.
+
+How a slot is counted: it is reserved **before** the provider is called, in one atomic step, and given back if no audio is delivered (the provider failed, timed out, answered with an error, or the character budget refused the reply). The day's character budget is handed back too when the provider fails, so a failing provider cannot drain `VOICE_DAILY_TTS_CHARS`. Each refund is tied to the window it was taken from (`Limiter.refund(n, expectedResetAt)`): a provider call that straddles Eastern midnight cannot credit the new day. A refund that cannot be made is logged as `{"event":"limiter_error","where":"tts_refund"}` and never swallowed silently. So eight simultaneous requests against a cap of five let exactly five through, and a failed call never costs the visitor a reply. A reply counts when its audio starts streaming; if the visitor closes the page mid-reply, the cancel passes on to the provider and nothing throws.
+
+### Setting up ElevenLabs
+
+1. **Get a key.** In ElevenLabs create an API key on the plan you will pay for (see the cost note below: as of Nov 2026 Starter is $6 a month, with 150,000 Flash characters and 6 concurrent calls). Put it in `.dev.vars` for local use as `ELEVENLABS_API_KEY=...` (copy `.dev.vars.example`; that file is gitignored), and store it for the deployed Worker with `npx wrangler secret put ELEVENLABS_API_KEY` (type or paste it at the prompt).
+2. **Pick a voice, by listening.** Voice ids are not published anywhere; they come from the voices API. `npm run eleven:voices` reads the key from `.dev.vars` and lists the premade voices sorted by name: `voice_id`, gender, accent, age, use case, a description, and a `preview_url`, a public sample MP3 ElevenLabs hosts for that voice, so you can open the link in a browser and hear it instead of choosing by name. `npm run --silent eleven:voices -- --json > voices.json` writes the same list as a JSON array, `[{voice_id, name, labels, preview_url}]` (labels exactly as ElevenLabs sent them, `preview_url` `null` when a voice has none or when it is not an `https` URL), for building a listening page. In `--json` mode stdout is only the JSON; problems still go to stderr with a non-zero exit, so a redirect never captures half an answer. The script exits non-zero with a plain message if the key is missing or the call fails, and never prints the key. Copy the `voice_id` you like.
+3. **Set the voice id.** Put it in `VOICE_ELEVEN_VOICE_ID` in `wrangler.jsonc`, and set `"VOICE_TTS": "elevenlabs"`. Leave `VOICE_ELEVEN_MODEL` as `eleven_flash_v2_5` unless you want to compare models. Run `npm test && npm run typecheck`, then `npx wrangler deploy`.
+4. **Check.** `curl -s https://<worker-url>/health` should show `"voice":{"stt":true,"tts":"server","provider":"elevenlabs","configured":true,"ttsModel":"eleven_flash_v2_5"}`. `configured: false` means the key or the voice id is missing. To go back to the free voice, set `"VOICE_TTS": "browser"` and redeploy.
+
+What the Worker sends: `POST https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream?output_format=mp3_22050_32` with the key in the `xi-api-key` header and a JSON body of `text`, `model_id`, `voice_settings` (`stability: 0.5`, `similarity_boost: 0.75`, `style: 0`, `use_speaker_boost: true`) and `apply_text_normalization: "auto"`. It sends the reply text, so ElevenLabs processes what the helper says (which can include a name the visitor gave); the privacy page (task W8 of the voice plan) has to name ElevenLabs before this goes live. Logs carry only `{event: "tts_error", provider, ms, status}` (or `error`, the error's name) for a failure and `{event: "tts", provider, ms, status, chars}` for every attempt: never the key, the text, or anything ElevenLabs said back. The tests run against a stubbed `fetch`; the Worker has not been exercised against the real API, so the first real reply after setup is the real check.
 
 ### What it costs on the Workers Free plan
 
@@ -309,15 +352,30 @@ Workers AI bills in neurons, and the Free plan includes 10,000 a day for the who
 | | Rate | Daily cap | Neurons at the cap | Cost at the cap on Workers Paid |
 |---|---|---|---|---|
 | Speech-to-text | 46.63 neurons per audio minute, $0.0005 per minute | 9,000 s = 150 minutes | about 7,000 | $0.075 |
-| Premium voice | 1,363.64 neurons per 1,000 characters, $0.015 per 1,000 | 100,000 characters | about 136,400 | $1.50 |
+| Premium voice, Aura-1 | 1,363.64 neurons per 1,000 characters, $0.015 per 1,000 | 25,000 characters | about 34,100 | $0.375 |
+| Premium voice, Aura-2 | 2,727.27 neurons per 1,000 characters, $0.030 per 1,000 | 25,000 characters | about 68,200 | $0.75 |
+| Premium voice, ElevenLabs Flash | no neurons (billed by ElevenLabs): API price $0.04 per 1,000 characters | 25,000 characters | none | $1.00 on the API price |
 
-Speech-to-text at its cap uses about 70% of the free allowance and leaves about 3,000 neurons for anything else on the account. The premium voice does not fit the Free plan: 10,000 neurons are spent after about 7,300 characters, roughly 22 replies. Neurons run out per account, so speech and premium voice draw on the same pool. At roughly 330 characters per reply, the default 100,000 characters is about 300 spoken replies a day, at most about $1.50 a day. Lower `VOICE_DAILY_TTS_CHARS` to cap the spend harder (20,000 is about 60 replies and $0.30 a day). Speech seconds are charged from the length Whisper measured, not from what the client claims (see "What is charged" above); the only slack is that a recording starting under the cap may take it past, bounded by the 1 MiB upload cap and 30 recordings per address per 10 minutes.
+ElevenLabs is billed by its own plan, not by Cloudflare. These plan and price figures are **as of November 2026; check <https://elevenlabs.com/pricing> before relying on them** (<https://elevenlabs.io/pricing/api> when read): Flash and Turbo are $0.04 per 1,000 characters through the API; **Starter is $6 a month (first month $1) and includes 150,000 Flash characters, about 450 replies at 330 characters**, with 6 concurrent calls; Creator is $22 and includes 550,000; Pro is $99 and includes 2,475,000. The shipped `VOICE_DAILY_TTS_CHARS` is 25,000 characters a day for all visitors together: at most about $1.00 a day on Flash, roughly 80 spoken replies (25,000 / 330), about $30 over a month if it were reached every day. That is more than a small plan holds: Starter's 150,000 characters last 6 days at the cap, Creator's 550,000 last 22, Pro's cover the month. So size the budget to the plan you pay for: for Starter, 150,000 / 30 is about 5,000 characters a day (about 15 replies). The per-visitor cap limits each visitor but not how many visitors there are; the character budget is the cap on the total.
 
-### Turning on the premium voice
+Speech-to-text at its cap uses about 70% of the free allowance and leaves about 3,000 neurons for anything else on the account. The Aura voices do not fit the Free plan: 10,000 neurons are spent after about 7,300 characters on Aura-1, roughly 22 replies, and the shipped 25,000-character budget would be about 34,100 neurons. Neurons run out per account, so speech and the Aura voices draw on the same pool. At roughly 330 characters per reply, the shipped 25,000 characters is about 80 spoken replies a day: at most about $0.375 a day on Aura-1, $0.75 on Aura-2 (twice the price per character; its 10,000 free neurons last only about 3,700 characters, roughly 11 replies) and $1.00 on ElevenLabs Flash. The budget counts characters, so raising it scales the cost: 100,000 characters would be $1.50, $3.00 and $4.00 a day. Lower `VOICE_DAILY_TTS_CHARS` to cap the spend harder. Speech seconds are charged from the length Whisper measured, not from what the client claims (see "What is charged" above); the only slack is that a recording starting under the cap may take it past, bounded by the 1 MiB upload cap and 30 recordings per address per 10 minutes.
+
+### Choosing the Aura model and voice (when `VOICE_TTS` is `aura`)
+
+`VOICE_TTS_MODEL` picks the model, `VOICE_SPEAKER` the voice. Workers AI takes **bare** speaker names (`thalia`); the `aura-2-thalia-en` form that Deepgram's own API uses is refused with a 400, and so is a name from the other model's list. So each model has its own allowlist, checked on every request, with a default for when `VOICE_SPEAKER` is not on it (blank means the default too, quietly; a name that is not on the list means the default plus a `tts_speaker_fallback` log line). A mismatch therefore costs you the voice you wanted, not the reply being spoken.
+
+| Model | Default speaker | Speakers |
+|---|---|---|
+| `aura-1` (`@cf/deepgram/aura-1`) | `asteria` (Workers AI's own default for the model is `angus`; `asteria` is what this Worker has always used) | angus, asteria, arcas, orion, orpheus, athena, luna, zeus, perseus, helios, hera, stella (12) |
+| `aura-2` (`@cf/deepgram/aura-2-en`) | `luna` (the model's documented default) | amalthea, andromeda, apollo, arcas, aries, asteria, athena, atlas, aurora, callista, cora, cordelia, delia, draco, electra, harmonia, helena, hera, hermes, hyperion, iris, janus, juno, jupiter, luna, mars, minerva, neptune, odysseus, ophelia, orion, orpheus, pandora, phoebe, pluto, saturn, thalia, theia, vesta, zeus (40) |
+
+The shipped `VOICE_SPEAKER` is `asteria`, which both models have, so switching `VOICE_TTS_MODEL` alone is safe. To audition voices: set `VOICE_TTS=aura`, `VOICE_TTS_MODEL=aura-2` and try `thalia`, `andromeda`, `helena`, `apollo`, `arcas` or `orion` (see "Try it locally"). `/health` reports `ttsModel`, so you can see which model a deploy is really on. The lists were confirmed against Cloudflare's model pages, the installed Workers types, and the enum the runtime prints for a bad speaker, and `src/env.ts` checks every name against the model's own type at build time.
+
+### Turning on the Aura voice
 
 1. Upgrade the account to Workers Paid ($5 a month; Workers AI then bills neurons above the free 10,000 a day).
-2. Set `"VOICE_TTS": "aura"` in `wrangler.jsonc` (and `VOICE_DAILY_TTS_CHARS` and `VOICE_SPEAKER` if the defaults do not suit), run `npm test && npm run typecheck`, then `npx wrangler deploy`.
-3. `curl -s https://<worker-url>/health` should now show `"voice":{"stt":true,"tts":"aura"}`. The widget reads that and starts asking `/tts` for each reply instead of using the browser's voice. To go back, set `browser` and redeploy.
+2. Set `"VOICE_TTS": "aura"` in `wrangler.jsonc` (and `VOICE_TTS_MODEL`, `VOICE_SPEAKER` and `VOICE_DAILY_TTS_CHARS` if the defaults do not suit; see the cost note above before choosing `aura-2`), run `npm test && npm run typecheck`, then `npx wrangler deploy`.
+3. `curl -s https://<worker-url>/health` should now show `"voice":{"stt":true,"tts":"aura","ttsModel":"aura-1"}` (or `"aura-2"`). The widget reads that and starts asking `/tts` for each reply instead of using the browser's voice. To go back, set `browser` and redeploy.
 
 ### Try it locally
 
@@ -335,7 +393,7 @@ curl -s -H 'CF-Connecting-IP: 198.51.100.7' \
 # -> {"text":"What do you do?","durationMs":700}
 ```
 
-Give curl the label yourself (`;type=audio/wav`): it sends a `.wav` as `application/octet-stream`, which is correctly refused with `400 bad_audio`. A browser's `MediaRecorder` blob already carries its own label. To try the premium voice: `npx wrangler dev --port 8787 --var LLM_PROVIDER:mock --var VOICE_TTS:aura`, then send the session a chat message first (`/tts` refuses a session that has not chatted) and ask for speech: `curl -s -o /dev/null -X POST -H 'Content-Type: application/json' -d '{"sessionId":"3f2b8c1e-5d4a-4e7b-9a10-0c1d2e3f4a5b","messages":[{"role":"user","content":"hello"}]}' localhost:8787/chat`, then `curl -s -o reply.mp3 -X POST -H 'Content-Type: application/json' -d '{"sessionId":"3f2b8c1e-5d4a-4e7b-9a10-0c1d2e3f4a5b","text":"Hi there."}' localhost:8787/tts`.
+For ElevenLabs add the key to `.dev.vars` and run `npx wrangler dev --port 8787 --var LLM_PROVIDER:mock --var VOICE_TTS:elevenlabs --var VOICE_ELEVEN_VOICE_ID:<id>`; it sends real text to ElevenLabs and spends real characters. Give curl the label yourself (`;type=audio/wav`): it sends a `.wav` as `application/octet-stream`, which is correctly refused with `400 bad_audio`. A browser's `MediaRecorder` blob already carries its own label. To try the premium voice: `npx wrangler dev --port 8787 --var LLM_PROVIDER:mock --var VOICE_TTS:aura` (add `--var VOICE_TTS_MODEL:aura-2 --var VOICE_SPEAKER:thalia` for Aura-2), then send the session a chat message first (`/tts` refuses a session that has not chatted) and ask for speech: `curl -s -o /dev/null -X POST -H 'Content-Type: application/json' -d '{"sessionId":"3f2b8c1e-5d4a-4e7b-9a10-0c1d2e3f4a5b","messages":[{"role":"user","content":"hello"}]}' localhost:8787/chat`, then `curl -s -o reply.mp3 -X POST -H 'Content-Type: application/json' -d '{"sessionId":"3f2b8c1e-5d4a-4e7b-9a10-0c1d2e3f4a5b","text":"Hi there."}' localhost:8787/tts`.
 
 ## Privacy and logging
 
@@ -343,7 +401,9 @@ Give curl the label yourself (`;type=audio/wav`): it sends a `.wav` as `applicat
 - Logs contain only counters and status codes (`{status, stop_reason, outcome, ms, intent, input_tokens, output_tokens}` for model calls, delivery outcomes, error types). Message text, names, phone numbers, emails, keys, and the webhook URL are never logged; the tests check this.
 - Cloudflare's automatic per-request invocation logs, which include the client IP, are turned off in `wrangler.jsonc` (`observability.logs.invocation_logs: false`); the Worker's own `console.log` lines are kept. A test pins that setting.
 - A name or phone number a visitor types into the chat is a chat message like any other: it is sent to the AI provider (Anthropic) so the helper can reply, and the Worker does not store it. The `lead` object in a reply is built from the visitor's own words and is never logged. The privacy page already says chat messages go to Anthropic and that contact details given in the chat are collected, so it should still be accurate; re-read it whenever the collection flow changes.
-- Voice: a recording exists only for the length of the `/stt` request. It is read into memory, sent to Cloudflare Workers AI (Whisper) for transcription, and dropped; the Worker stores no audio and no transcript, and neither is ever logged. Logs carry only `{event: "stt", ms, status, audioBytes, seconds}` (`seconds` is what was charged) (and `{event: "tts", ms, status, chars}` for the premium voice), plus `stt_error` / `tts_error` lines with the error's name and timing, never its message. The transcript is an ordinary chat message once the widget sends it to `/chat`, which the paragraph above already covers. The privacy page needs its own paragraph about the microphone and Workers AI (task W8 of the voice plan).
+- Voice: a recording exists only for the length of the `/stt` request. It is read into memory, sent to Cloudflare Workers AI (Whisper) for transcription, and dropped; the Worker stores no audio and no transcript, and neither is ever logged. Logs carry only `{event: "stt", ms, status, audioBytes, seconds}` (`seconds` is what was charged) (and `{event: "tts", ms, status, chars}` for the premium voice), plus `stt_error` / `tts_error` lines with the error's name and timing, never its message, and `{event: "tts_speaker_fallback", model, requested, used}` when `VOICE_SPEAKER` is not on the selected model's list (configuration only, never visitor text; `requested` is cut to 32 characters). The transcript is an ordinary chat message once the widget sends it to `/chat`, which the paragraph above already covers. The privacy page needs its own paragraph about the microphone and Workers AI (task W8 of the voice plan).
+- ElevenLabs voice: when `VOICE_TTS=elevenlabs` the text of each spoken reply is sent to ElevenLabs to be turned into audio. It is the helper's reply, not the visitor's own words, but a reply can repeat a name or detail the visitor gave. The Worker stores and logs none of it. The privacy page has to name ElevenLabs before this is enabled.
+- The per-visitor counters (`ip:tts-spoken:`, `ip:tts-bonus:`) are keyed by the hashed address bucket, like every other per-address counter, hold only a number, and are deleted by an alarm once Eastern midnight has passed.
 - A lead that fails every delivery path is not saved anywhere. That is deliberate (it keeps the privacy statement true); the widget tells the visitor to call instead.
 
 ## Analytics note
@@ -362,6 +422,9 @@ GA4 is not installed on the site yet, so the widget's `track()` calls do nothing
 | `/stt` answers `503 voice_unavailable` | `reason: "budget"`: the session's 180 seconds or the day's 9,000 are used up, or a `VOICE_*` budget is 0. `reason: "server"`: there is no `ai` binding (`/health` says `voice.stt: false`), Workers AI failed twice (`stt_error` lines in `npx wrangler tail`), or the limiter was unreachable (`limiter_error`). Under `wrangler dev`, also check `npx wrangler whoami`: the binding runs on your account. |
 | `/stt` answers `400 bad_audio` for a real recording | The file's label is not `audio/webm`, `audio/mp4`, `audio/ogg` or `audio/wav`. With curl add `;type=audio/wav`. |
 | `/tts` answers `404 not_found` | `VOICE_TTS` is not `aura`. This is the default. |
+| `/tts` answers `503` reason `server` with ElevenLabs selected | `/health` shows `configured: false` (no `ELEVENLABS_API_KEY` secret, or `VOICE_ELEVEN_VOICE_ID` is empty or has characters a URL path cannot hold), or ElevenLabs answered something other than 200: look for `{"event":"tts_error","provider":"elevenlabs","status":...}` in `npx wrangler tail`. 401 is a rejected key; 402 or 429 is usually the plan's quota or concurrency. |
+| `/tts` answers `429 tts_limit` | The visitor used today's spoken replies (`VOICE_TTS_PER_IP_PER_DAY`, plus the bonus if it was earned). It clears at Eastern midnight (`Retry-After`). It is shared by everyone behind the same address, which includes an office or a mobile carrier. |
+| `tts_speaker_fallback` in `npx wrangler tail` | `VOICE_SPEAKER` is not a speaker of the model `VOICE_TTS_MODEL` selects (for example `angus` on `aura-2`, or `thalia` on `aura-1`), so replies are spoken in the model's default voice. Pick a name from the lists under "Choosing the premium model and voice". |
 | `/tts` answers `403 no_chat` | The session has not sent a chat message yet (or the id is made up). The widget only asks after a reply, so this means a direct call. |
 | `/lead` answers `429` to a visitor on their first try | The day's 100 leads (all visitors) are used up, or the visitor's network already sent 3 in the last hour. |
 
@@ -374,5 +437,7 @@ GA4 is not installed on the site yet, so the widget's `track()` calls do nothing
 - `test/config.test.ts` reads `wrangler.jsonc` and pins the deployed provider, model, vars, Durable Object binding and observability settings; the rest of the suite overrides `LLM_PROVIDER` to `mock`, so nothing else would notice a bad committed value.
 - `vitest.config.ts` sets `remoteBindings: false` for the test plugin. Without it the `ai` binding in `wrangler.jsonc` makes the suite open a remote session on the logged-in Cloudflare account (API calls, a warning, a hang on exit). Voice tests pass `env.AI` as the stub from `aiStub()`; `testEnv()` sets `AI` to `undefined` unless a test supplies one.
 - `Limiter.hit(limit, windowSeconds, mode, cost = 1)`: `cost` only applies to the fixed mode and is what lets one counter hold seconds or characters. `Limiter.peek(windowSeconds, mode)` reads `{count, ended, resetAt}` and writes nothing, not even tables, so an unused id stays empty. `chargeLimiter` (`src/limits.ts`) is a `hit` with no effective limit, for spending that already happened (the Whisper call has run): it can take a counter past its cap, which is the right record, and the next request's check refuses once the count is at or over the cap. `viaLimiter` / `LimiterError` live in `src/limits.ts` and are shared by `/chat`, `/stt` and `/tts`.
+- `Limiter.refund(n, expectedResetAt)` takes units back off a fixed counter, but only if its window still ends at `expectedResetAt` (the `resetAt` the reserving `hit()` returned); otherwise the unit belongs to a window that has already ended and nothing changes. It never goes below zero and writes nothing for an unused id. `/tts` uses it so a spoken-reply slot (and the day's characters) can be reserved with one atomic `hit()` and returned if the provider fails; `untilMidnightRule()` and `nextEtMidnight()` (in `src/limits.ts`) size the per-address daily windows to end at Eastern midnight, found by search because an Eastern day is sometimes 23 or 25 hours.
+- `scripts/eleven-voices.mjs` parses `.dev.vars` itself and is tested against a fixture file and a local stub server (`--env-file`, `--base-url`), so its tests never read the real `.dev.vars`. The key is sent to whatever `--base-url` says, so that flag only accepts an `https://` URL (or `http://` for `localhost` / `127.0.0.1`), with no credentials in it, and the script and the Worker's ElevenLabs call both use `redirect: 'error'` so a redirect can never carry the key elsewhere. `npm run test:probe` runs them.
 - The multipart body is read with `readBytes` (`src/http.ts`), the bounded reader `readJson` is built on, and then parsed with `Response.formData()`; `Content-Length` is only a shortcut for refusing early, the real cap is enforced while streaming.
 - If `npm install` ever fails with `Cannot read properties of null (reading 'edgesOut')`, that is an npm 10 bug with vitest's optional peers; `npm install --legacy-peer-deps` works around it. A plain `npm ci` from the lockfile works.
