@@ -1,17 +1,21 @@
 import type { SendOptions } from '../email';
 import { sendViaResend } from '../email';
-import { checkerDailyScans, checkerLeadquikUrl, isCheckerGraderConfigured, type Env } from '../env';
+import { checkerDailyScans, checkerLeadquikUrl, isCheckerGraderConfigured, isEmailConfigured, type Env } from '../env';
 import { json, methodNotAllowed, readJson, retryAfterSeconds } from '../http';
 import {
+  CHECKER_EMAIL_HOURLY,
   CHECKER_REPORT_IP,
   CHECKER_SCAN_DAY_LIMIT,
   CHECKER_SCAN_IP,
   CHECKER_SIGNUP_IP,
   checkerDailyRule,
+  checkerEmailName,
   checkerReportIpName,
   checkerScanDayIpName,
   checkerScanIpName,
   checkerSignupIpName,
+  checkerUnlockEmailName,
+  checkerUnlockName,
   globalCheckerScanName,
   hitLimiter,
   orLimiterDown,
@@ -23,9 +27,9 @@ import type { HitResult } from '../limiter';
 import { isRecord } from '../util';
 import { buildReportEmail } from './email';
 import { isNotReady, notReady, passesTurnstile } from './gate';
-import { GRADER_TIMEOUT_MS, PLAN_STORE_TIMEOUT_MS, callGrader, replyStatus, stripDetails, unavailableBody } from './grader';
+import { GRADER_TIMEOUT_MS, PLAN_STORE_TIMEOUT_MS, callGrader, cleanReason, replyStatus, shapeFailure, shapeScan, unavailableBody } from './grader';
 import { buildFallbackEmail, buildLeadPayload, sendCheckerLead } from './lead';
-import { generatePlan, type PlanDeps } from './plan';
+import { generatePlan, type ActionPlan, type PlanDeps } from './plan';
 import {
   BODY_MAX_BYTES,
   CHECKER_MESSAGES,
@@ -52,10 +56,6 @@ const verificationFailed = (): Response => json({ ok: false, error: 'verificatio
 
 const validationFailed = (fields: Record<string, string>): Response =>
   json({ ok: false, error: 'validation', fields }, 400);
-
-// Reasons the grader gives are its own short constants, but the log line only ever carries a clean one.
-const logReason = (value: unknown): string | undefined =>
-  typeof value === 'string' && /^[a-z_]{1,32}$/.test(value) ? value : undefined;
 
 // --- POST /checker/scan ------------------------------------------------------------------
 
@@ -115,17 +115,27 @@ const handleScan = async (request: Request, env: Env): Promise<Response> => {
       console.error(JSON.stringify({ event: 'checker_scan', ok: false, status: result.status }));
       return json(unavailableBody, 502);
     }
-    const reason = logReason(result.body.reason);
+    const reason = cleanReason(result.body.reason);
     console.log(JSON.stringify({ event: 'checker_scan', ok: result.body.ok === true, status: result.status, ...(reason ? { reason } : {}) }));
-    // Pass the grader's answer on as it is, minus anything that belongs to the breakdown, plus `gated`.
-    const clean = stripDetails(result.body) as Record<string, unknown>;
-    return json({ ...clean, gated }, replyStatus(result.status));
+    // Rebuilt from an allow-list of known fields, plus `gated`: nothing else the grader sends gets through.
+    return json({ ...shapeScan(result.body), gated }, replyStatus(result.status));
   }, unavailable);
 };
 
 // --- POST /checker/unlock ----------------------------------------------------------------
 
-const handleUnlock = async (request: Request, env: Env, deps: CheckerDeps | undefined): Promise<Response> => {
+/** The stored plan in a report the grader returns for a repeat unlock, if it has a well-formed one. */
+const storedPlan = (report: Record<string, unknown>): ActionPlan | null => {
+  const plan = report.plan;
+  if (!isRecord(plan) || typeof plan.summary !== 'string' || !Array.isArray(plan.items)) return null;
+  const items = plan.items
+    .filter(isRecord)
+    .filter((item) => typeof item.check_id === 'string' && typeof item.text === 'string')
+    .map((item) => ({ check_id: item.check_id as string, text: item.text as string }));
+  return { summary: plan.summary, items };
+};
+
+const handleUnlock = async (request: Request, env: Env, ctx: ExecutionContext, deps: CheckerDeps | undefined): Promise<Response> => {
   const body = await readJson(request, BODY_MAX_BYTES);
   if (!body.ok) return validationFailed({ scanId: CHECKER_MESSAGES.scanInvalid });
   const gated = isGated(request);
@@ -142,33 +152,64 @@ const handleUnlock = async (request: Request, env: Env, deps: CheckerDeps | unde
     const ip = request.headers.get('CF-Connecting-IP') ?? 'unknown';
     const signup = await viaLimiter(hitLimiter(env, await checkerSignupIpName(ip, env.RATE_SALT), CHECKER_SIGNUP_IP));
     if (!signup.allowed) return rateLimited(signup.resetAt);
+    // A real unlock mails the address it was given, so one address gets only a few an hour, from anywhere.
+    if (visitor.email !== undefined) {
+      const mail = await viaLimiter(hitLimiter(env, await checkerEmailName(visitor.email, env.RATE_SALT), CHECKER_EMAIL_HOURLY));
+      if (!mail.allowed) return rateLimited(mail.resetAt);
+    }
     if (!(await passesTurnstile(request, env, visitor.turnstileToken))) return verificationFailed();
 
-    // 1. Ask the grader for the breakdown (and let it record the competitors).
+    // 1. Ask the grader for the breakdown (and let it record the competitors). Repeating this is harmless.
     const unlocked = await callGrader(env, {
       action: 'unlock',
       scan_id: visitor.scanId,
       competitors: visitor.competitors,
     });
     if (unlocked.kind === 'unavailable') return json(unavailableBody, 502);
+    if (unlocked.body.ok !== true) return json(shapeFailure(unlocked.body), replyStatus(unlocked.status));
     const { report, report_token: token } = unlocked.body;
-    if (unlocked.body.ok !== true) {
-      return json(unlocked.body, replyStatus(unlocked.status));
-    }
     if (typeof token !== 'string' || token.length === 0 || !isRecord(report)) {
       console.error(JSON.stringify({ event: 'checker_grader_error', action: 'unlock', status: unlocked.status, reason: 'bad_shape' }));
       return json(unavailableBody, 502);
     }
 
-    // 2. The written plan. It never blocks the report.
+    // 2. Only the first unlock of a scan each Eastern day lets the lead and the plan happen. A repeat gets the
+    // stored report back with no lead and no model call. The page's "Email me a copy" is such a repeat (the
+    // same scan with just an email), so one report email per scan and address per day is still allowed.
+    const emailRule = untilMidnightRule(1);
+    const mayEmail =
+      visitor.email === undefined
+        ? false
+        : (await viaLimiter(hitLimiter(env, await checkerUnlockEmailName(visitor.scanId, visitor.email, env.RATE_SALT), emailRule))).allowed;
+    const first = await viaLimiter(hitLimiter(env, checkerUnlockName(visitor.scanId), untilMidnightRule(1)));
+    if (!first.allowed) {
+      const saved = storedPlan(report);
+      const sendCopy = mayEmail && isEmailConfigured(env);
+      console.log(JSON.stringify({ event: 'checker_unlock_repeat', emailed: sendCopy }));
+      if (sendCopy) {
+        ctx.waitUntil(
+          sendViaResend(env, buildReportEmail(visitor.email!, report, token, saved), deps?.email)
+            .then((sent) => {
+              if (!sent) console.error(JSON.stringify({ event: 'checker_email_failed' }));
+            })
+            .catch(() => console.error(JSON.stringify({ event: 'checker_email_failed' }))),
+        );
+      }
+      return json({ ok: true, report_token: token, report, plan: saved, emailed: sendCopy });
+    }
+
+    // 3. The written plan. It never blocks the report.
     const planOutcome = await generatePlan(env, report, visitor.industry, deps?.plan).catch(() => {
       console.error(JSON.stringify({ event: 'checker_plan_failed', reason: 'unexpected' }));
       return { plan: null } as const;
     });
     const plan = planOutcome.plan;
 
-    // 3. Store the plan, send the lead (gated visitors only) and the email, side by side. None of them can fail the answer.
+    // 4. Answer now. Storing the plan, the lead (gated visitors only) and the email finish in the background, and
+    // none of them can change the answer. `emailed` means an email will be sent.
     const country = requestCountry(request);
+    const willEmail = visitor.email !== undefined && isEmailConfigured(env);
+
     const store = async (): Promise<void> => {
       if (!plan) return;
       const stored = await callGrader(
@@ -211,14 +252,17 @@ const handleUnlock = async (request: Request, env: Env, deps: CheckerDeps | unde
       return sent;
     };
 
-    const [, , emailed] = await Promise.all([
-      store().catch(() => console.error(JSON.stringify({ event: 'checker_plan_store_failed', status: 0 }))),
-      lead().catch(() => console.error(JSON.stringify({ event: 'checker_lead_failed', reason: 'unexpected' }))),
-      email().catch(() => false),
-    ]);
+    ctx.waitUntil(
+      Promise.all([
+        store().catch(() => console.error(JSON.stringify({ event: 'checker_plan_store_failed', status: 0 }))),
+        lead().catch(() => console.error(JSON.stringify({ event: 'checker_lead_failed', reason: 'unexpected' }))),
+        email().catch(() => false),
+      ])
+        .then(([, , sent]) => console.log(JSON.stringify({ event: 'checker_unlock', gated, plan: plan !== null, emailed: sent === true })))
+        .catch(() => undefined),
+    );
 
-    console.log(JSON.stringify({ event: 'checker_unlock', gated, plan: plan !== null, emailed: emailed === true }));
-    return json({ ok: true, report_token: token, report, plan, emailed: emailed === true });
+    return json({ ok: true, report_token: token, report, plan, emailed: willEmail });
   }, unavailable);
 };
 
@@ -236,18 +280,19 @@ const handleReport = async (request: Request, env: Env): Promise<Response> => {
     const result = await callGrader(env, { action: 'report', report_token: token }, GRADER_TIMEOUT_MS);
     if (result.kind === 'unavailable') return json(unavailableBody, 502);
     console.log(JSON.stringify({ event: 'checker_report', ok: result.body.ok === true, status: result.status }));
-    return json(result.body, replyStatus(result.status));
+    // The visitor's own saved report passes through; a failure is rebuilt from known fields.
+    return json(result.body.ok === true ? result.body : shapeFailure(result.body), replyStatus(result.status));
   }, unavailable);
 };
 
 // --- routing -----------------------------------------------------------------------------
 
-export const handleChecker = (request: Request, env: Env, pathname: string, deps: CheckerDeps | undefined): Promise<Response> | Response => {
+export const handleChecker = (request: Request, env: Env, ctx: ExecutionContext, pathname: string, deps: CheckerDeps | undefined): Promise<Response> | Response => {
   switch (pathname) {
     case '/checker/scan':
       return request.method === 'POST' ? handleScan(request, env) : methodNotAllowed('POST, OPTIONS');
     case '/checker/unlock':
-      return request.method === 'POST' ? handleUnlock(request, env, deps) : methodNotAllowed('POST, OPTIONS');
+      return request.method === 'POST' ? handleUnlock(request, env, ctx, deps) : methodNotAllowed('POST, OPTIONS');
     case '/checker/report':
       return request.method === 'GET' ? handleReport(request, env) : methodNotAllowed('GET, OPTIONS');
     default:

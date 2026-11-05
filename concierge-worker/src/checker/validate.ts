@@ -41,6 +41,29 @@ export const cleanLabel = (value: unknown, max: number = LABEL_MAX): string => {
   return clampLength(singleLine(plain), max);
 };
 
+/** The picker's labels for the six profile keys, used in the lead notes and the plan prompt. */
+export const INDUSTRY_LABELS: Record<Profile, string> = {
+  trade: 'Home services',
+  professional: 'Professional services',
+  health: 'Health and wellness',
+  retail: 'Restaurants and retail',
+  software: 'Software and online services',
+  general: 'Other local business',
+};
+
+/**
+ * The industry label from a request. The page may send a profile key (as `industry`, or as `profile`), which
+ * maps to its picker label; anything else is sanitized as free text.
+ */
+export const industryLabel = (industry: unknown, profile: unknown): string => {
+  const key = PROFILES.find((candidate) => candidate === industry);
+  if (key) return INDUSTRY_LABELS[key];
+  const typed = cleanLabel(industry);
+  if (typed !== '') return typed;
+  const fallback = PROFILES.find((candidate) => candidate === profile);
+  return fallback ? INDUSTRY_LABELS[fallback] : '';
+};
+
 export interface ScanRequest {
   url: string;
   profile: Profile;
@@ -127,8 +150,12 @@ export const validateUnlock = (raw: unknown, gated: boolean): UnlockValidation =
     }
   }
 
-  const industry = cleanLabel(raw.industry);
-  if (industry === '') fields.industry = CHECKER_MESSAGES.industryRequired;
+  // Required for a sign-up (it goes in the lead). Outside the US a bare "email me a copy" request may omit it.
+  let industry = industryLabel(raw.industry, raw.profile);
+  if (industry === '') {
+    if (gated) fields.industry = CHECKER_MESSAGES.industryRequired;
+    else industry = INDUSTRY_LABELS.general;
+  }
   const city = cleanLabel(raw.city);
 
   let name = '';

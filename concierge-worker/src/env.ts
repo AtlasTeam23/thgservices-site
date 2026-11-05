@@ -42,6 +42,8 @@ export interface Env {
   CHECKER_REQUIRE_TURNSTILE?: string;
   /** Free website checker: scans per Eastern-time day across all visitors (default 1000). */
   CHECKER_DAILY_SCANS?: string;
+  /** Free website checker: action plans written per Eastern-time day across all visitors (default 300). */
+  CHECKER_DAILY_PLANS?: string;
 
   // Durable Object binding
   LIMITER: DurableObjectNamespace<Limiter>;
@@ -139,6 +141,9 @@ export const dailyLlmCap = (env: Env): number => wholeNumber(env.DAILY_LLM_CAP, 
 
 /** Website checker scans per Eastern-time day, all visitors (default 1000). 0 refuses every scan. */
 export const checkerDailyScans = (env: Env): number => wholeNumber(env.CHECKER_DAILY_SCANS, 1000);
+
+/** Website checker action plans per Eastern-time day, all visitors (default 300). 0 switches plans off. */
+export const checkerDailyPlans = (env: Env): number => wholeNumber(env.CHECKER_DAILY_PLANS, 300);
 
 // --- voice ------------------------------------------------------------------------
 

@@ -19,7 +19,7 @@ export interface AppDeps {
   checker?: CheckerDeps;
 }
 
-const route = async (request: Request, env: Env, deps: AppDeps): Promise<Response> => {
+const route = async (request: Request, env: Env, ctx: ExecutionContext, deps: AppDeps): Promise<Response> => {
   const { pathname } = new URL(request.url);
 
   switch (pathname) {
@@ -56,7 +56,7 @@ const route = async (request: Request, env: Env, deps: AppDeps): Promise<Respons
     case '/checker/scan':
     case '/checker/unlock':
     case '/checker/report':
-      return handleChecker(request, env, pathname, deps.checker);
+      return handleChecker(request, env, ctx, pathname, deps.checker);
 
     default:
       return json({ error: 'not_found' }, 404);
@@ -64,13 +64,13 @@ const route = async (request: Request, env: Env, deps: AppDeps): Promise<Respons
 };
 
 export const createApp = (deps: AppDeps = {}) => ({
-  async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const origin = checkOrigin(request, env);
     if (origin.status === 'denied') return originDenied();
     if (request.method === 'OPTIONS') return preflight(origin);
 
     try {
-      return withCors(await route(request, env, deps), origin);
+      return withCors(await route(request, env, ctx, deps), origin);
     } catch (error) {
       // Log the error type only: messages can echo request data.
       console.error(JSON.stringify({ event: 'unhandled', error: (error as Error)?.name ?? 'Error' }));

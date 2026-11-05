@@ -26,6 +26,7 @@ export const testEnv = (overrides: Partial<Record<keyof Env, unknown>> = {}): En
     // The checker's own vars are pinned so the shipped wrangler.jsonc values never change a result.
     CHECKER_REQUIRE_TURNSTILE: undefined,
     CHECKER_DAILY_SCANS: undefined,
+    CHECKER_DAILY_PLANS: undefined,
     // The shipped config names a paid voice; the suite's baseline is no spoken replies, and the voice tests
     // switch a provider on per test (elevenEnv(), aura overrides), so the production voice id never
     // changes a result.
@@ -68,6 +69,8 @@ export interface CallOptions {
   env?: Env;
   /** The country Cloudflare would attach to the request (request.cf.country). Omitted means none, as for an unknown country. */
   country?: string;
+  /** Where the Worker is reached, as in request.url (default https://concierge.test). */
+  baseUrl?: string;
   app?: { fetch: (request: Request, env: Env, ctx: ExecutionContext) => Promise<Response> };
 }
 
@@ -82,7 +85,7 @@ export const call = async (path: string, options: CallOptions = {}): Promise<Res
     body = typeof options.body === 'string' ? options.body : JSON.stringify(options.body);
     if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
   }
-  const request = new Request(`https://concierge.test${path}`, {
+  const request = new Request(`${options.baseUrl ?? 'https://concierge.test'}${path}`, {
     method: options.method ?? (body === undefined ? 'GET' : 'POST'),
     headers,
     body,

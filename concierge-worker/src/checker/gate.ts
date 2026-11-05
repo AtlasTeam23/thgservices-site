@@ -4,12 +4,13 @@ import { verifyTurnstile } from '../turnstile';
 
 const LOCAL_HOSTS: ReadonlySet<string> = new Set(['localhost', '127.0.0.1', '[::1]']);
 
-/** True when the request came from a page served on this machine (its Origin header names a local host). */
+/**
+ * True when the Worker itself is being reached on this machine (`wrangler dev`): decided from the host in the
+ * request URL, never from the Origin header, which any caller can set to http://localhost:3000.
+ */
 export const isLocalOrigin = (request: Request): boolean => {
-  const origin = request.headers.get('Origin');
-  if (origin === null) return false;
   try {
-    return LOCAL_HOSTS.has(new URL(origin).hostname);
+    return LOCAL_HOSTS.has(new URL(request.url).hostname);
   } catch {
     return false;
   }

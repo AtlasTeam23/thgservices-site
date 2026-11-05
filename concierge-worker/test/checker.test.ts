@@ -2,7 +2,8 @@ import { reset } from 'cloudflare:test';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createApp } from '../src/index';
 import type { PlanClient, PlanParams } from '../src/checker/plan';
-import { hitLimiter } from '../src/limits';
+import { REPLY_JSON_SCHEMA } from '../src/llm';
+import { globalCheckerPlanName, hitLimiter } from '../src/limits';
 import {
   CHECKER_REPORT_IP,
   CHECKER_SCAN_DAY_LIMIT,
@@ -10,7 +11,7 @@ import {
   checkerScanDayIpName,
   untilMidnightRule,
 } from '../src/limits';
-import { call, captureLogs, randomIp, randomUuid, testEnv } from './helpers';
+import { call, captureLogs, fixedCount, randomIp, randomUuid, testEnv } from './helpers';
 
 const GRADER_URL = 'https://grader.test/functions/check';
 const GRADER_SECRET = 'grader-shared-secret-placeholder';
@@ -255,6 +256,47 @@ describe('POST /checker/scan', () => {
     expect(JSON.parse(text)).toMatchObject({ ok: true, gated: true, summary: { to_fix: 1, categories: [{ id: 'seo.idx', to_fix: 1 }] } });
   });
 
+  it('builds the answer from an allow-list: renamed, nested and differently cased detail keys do not survive', async () => {
+    stubNetwork({
+      grader: () => ({
+        body: scanOk({
+          details: 'LEAKVALUE-details',
+          breakdown: [{ title: 'LEAKVALUE-breakdown' }],
+          items: [{ text: 'LEAKVALUE-items' }],
+          Report: { host: 'LEAKVALUE-Report' },
+          REPORT_TOKEN: 'LEAKVALUE-token',
+          checks_by_category: { seo: ['LEAKVALUE-cbc'] },
+          reason: 'blocked<script>',
+          overall: { score: 71, grade: 'C', explanation: 'LEAKVALUE-grade' },
+          seo: { score: 90, grade: 'A', checks: ['LEAKVALUE-seo'] },
+          summary: {
+            to_fix: 5,
+            to_improve: 6,
+            passing: 20,
+            details: 'LEAKVALUE-summary',
+            categories: [{ id: 'seo.idx', section: 'seo', label: 'Getting listed', to_fix: 1, to_improve: 0, passing: 4, Checks: ['LEAKVALUE-cat'], items: ['LEAKVALUE-cat2'] }],
+          },
+        }),
+      }),
+    });
+    const text = await (await scan()).text();
+    expect(text).not.toContain('LEAKVALUE');
+    for (const key of ['details', 'breakdown', 'items', 'Report', 'REPORT_TOKEN', 'checks_by_category', 'Checks', 'explanation', 'checks', 'reason']) {
+      expect(text).not.toContain(`"${key}"`);
+    }
+    const body = JSON.parse(text);
+    expect(Object.keys(body).sort()).toEqual(['bot_view', 'cached', 'checked_at', 'conversion', 'final_url', 'gated', 'host', 'ok', 'overall', 'read_limited', 'scan_id', 'seo', 'summary']);
+    expect(Object.keys(body.summary).sort()).toEqual(['categories', 'passing', 'to_fix', 'to_improve']);
+    expect(body.overall).toEqual({ score: 71, grade: 'C' });
+    expect(Object.keys(body.summary.categories[0]).sort()).toEqual(['id', 'label', 'passing', 'section', 'to_fix', 'to_improve']);
+  });
+
+  it('keeps a validated reason and http_status on a failure and nothing else', async () => {
+    stubNetwork({ grader: () => ({ body: { ok: false, host: HOST, reason: 'blocked', http_status: 403, message: 'LEAKVALUE', details: { a: 1 } } }) });
+    const text = await (await scan()).text();
+    expect(JSON.parse(text)).toEqual({ ok: false, host: HOST, reason: 'blocked', http_status: 403, gated: true });
+  });
+
   it('passes a failure reason on with gated, and the grader status', async () => {
     stubNetwork({ grader: () => ({ status: 200, body: { ok: false, host: HOST, reason: 'blocked', http_status: 403 } }) });
     const res = await scan();
@@ -410,10 +452,24 @@ describe('the Turnstile launch gate', () => {
     expect(net.siteverify()).toHaveLength(0);
   });
 
-  it('lets a local page through while required and unconfigured', async () => {
+  it('lets the Worker through while required and unconfigured only when it is itself reached on localhost', async () => {
     stubNetwork();
     const env = checkerEnv({ CHECKER_REQUIRE_TURNSTILE: 'true' });
-    expect((await scan({}, { env, origin: 'http://localhost:3000' })).status).toBe(200);
+    expect((await scan({}, { env, baseUrl: 'http://localhost:8787' })).status).toBe(200);
+    expect((await scan({}, { env, baseUrl: 'http://127.0.0.1:8787' })).status).toBe(200);
+    expect((await unlock(gatedBody(), { env, baseUrl: 'http://localhost:8787' })).status).toBe(200);
+  });
+
+  it('is not fooled by an Origin header that says localhost (an allowed origin anyone can send)', async () => {
+    const net = stubNetwork();
+    const env = checkerEnv({ CHECKER_REQUIRE_TURNSTILE: 'true' });
+    for (const origin of ['http://localhost:3000', 'http://localhost:4173']) {
+      const res = await scan({}, { env, origin });
+      expect(res.status).toBe(503);
+      expect(await res.json()).toEqual({ ok: false, error: 'checker_not_ready' });
+      expect((await unlock(gatedBody(), { env, origin })).status).toBe(503);
+    }
+    expect(net.calls).toHaveLength(0);
   });
 
   it('with the secret set and the gate on, refuses a missing token and accepts a good one', async () => {
@@ -704,9 +760,12 @@ describe('POST /checker/unlock for a gated visitor', () => {
 
   it('still answers 200 when the email fails, with emailed false', async () => {
     const net = stubNetwork({ resend: 500 });
+    const logs = captureLogs();
     const res = await unlock(gatedBody());
     expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({ ok: true, emailed: false });
+    // `emailed` means an email will be sent; the outcome is logged.
+    expect(await res.json()).toMatchObject({ ok: true, emailed: true });
+    expect(logs.some((l) => l.includes('checker_email_failed'))).toBe(true);
     expect(net.lead()).toHaveLength(1);
   });
 
@@ -799,5 +858,241 @@ describe('logs', () => {
     expect(joined).toContain('checker_email_failed');
     expect(joined).toContain('checker_plan_failed');
     expect(joined).toContain('checker_grader_error');
+  });
+});
+
+describe('the model request', () => {
+  it('has exactly the same top-level keys as /chat sends', async () => {
+    // What /chat sends:
+    const chatCreate = vi.fn(async (_params: Record<string, unknown>) => ({
+      stop_reason: 'end_turn',
+      content: [{ type: 'text', text: JSON.stringify({ reply: 'Hello.', intent: 'answer', offerCallback: false, readyToConfirm: false, lead: { name: '', phone: '', email: '', business: '', need: '', callbackWindow: '' } }) }],
+      usage: { input_tokens: 1, output_tokens: 1 },
+    }));
+    const chatApp = createApp({ llm: { client: { messages: { create: chatCreate as never } } } });
+    const chatRes = await call('/chat', { body: { sessionId: randomUuid(), messages: [{ role: 'user', content: 'hello' }] }, env: checkerEnv(), app: chatApp });
+    expect(chatRes.status).toBe(200);
+    const chatKeys = Object.keys(chatCreate.mock.calls[0]![0]).sort();
+
+    // What the checker sends:
+    stubNetwork();
+    const plan = planClient();
+    await unlock(gatedBody(), { app: appWith(plan.client) });
+    const params = plan.create.mock.calls[0]![0] as unknown as Record<string, any>;
+    expect(Object.keys(params).sort()).toEqual(chatKeys);
+    expect(params.output_config.effort).toBe('medium');
+    expect(Object.keys(params.output_config).sort()).toEqual(['effort', 'format']);
+    expect(params.output_config.format.type).toBe('json_schema');
+    expect(REPLY_JSON_SCHEMA).toBeTruthy();
+    expect(params.max_tokens).toBe(700);
+  });
+});
+
+describe('abuse controls while Turnstile is off', () => {
+  it('does the real work once per scan per day: a repeat gets the stored report and nothing is sent', async () => {
+    const stored = { summary: 'Stored plan.', items: [{ check_id: 'seo.title_tag', text: 'Stored text.' }] };
+    let unlocks = 0;
+    const net = stubNetwork({
+      grader: (p) => {
+        if (p.action !== 'unlock') return defaultGrader(p);
+        unlocks += 1;
+        return { body: { ok: true, report_token: TOKEN, report: unlocks > 2 ? report({ plan: stored }) : report() } };
+      },
+    });
+    const plan = planClient();
+    const scanId = randomUuid();
+    const first = await unlock(gatedBody({ scanId }), { app: appWith(plan.client) });
+    expect(((await first.json()) as any).emailed).toBe(true);
+    const sentBefore = { lead: net.lead().length, resend: net.resend().length, plan: plan.create.mock.calls.length };
+    expect(sentBefore).toEqual({ lead: 1, resend: 1, plan: 1 });
+
+    const again = await unlock(gatedBody({ scanId }), { app: appWith(plan.client), ip: randomIp() });
+    expect(again.status).toBe(200);
+    const body = (await again.json()) as any;
+    expect(body).toMatchObject({ ok: true, report_token: TOKEN, emailed: false, plan: stored });
+    expect(body.report.host).toBe(HOST);
+    expect(net.lead()).toHaveLength(1);
+    expect(net.resend()).toHaveLength(1);
+    expect(plan.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('limits an email address to 3 unlocks an hour whatever the address, scan or capitalization (the third-party scenario)', async () => {
+    const net = stubNetwork();
+    const plan = planClient();
+    const victim = ['victim@example.com', 'Victim@Example.com', 'VICTIM@example.com'];
+    for (const email of victim) {
+      const res = await unlock({ scanId: randomUuid(), industry: 'Retail', email }, { country: 'CA', ip: randomIp(), app: appWith(plan.client) });
+      expect(res.status).toBe(200);
+    }
+    const res = await unlock({ scanId: randomUuid(), industry: 'Retail', email: 'victim@example.com' }, { country: 'CA', ip: randomIp(), app: appWith(plan.client) });
+    expect(res.status).toBe(429);
+    expect(await res.json()).toEqual({ ok: false, error: 'rate_limited' });
+    expect(Number(res.headers.get('Retry-After'))).toBeGreaterThan(0);
+    expect(net.resend()).toHaveLength(3);
+    expect(net.graderActions().filter((a) => a === 'unlock').length).toBe(6); // 3 unlocks, 3 plan stores; none for the fourth
+
+    // another address is unaffected
+    const other = await unlock({ scanId: randomUuid(), industry: 'Retail', email: 'someone@example.com' }, { country: 'CA', app: appWith(plan.client) });
+    expect(other.status).toBe(200);
+  });
+
+  it('does not store or log the address in a limiter name or a log line', async () => {
+    const logs = captureLogs();
+    stubNetwork();
+    await unlock(gatedBody({ email: 'private.person@example.com' }));
+    expect(logs.join('\n')).not.toContain('private.person');
+  });
+});
+
+describe('plan budget', () => {
+  it('writes a plan only while CHECKER_DAILY_PLANS has room', async () => {
+    stubNetwork();
+    const plan = planClient();
+    const env = checkerEnv({ CHECKER_DAILY_PLANS: '1' });
+    expect(((await (await unlock(gatedBody(), { env, app: appWith(plan.client) })).json()) as any).plan).not.toBeNull();
+    const second = await unlock(gatedBody(), { env, app: appWith(plan.client) });
+    expect(((await second.json()) as any).plan).toBeNull();
+    expect(plan.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('defaults to 300 a day and 0 switches plans off', async () => {
+    stubNetwork();
+    const plan = planClient();
+    expect(((await (await unlock(gatedBody(), { env: checkerEnv({ CHECKER_DAILY_PLANS: '0' }), app: appWith(plan.client) })).json()) as any).plan).toBeNull();
+    expect(plan.create).not.toHaveBeenCalled();
+    const env = checkerEnv();
+    await unlock(gatedBody(), { env, app: appWith(plan.client) });
+    expect(await fixedCount(env, globalCheckerPlanName())).toBe(1);
+  });
+
+  it('does not use up the plan budget when DAILY_LLM_CAP has no room', async () => {
+    stubNetwork();
+    const plan = planClient();
+    const env = checkerEnv({ DAILY_LLM_CAP: '0' });
+    await unlock(gatedBody(), { env, app: appWith(plan.client) });
+    expect(await fixedCount(env, globalCheckerPlanName())).toBe(0);
+    expect(plan.create).not.toHaveBeenCalled();
+  });
+
+  it('matches numbers as whole numbers, not as pieces of other numbers', async () => {
+    stubNetwork();
+    // The report says "30-60 characters" and "(4 chars)"; "3" is not among them even though it sits inside "30".
+    const reply = JSON.stringify({ summary: 'Start here.', items: [{ check_id: 'seo.title_tag', text: 'Take 3 steps to fix the title.' }] });
+    const res = await unlock(gatedBody(), { app: appWith(planClient(reply).client) });
+    expect(((await res.json()) as any).plan).toBeNull();
+    const ok = JSON.stringify({ summary: 'Start here.', items: [{ check_id: 'seo.title_tag', text: 'Keep the title between 30 and 60 characters.' }] });
+    const res2 = await unlock(gatedBody(), { app: appWith(planClient(ok).client) });
+    expect(((await res2.json()) as any).plan).not.toBeNull();
+  });
+});
+
+describe('the visitor email', () => {
+  it('escapes markup that came from the report', async () => {
+    const net = stubNetwork({
+      grader: (p) =>
+        p.action === 'unlock'
+          ? {
+              body: {
+                ok: true,
+                report_token: TOKEN,
+                report: report({
+                  host: 'evil<script>alert(1)</script>.example',
+                  top_fixes: [{ check_id: 'seo.title_tag', title: '<img src=x onerror=alert(1)>Fish & Chips', fix: 'Use <b>bold</b> when a < b "quoted"' }],
+                }),
+              },
+            }
+          : defaultGrader(p),
+    });
+    await unlock(gatedBody());
+    const mail = net.resend().find((c) => c.json.to[0] === 'jane@example.com')!.json;
+    expect(mail.html).not.toMatch(/<script|<img|<b>/i);
+    expect(mail.html).toContain('Fish &amp; Chips');
+    expect(mail.html).toContain('&quot;quoted&quot;');
+    expect(mail.subject).not.toMatch(/[<>]/);
+  });
+
+  it('logs checker_lead when the lead is delivered', async () => {
+    const logs = captureLogs();
+    stubNetwork();
+    await unlock(gatedBody());
+    expect(logs.some((l) => l.includes('"event":"checker_lead"') && l.includes('"delivery":"leadquik"'))).toBe(true);
+    expect(logs.some((l) => l.includes('checker_unlock') && l.includes('"emailed":true'))).toBe(true);
+  });
+
+  it('shapes an unlock failure from the grader to ok, reason and fields', async () => {
+    stubNetwork({ grader: () => ({ status: 400, body: { ok: false, reason: 'not_found', fields: { scanId: 'bad' }, details: 'LEAKVALUE', report: {} } }) });
+    const text = await (await unlock(gatedBody())).text();
+    expect(JSON.parse(text)).toEqual({ ok: false, reason: 'not_found', fields: { scanId: 'bad' } });
+  });
+});
+
+describe('"Email me a copy" for a visitor outside the US', () => {
+  it('is a second unlock with just an email: one email per scan and address per day, never a lead or a second plan', async () => {
+    const net = stubNetwork();
+    const plan = planClient();
+    const scanId = randomUuid();
+    const opts = { country: 'CA', app: appWith(plan.client) };
+
+    const first = await unlock({ scanId, industry: 'trade' }, opts);
+    expect(await first.json()).toMatchObject({ ok: true, emailed: false });
+    expect(net.resend()).toHaveLength(0);
+
+    const copy = await unlock({ scanId, email: 'visitor@example.com' }, { ...opts, ip: randomIp() });
+    expect(copy.status).toBe(200);
+    expect(await copy.json()).toMatchObject({ ok: true, report_token: TOKEN, emailed: true });
+    expect(net.resend()).toHaveLength(1);
+    expect(net.resend()[0]!.json.to).toEqual(['visitor@example.com']);
+    expect(net.lead()).toHaveLength(0);
+    expect(plan.create).toHaveBeenCalledTimes(1);
+
+    const again = await unlock({ scanId, email: 'Visitor@Example.com' }, { ...opts, ip: randomIp() });
+    expect(await again.json()).toMatchObject({ ok: true, emailed: false });
+    expect(net.resend()).toHaveLength(1);
+
+    const other = await unlock({ scanId, email: 'second@example.com' }, { ...opts, ip: randomIp() });
+    expect(await other.json()).toMatchObject({ ok: true, emailed: true });
+    expect(net.resend()).toHaveLength(2);
+    expect(net.lead()).toHaveLength(0);
+  });
+
+  it('does not email twice when the first unlock already carried the address', async () => {
+    const net = stubNetwork();
+    const scanId = randomUuid();
+    const opts = { country: 'CA' };
+    const first = await unlock({ scanId, industry: 'retail', email: 'visitor@example.com' }, opts);
+    expect(((await first.json()) as any).emailed).toBe(true);
+    const again = await unlock({ scanId, industry: 'retail', email: 'visitor@example.com' }, { ...opts, ip: randomIp() });
+    expect(((await again.json()) as any).emailed).toBe(false);
+    expect(net.resend()).toHaveLength(1);
+  });
+});
+
+describe('industry as a profile key or as text', () => {
+  it.each([
+    ['trade', 'Home services'],
+    ['professional', 'Professional services'],
+    ['health', 'Health and wellness'],
+    ['retail', 'Restaurants and retail'],
+    ['software', 'Software and online services'],
+    ['general', 'Other local business'],
+  ])('maps the key %s to its picker label in the lead notes and the plan prompt', async (key, label) => {
+    const net = stubNetwork();
+    const plan = planClient();
+    const res = await unlock(gatedBody({ industry: key, profile: key }), { app: appWith(plan.client) });
+    expect(res.status).toBe(200);
+    expect(String(net.lead()[0]!.json.notes)).toContain(`Industry: ${label}\n`);
+    expect(plan.create.mock.calls[0]![0].messages[0]!.content).toContain(`<industry>${label}</industry>`);
+  });
+
+  it('keeps other text as sanitized free text, and falls back to the profile key when industry is missing', async () => {
+    const net = stubNetwork();
+    await unlock(gatedBody({ industry: 'Dental <b>office</b> & care', profile: 'health' }));
+    expect(String(net.lead()[0]!.json.notes)).toContain('Industry: Dental office & care\n');
+    await unlock(gatedBody({ industry: undefined, profile: 'health' }));
+    expect(String(net.lead()[1]!.json.notes)).toContain('Industry: Health and wellness\n');
+    const none = await unlock(gatedBody({ industry: undefined }));
+    expect(none.status).toBe(400);
+    const open = await unlock({ scanId: randomUuid() }, { country: 'CA' }); // not gated: industry may be left out
+    expect(open.status).toBe(200);
   });
 });

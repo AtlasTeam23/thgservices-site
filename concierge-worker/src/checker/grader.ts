@@ -69,31 +69,91 @@ export const callGrader = async (
 /** What the visitor sees when the grader cannot be reached. */
 export const unavailableBody = { ok: false, reason: 'unavailable' } as const;
 
-// Keys that belong to the paid breakdown. A scan answer must never carry them, whatever the grader
-// sends: the grades are free and the details are behind the form.
-const DETAIL_KEYS: ReadonlySet<string> = new Set([
-  'report',
-  'report_token',
-  'checks',
-  'sections',
-  'top_fixes',
-  'finding',
-  'fix',
-  'plan',
-  'competitors',
-]);
+// What a visitor may be shown before the sign-up is built from known fields only. Anything the grader adds,
+// renames or nests (details, breakdown, items, a differently cased Report) is not on the list and never leaves.
 
-/** Copies `value` without any detail key, at any depth. */
-export const stripDetails = (value: unknown): unknown => {
-  if (Array.isArray(value)) return value.map(stripDetails);
-  if (isRecord(value)) {
-    const out: Record<string, unknown> = {};
-    for (const [key, inner] of Object.entries(value)) {
-      if (!DETAIL_KEYS.has(key)) out[key] = stripDetails(inner);
-    }
-    return out;
-  }
-  return value;
+const num = (value: unknown, max = 1_000_000): number | undefined =>
+  typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= max ? value : undefined;
+const count = (value: unknown): number | undefined => (Number.isInteger(value) ? num(value) : undefined);
+const str = (value: unknown, pattern: RegExp, max: number): string | undefined =>
+  typeof value === 'string' && value.length <= max && pattern.test(value) ? value : undefined;
+const flag = (value: unknown): boolean | undefined => (typeof value === 'boolean' ? value : undefined);
+
+/** A short lower-case reason code such as "blocked" or "recheck_too_soon", or undefined. */
+export const cleanReason = (value: unknown): string | undefined => str(value, /^[a-z_]{1,32}$/, 32);
+
+const gradeField = (value: unknown): { score: number; grade: string } | null | undefined => {
+  if (value === null) return null; // a page that needs JavaScript has no Conversion or Overall grade
+  if (!isRecord(value)) return undefined;
+  const score = num(value.score, 100);
+  const grade = str(value.grade, /^[A-F]$/, 1);
+  return score === undefined || grade === undefined ? undefined : { score, grade };
+};
+
+const definedOnly = (entries: Record<string, unknown>): Record<string, unknown> =>
+  Object.fromEntries(Object.entries(entries).filter(([, v]) => v !== undefined));
+
+const categoryField = (value: unknown): Record<string, unknown> | undefined => {
+  if (!isRecord(value)) return undefined;
+  const id = str(value.id, /^[A-Za-z0-9._-]{1,64}$/, 64);
+  if (id === undefined) return undefined;
+  return definedOnly({
+    id,
+    section: str(value.section, /^[a-z_]{1,32}$/, 32),
+    label: str(value.label, /^[^<>]{1,200}$/, 200),
+    to_fix: count(value.to_fix),
+    to_improve: count(value.to_improve),
+    passing: count(value.passing),
+  });
+};
+
+const summaryField = (value: unknown): Record<string, unknown> | undefined => {
+  if (!isRecord(value)) return undefined;
+  return definedOnly({
+    to_fix: count(value.to_fix),
+    to_improve: count(value.to_improve),
+    passing: count(value.passing),
+    categories: Array.isArray(value.categories)
+      ? value.categories.slice(0, 40).map(categoryField).filter((c): c is Record<string, unknown> => c !== undefined)
+      : undefined,
+  });
+};
+
+/**
+ * The free scan answer, rebuilt from an allow-list: ok, scan_id, host, final_url, cached, checked_at,
+ * read_limited, bot_view, overall, seo, conversion (each `{score, grade}`, or null for Overall and Conversion),
+ * summary `{to_fix, to_improve, passing, categories[{id, section, label, to_fix, to_improve, passing}]}`,
+ * reason and http_status. Each value is checked for type and size too.
+ */
+export const shapeScan = (body: Record<string, unknown>): Record<string, unknown> =>
+  definedOnly({
+    ok: body.ok === true,
+    scan_id: str(body.scan_id, /^[A-Za-z0-9-]{8,64}$/, 64),
+    host: str(body.host, /^[A-Za-z0-9.-]{1,253}$/, 253),
+    final_url: str(body.final_url, /^https?:\/\/[^\s<>"']{1,2040}$/, 2048),
+    cached: flag(body.cached),
+    checked_at: str(body.checked_at, /^[0-9TZ:.+-]{10,40}$/, 40),
+    read_limited: flag(body.read_limited),
+    bot_view: flag(body.bot_view),
+    overall: gradeField(body.overall),
+    seo: gradeField(body.seo),
+    conversion: gradeField(body.conversion),
+    summary: summaryField(body.summary),
+    reason: cleanReason(body.reason),
+    http_status: Number.isInteger(body.http_status) ? num(body.http_status, 999) : undefined,
+  });
+
+/** A failed unlock or report answer: `{ok: false, reason?, fields?}` and nothing else. */
+export const shapeFailure = (body: Record<string, unknown>): Record<string, unknown> => {
+  const fields = isRecord(body.fields)
+    ? Object.fromEntries(
+        Object.entries(body.fields)
+          .slice(0, 20)
+          .filter(([key, value]) => /^[A-Za-z_]{1,32}$/.test(key) && typeof value === 'string')
+          .map(([key, value]) => [key, (value as string).replace(/[<>]/g, '').slice(0, 200)]),
+      )
+    : undefined;
+  return definedOnly({ ok: false, reason: cleanReason(body.reason), fields: fields && Object.keys(fields).length > 0 ? fields : undefined });
 };
 
 /** The HTTP status to give the visitor for a grader reply: its own 2xx/4xx, never a 5xx. */

@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
-import { dailyLlmCap, isMockProvider, llmApiKey, type Env } from '../env';
-import { globalName, hitLimiter, llmDailyRule } from '../limits';
+import { checkerDailyPlans, dailyLlmCap, isMockProvider, llmApiKey, type Env } from '../env';
+import { checkerPlanDailyRule, globalCheckerPlanName, globalName, hitLimiter, llmDailyRule, peekLimiter } from '../limits';
 import type { CreateResponse } from '../llm';
 import { clampLength, sanitizeText, stripHtml } from '../sanitize';
 import { isRecord } from '../util';
@@ -51,8 +51,7 @@ export interface PlanParams {
   max_tokens: number;
   system: string;
   messages: Array<{ role: 'user'; content: string }>;
-  thinking: { type: 'disabled' };
-  output_config: { effort: 'low'; format: { type: 'json_schema'; schema: typeof PLAN_JSON_SCHEMA } };
+  output_config: { effort: 'medium'; format: { type: 'json_schema'; schema: typeof PLAN_JSON_SCHEMA } };
 }
 
 export interface PlanClient {
@@ -165,7 +164,7 @@ export const planInput = (fixes: Fix[], industry: string): string =>
 // --- turning the model's answer into a plan -------------------------------------------
 
 const EMOJI = /[\p{Extended_Pictographic}‍️]/gu;
-const NUMBER = /\d[\d,.]*/g;
+const NUMBER = /\d+(?:[.,]\d+)*/g;
 
 const clean = (value: string, max: number): string =>
   clampLength(sanitizeText(value).replace(EMOJI, '').replace(/[ \t]+/g, ' ').replace(/ ([.,;:!?])/g, '$1').trim(), max);
@@ -196,11 +195,10 @@ export const validatePlan = (raw: unknown, fixes: Fix[], source: string): Action
   }
   if (summary === '' || items.length === 0) return { reason: 'empty' };
 
+  // Whole numbers only: "4" in the plan is sourced only if "4" stands alone in the input, not inside "45" or "2026".
+  const sourced = new Set(source.match(NUMBER) ?? []);
   const figures = [summary, ...items.map((item) => item.text)].join(' ').match(NUMBER) ?? [];
-  for (const figure of figures) {
-    const bare = figure.replace(/[.,]+$/, '');
-    if (!source.includes(bare)) return { reason: 'unsourced_number' };
-  }
+  if (figures.some((figure) => !sourced.has(figure))) return { reason: 'unsourced_number' };
   return { summary, items };
 };
 
@@ -233,11 +231,22 @@ export const generatePlan = async (env: Env, report: unknown, industry: string, 
   const apiKey = llmApiKey(env);
   if (!apiKey && !deps.client) return failed('no_key');
 
+  // A plan is written only when both the plan budget and the model's daily cap have room. Both are looked at
+  // first and only then charged, so a refusal by one does not use up the other.
   try {
-    const cap = dailyLlmCap(env);
-    if (cap === 0) return failed('cap');
-    const day = await hitLimiter(env, globalName(), llmDailyRule(cap));
-    if (!day.allowed) return failed('cap');
+    const modelRule = llmDailyRule(dailyLlmCap(env));
+    const planRule = checkerPlanDailyRule(checkerDailyPlans(env));
+    if (modelRule.limit === 0 || planRule.limit === 0) return failed('cap');
+    const [modelUsed, planUsed] = await Promise.all([
+      peekLimiter(env, globalName(), modelRule),
+      peekLimiter(env, globalCheckerPlanName(), planRule),
+    ]);
+    if (modelUsed.count >= modelRule.limit || planUsed.count >= planRule.limit) return failed('cap');
+    const [modelHit, planHit] = await Promise.all([
+      hitLimiter(env, globalName(), modelRule),
+      hitLimiter(env, globalCheckerPlanName(), planRule),
+    ]);
+    if (!modelHit.allowed || !planHit.allowed) return failed('cap');
   } catch {
     return failed('limiter');
   }
@@ -252,8 +261,7 @@ export const generatePlan = async (env: Env, report: unknown, industry: string, 
       max_tokens: PLAN_MAX_TOKENS,
       system: PLAN_SYSTEM_PROMPT,
       messages: [{ role: 'user', content: input }],
-      thinking: { type: 'disabled' },
-      output_config: { effort: 'low', format: { type: 'json_schema', schema: PLAN_JSON_SCHEMA } },
+      output_config: { effort: 'medium', format: { type: 'json_schema', schema: PLAN_JSON_SCHEMA } },
     });
   } catch (error) {
     const status = error instanceof Anthropic.APIError && typeof error.status === 'number' ? error.status : 0;

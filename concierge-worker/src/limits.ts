@@ -56,6 +56,10 @@ export const CHECKER_SCAN_IP: LimitRule = { limit: 10, windowSeconds: 10 * 60 };
 export const CHECKER_SCAN_DAY_LIMIT = 30;
 export const CHECKER_SIGNUP_IP: LimitRule = { limit: 5, windowSeconds: 60 * 60 };
 export const CHECKER_REPORT_IP: LimitRule = { limit: 60, windowSeconds: 10 * 60 };
+/** Real unlocks (lead, email, plan) per email address per hour: stops the form being used to mail someone else. */
+export const CHECKER_EMAIL_HOURLY: LimitRule = { limit: 3, windowSeconds: 60 * 60 };
+/** Action plans per Eastern-time day across all visitors (the CHECKER_DAILY_PLANS var). */
+export const checkerPlanDailyRule = fixedDayRule;
 /** Scans per Eastern-time day across all visitors (the CHECKER_DAILY_SCANS var). */
 export const checkerDailyRule = fixedDayRule;
 
@@ -101,6 +105,17 @@ export const checkerSignupIpName = async (ip: string, salt: string): Promise<str
 
 export const checkerReportIpName = async (ip: string, salt: string): Promise<string> =>
   `ip:checker-report:${await sha256Hex(ipBucketKey(ip) + salt)}`;
+
+/** The lowercased address is hashed with the salt, so no address is stored or visible in a DO listing. */
+export const checkerEmailName = async (email: string, salt: string): Promise<string> =>
+  `email:checker:${await sha256Hex(email.trim().toLowerCase() + salt)}`;
+
+/** One real unlock per scan per Eastern day; the rule for it is untilMidnightRule(1). */
+export const checkerUnlockName = (scanId: string): string => `checker-unlock:${scanId.toLowerCase()}`;
+
+/** One report email per scan and address per Eastern day; the rule for it is untilMidnightRule(1). */
+export const checkerUnlockEmailName = async (scanId: string, email: string, salt: string): Promise<string> =>
+  `checker-unlock-email:${await sha256Hex(`${scanId.toLowerCase()}:${email.trim().toLowerCase()}${salt}`)}`;
 
 export const sessionName = (sessionId: string): string => `session:${sessionId}`;
 
@@ -152,6 +167,8 @@ export const globalName = (now: Date = new Date()): string => `global:${etDay(no
 export const globalLeadName = (now: Date = new Date()): string => `global:lead:${etDay(now)}`;
 
 export const globalCheckerScanName = (now: Date = new Date()): string => `global:checker-scan:${etDay(now)}`;
+
+export const globalCheckerPlanName = (now: Date = new Date()): string => `global:checker-plan:${etDay(now)}`;
 
 export const globalVoiceName = (now: Date = new Date()): string => `global:voice:${etDay(now)}`;
 

@@ -1,7 +1,7 @@
 import { clampLength } from '../sanitize';
 import { isRecord } from '../util';
 import type { LeadEmail } from '../email';
-import { formatPhone } from '../email';
+import { escapeHtml, formatPhone } from '../email';
 
 export const REPORT_PAGE = 'https://thgservices.io/website-checker/';
 const TIMEOUT_MS = 5000;
@@ -144,11 +144,10 @@ export const buildFallbackEmail = (payload: CheckerLeadPayload): LeadEmail => {
     payload.notes,
     '',
   ];
-  const escape = (value: string): string => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   return {
     subject: clampLength(`Website check sign-up (CRM delivery failed): ${payload.name}`, 200),
     text: lines.join('\n'),
-    html: `<div style="font-family:system-ui,sans-serif;font-size:14px;line-height:1.5;color:#0f172a;background:#ffffff"><pre style="font-family:inherit;white-space:pre-wrap">${escape(lines.join('\n'))}</pre></div>`,
+    html: `<div style="font-family:system-ui,sans-serif;font-size:14px;line-height:1.5;color:#0f172a;background:#ffffff"><pre style="font-family:inherit;white-space:pre-wrap">${escapeHtml(lines.join('\n'))}</pre></div>`,
     replyTo: payload.email,
   };
 };

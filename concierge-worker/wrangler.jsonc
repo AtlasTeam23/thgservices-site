@@ -65,7 +65,10 @@
     // makes the routes answer 503 checker_not_ready. Without the var the code treats it as "true".
     "CHECKER_REQUIRE_TURNSTILE": "false",
     // Scans per Eastern-time day across all visitors.
-    "CHECKER_DAILY_SCANS": "1000"
+    "CHECKER_DAILY_SCANS": "1000",
+    // Action plans (one model call each) per Eastern-time day, all visitors. A plan is written only when this
+    // and DAILY_LLM_CAP both have room.
+    "CHECKER_DAILY_PLANS": "300"
   },
 
   // Workers AI: Whisper for POST /stt and, only when VOICE_TTS is "aura", Aura-1 for POST /tts.
