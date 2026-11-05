@@ -12,7 +12,7 @@ import { ThemeProvider } from '../../lib/theme';
 import { onConciergeOpen } from '../../components/concierge/events';
 import { FAILURE, READ_LIMITED_BANNER, RATE_LIMITED, DAILY_CAP } from '../../lib/checker/copy';
 import { INDUSTRIES } from '../../lib/checker/config';
-import { bodiesFor, competitorEntry, json, makeFetch, reportBody, scanBody } from './checkerFixtures';
+import { bodiesFor, competitorEntry, json, makeFetch, reportBody, scanBody, scanId } from './checkerFixtures';
 
 const TOKEN = 'tok_abcdefghijklmnop1234567890';
 
@@ -234,7 +234,7 @@ describe('WebsiteChecker page', () => {
 
     it.each([
       [429, { error: 'rate_limited' }, RATE_LIMITED],
-      [429, { error: 'daily_cap' }, DAILY_CAP],
+      [503, { error: 'capacity' }, DAILY_CAP],
     ])('renders the limit message for %s %j', async (status, body, text) => {
       installFetch({ '/checker/scan': () => json(status, body) });
       const user = userEvent.setup();
@@ -317,10 +317,11 @@ describe('WebsiteChecker page', () => {
       expect(await screen.findByTestId('breakdown')).toBeInTheDocument();
       expect(bodiesFor(fetchMock, '/checker/unlock')).toEqual([
         {
-          scanId: 'scan-example.com',
-          industry: 'professional',
+          scanId: scanId('example.com'),
+          profile: 'professional',
+          industry: 'Professional services (law, accounting, consulting, insurance, real estate)',
           city: 'Woodstock',
-          competitors: ['scan-rival.com'],
+          competitors: [scanId('rival.com')],
           name: 'Jane Owner',
           email: 'jane@owner.example',
           phone: '(555) 123-4567',
@@ -383,7 +384,12 @@ describe('WebsiteChecker page', () => {
       await user.click(screen.getByRole('button', { name: 'Show my breakdown' }));
       expect(await screen.findByTestId('breakdown')).toBeInTheDocument();
       expect(bodiesFor(fetchMock, '/checker/unlock')).toEqual([
-        { scanId: 'scan-example.com', industry: 'trade', company_website: '' },
+        {
+          scanId: scanId('example.com'),
+          profile: 'trade',
+          industry: 'Home services (flooring, plumbing, HVAC, roofing, landscaping, cleaning)',
+          company_website: '',
+        },
       ]);
       expect(screen.queryByText(/We emailed a copy/)).not.toBeInTheDocument();
 
@@ -391,8 +397,9 @@ describe('WebsiteChecker page', () => {
       await user.click(screen.getByRole('button', { name: 'Send' }));
       expect(await screen.findByText('We emailed a copy to me@owner.example.')).toBeInTheDocument();
       expect(bodiesFor(fetchMock, '/checker/unlock')[1]).toEqual({
-        scanId: 'scan-example.com',
-        industry: 'trade',
+        scanId: scanId('example.com'),
+        profile: 'trade',
+        industry: 'Home services (flooring, plumbing, HVAC, roofing, landscaping, cleaning)',
         email: 'me@owner.example',
         company_website: '',
       });
@@ -544,7 +551,8 @@ describe('WebsiteChecker page', () => {
       const writeText = vi.fn().mockResolvedValue(undefined);
       Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
       await user.click(screen.getByRole('button', { name: 'Copy link to this report' }));
-      expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/website-checker/?r=${TOKEN}`);
+      expect(writeText).toHaveBeenCalledWith(`https://thgservices.io/website-checker/?r=${TOKEN}`);
+      expect(window.location.origin).not.toBe('https://thgservices.io');
       expect(await screen.findByRole('button', { name: 'Link copied' })).toBeInTheDocument();
     });
 
@@ -637,6 +645,212 @@ describe('WebsiteChecker page', () => {
         expect(everything).not.toContain(secret);
       }
       expect(trackEvent).toHaveBeenCalledWith('checker_scan_done', { grade: 'C' });
+    });
+  });
+
+  describe('Worker contract and robustness', () => {
+    const unlockOk = (extra: Record<string, unknown> = {}) =>
+      json(200, { ok: true, report_token: TOKEN, report: reportBody('example.com'), emailed: true, ...extra });
+
+    it('shows a generic message when a 400 has no field the form can show', async () => {
+      installFetch({
+        '/checker/scan': () => json(200, scanBody('example.com')),
+        '/checker/unlock': () => json(400, { ok: false, fields: { scanId: 'bad' } }),
+      });
+      const user = userEvent.setup();
+      renderPage();
+      await startScan(user);
+      await screen.findByLabelText('Name');
+      await fillGated(user);
+      await user.click(screen.getByRole('button', { name: 'Show my breakdown' }));
+      expect(await screen.findByText('Something was off with that request. Run the check again.')).toBeInTheDocument();
+    });
+
+    it('says the check expired when unlock answers not_found', async () => {
+      installFetch({
+        '/checker/scan': () => json(200, scanBody('example.com')),
+        '/checker/unlock': () => json(404, { ok: false, reason: 'not_found' }),
+      });
+      const user = userEvent.setup();
+      renderPage();
+      await startScan(user);
+      await screen.findByLabelText('Name');
+      await fillGated(user);
+      await user.click(screen.getByRole('button', { name: 'Show my breakdown' }));
+      expect(await screen.findByText('That check has expired. Run the check again.')).toBeInTheDocument();
+    });
+
+    it('maps verification_failed and capacity on a scan', async () => {
+      installFetch({ '/checker/scan': () => json(403, { error: 'verification_failed' }) });
+      const user = userEvent.setup();
+      renderPage();
+      await startScan(user);
+      expect(await screen.findByText("We couldn't verify your browser. Reload the page and try again.")).toBeInTheDocument();
+    });
+
+    it('treats a missing "gated" as gated', async () => {
+      const body = scanBody('example.com') as Record<string, unknown>;
+      delete body.gated;
+      installFetch({ '/checker/scan': () => json(200, body) });
+      const user = userEvent.setup();
+      renderPage();
+      await startScan(user);
+      expect(await screen.findByLabelText('Phone')).toBeInTheDocument();
+    });
+
+    it('renders the counts line when the summary has no categories', async () => {
+      const body = scanBody('example.com');
+      installFetch({ '/checker/scan': () => json(200, { ...body, summary: { to_fix: 1, to_improve: 2, passing: 3 } }) });
+      const user = userEvent.setup();
+      renderPage();
+      await startScan(user);
+      expect(await screen.findByText('1 to fix, 2 to improve, 3 passing.')).toBeInTheDocument();
+    });
+
+    it('clears the consent when the phone number is cleared', async () => {
+      installFetch({
+        '/checker/scan': () => json(200, scanBody('example.com')),
+        '/checker/unlock': () => unlockOk(),
+      });
+      const user = userEvent.setup();
+      renderPage();
+      await startScan(user);
+      await screen.findByLabelText('Name');
+      await user.type(screen.getByLabelText('Phone'), '5');
+      await user.click(screen.getByLabelText('OK to call or text me about my results'));
+      await user.clear(screen.getByLabelText('Phone'));
+      expect(screen.queryByLabelText('OK to call or text me about my results')).not.toBeInTheDocument();
+      await fillGated(user);
+      await user.click(screen.getByRole('button', { name: 'Show my breakdown' }));
+      await screen.findByTestId('breakdown');
+      expect(bodiesFor(fetchMock, '/checker/unlock')[0].okToCall).toBe(false);
+    });
+
+    it('focuses the first invalid field on a failed submit', async () => {
+      installFetch({ '/checker/scan': () => json(200, scanBody('example.com')) });
+      const user = userEvent.setup();
+      renderPage();
+      await user.type(screen.getByLabelText('Your website'), 'example.com');
+      await user.click(screen.getByRole('button', { name: 'Check my website' }));
+      expect(screen.getByLabelText('Your industry')).toHaveFocus();
+      await user.selectOptions(screen.getByLabelText('Your industry'), 'trade');
+      await user.click(screen.getByRole('button', { name: 'Check my website' }));
+      await screen.findByLabelText('Name');
+      await user.click(screen.getByRole('button', { name: 'Show my breakdown' }));
+      expect(screen.getByLabelText('Name')).toHaveFocus();
+    });
+
+    it('moves focus to the heading when returning to the start screen', async () => {
+      installFetch({ '/checker/scan': () => json(200, { ok: false, host: 'example.com', reason: 'timeout' }) });
+      const user = userEvent.setup();
+      renderPage();
+      await startScan(user);
+      await user.click(await screen.findByRole('button', { name: 'Try another website' }));
+      expect(screen.getByRole('heading', { level: 1, name: 'Free website checker' })).toHaveFocus();
+    });
+
+    it('keeps the hidden field out of reach: off-screen class, no tab stop, no autofill, hidden from readers', () => {
+      renderPage();
+      const trap = document.querySelector('input[name="company_website"]') as HTMLInputElement;
+      expect(trap.getAttribute('autocomplete')).toBe('off');
+      expect(trap.getAttribute('tabindex')).toBe('-1');
+      expect(trap.getAttribute('aria-hidden')).toBe('true');
+      expect(trap.closest('.ck-trap')).not.toBeNull();
+    });
+
+    describe('competitors', () => {
+      it('rejects the visitor\'s own website', async () => {
+        installFetch({ '/checker/scan': (b: { url: string }) => json(200, scanBody(b.url.replace(/^www\./, ''))) });
+        const user = userEvent.setup();
+        renderPage();
+        await startScan(user, 'example.com');
+        await user.type(await screen.findByLabelText('Competitor 1 website'), 'https://www.Example.com/');
+        await user.click(screen.getByRole('button', { name: 'Compare' }));
+        expect(await screen.findByText('That is your own website. Enter a competitor.')).toBeInTheDocument();
+        expect(bodiesFor(fetchMock, '/checker/scan')).toHaveLength(1);
+      });
+
+      it('stops after a rate limit and does not try the rest', async () => {
+        installFetch({
+          '/checker/scan': (b: { url: string }) =>
+            b.url === 'one.com' ? json(429, { error: 'rate_limited' }) : json(200, scanBody(b.url)),
+        });
+        const user = userEvent.setup();
+        renderPage();
+        await startScan(user, 'example.com');
+        await user.click(await screen.findByRole('button', { name: 'Add another' }));
+        await user.type(screen.getByLabelText('Competitor 1 website'), 'one.com');
+        await user.type(screen.getByLabelText('Competitor 2 website'), 'two.com');
+        await user.click(screen.getByRole('button', { name: 'Compare' }));
+        expect(await screen.findByText(RATE_LIMITED)).toBeInTheDocument();
+        expect(bodiesFor(fetchMock, '/checker/scan').map((b) => b.url)).toEqual(['example.com', 'one.com']);
+      });
+
+      it('has a polite live region while a competitor is being checked', async () => {
+        let release: (r: Response) => void = () => {};
+        installFetch({
+          '/checker/scan': (b: { url: string }) =>
+            b.url === 'example.com' ? json(200, scanBody('example.com')) : new Promise<Response>((r) => (release = r)),
+        });
+        const user = userEvent.setup();
+        renderPage();
+        await startScan(user);
+        await user.type(await screen.findByLabelText('Competitor 1 website'), 'one.com');
+        await user.click(screen.getByRole('button', { name: 'Compare' }));
+        const live = await screen.findByText('Checking competitor websites.');
+        expect(live).toHaveAttribute('aria-live', 'polite');
+        release(json(200, scanBody('one.com')));
+        await screen.findByTestId('competitor-grades');
+      });
+    });
+
+    describe('breakdown details', () => {
+      async function open(handlers: Record<string, () => Response> = {}) {
+        installFetch({
+          '/checker/scan': () => json(200, scanBody('example.com', { gated: false })),
+          '/checker/unlock': () => unlockOk({ report: reportBody('example.com', { competitors: [competitorEntry('rival.com', {})] }) }),
+          ...handlers,
+        });
+        const user = userEvent.setup();
+        renderPage();
+        await startScan(user);
+        await user.click(await screen.findByRole('button', { name: 'Show my breakdown' }));
+        await screen.findByTestId('breakdown');
+        return user;
+      }
+
+      it('announces each comparison cell as Pass, Needs work or Fail, not by color alone', async () => {
+        await open();
+        const cells = Array.from(document.querySelectorAll('.ck-table--checks td [aria-label]'));
+        expect(cells.length).toBeGreaterThan(0);
+        for (const c of cells) {
+          expect(c).toHaveAttribute('role', 'img');
+          expect(['Pass', 'Needs work', 'Fail', 'Not compared']).toContain(c.getAttribute('aria-label'));
+        }
+        expect(document.querySelectorAll('.ck-table--grades [role="img"]').length).toBeGreaterThan(0);
+      });
+
+      it('shows "We already sent a copy" when the second answer is emailed:false', async () => {
+        const user = await open({
+          '/checker/unlock': (() => {
+            let n = 0;
+            return () => unlockOk({ emailed: n++ === 0 });
+          })(),
+        });
+        await user.type(screen.getByLabelText('Email me a copy'), 'me@owner.example');
+        await user.click(screen.getByRole('button', { name: 'Send' }));
+        expect(await screen.findByText('We already sent a copy to that address today.')).toBeInTheDocument();
+        expect(screen.queryByText(/We emailed a copy/)).not.toBeInTheDocument();
+      });
+
+      it('shows the link to select when both copy methods fail', async () => {
+        const user = await open();
+        Object.defineProperty(navigator, 'clipboard', { value: { writeText: vi.fn().mockRejectedValue(new Error('no')) }, configurable: true });
+        document.execCommand = vi.fn().mockReturnValue(false);
+        await user.click(screen.getByRole('button', { name: 'Copy link to this report' }));
+        expect(await screen.findByText("Couldn't copy, select the link instead.")).toBeInTheDocument();
+        expect(screen.getByLabelText('Report link')).toHaveValue(`https://thgservices.io/website-checker/?r=${TOKEN}`);
+      });
     });
   });
 });

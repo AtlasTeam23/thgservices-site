@@ -244,6 +244,13 @@ function onDocumentClick(event: MouseEvent): void {
 }
 
 function loadBeacon(): void {
+  // The Cloudflare beacon reports the page address, and a website-checker report
+  // link carries its token in `r`. Do not load it while `r` is in the URL.
+  try {
+    if (new URLSearchParams(window.location.search).has('r')) return;
+  } catch {
+    return;
+  }
   const token = (import.meta.env.VITE_CF_BEACON_TOKEN ?? '').trim();
   if (!token) return;
   const script = document.createElement('script');

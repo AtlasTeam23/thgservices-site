@@ -164,9 +164,21 @@ describe('scripts/postbuild.mjs', () => {
       expect(page).not.toMatch(/noindex/i);
     });
 
-    it('is listed in the sitemap', () => {
+    it('is NOT in the sitemap during the hidden launch (it returns with the public links)', () => {
       const sitemap = readFileSync(join(import.meta.dirname, '..', '..', 'public', 'sitemap.xml'), 'utf8');
-      expect(sitemap).toContain('<loc>https://thgservices.io/website-checker/</loc>');
+      expect(sitemap).not.toContain('website-checker');
+    });
+
+    it("drops the homepage's JSON-LD from the checker page only", () => {
+      const withLd = INDEX_HTML.replace(
+        '</head>',
+        '<script type="application/ld+json">{"@type":"Organization"}</script>\n  </head>'
+      );
+      writeFileSync(join(dist, 'index.html'), withLd);
+      expect(run(dist).status).toBe(0);
+      expect(readFileSync(join(dist, 'website-checker', 'index.html'), 'utf8')).not.toContain('ld+json');
+      expect(readFileSync(join(dist, 'index.html'), 'utf8')).toContain('ld+json');
+      expect(readFileSync(join(dist, 'from-estimate', 'index.html'), 'utf8')).toContain('ld+json');
     });
   });
 });

@@ -15,7 +15,7 @@ export default function GradesView({ scan, busy, recheckMessage, onRecheck }: Pr
   const sections = [
     { id: 'seo', title: copy.SEO_LABEL },
     { id: 'conversion', title: copy.CONVERSION_LABEL },
-  ].map((s) => ({ ...s, cats: scan.summary.categories.filter((c) => c.section === s.id) }));
+  ].map((s) => ({ ...s, cats: (scan.summary.categories ?? []).filter((c) => c.section === s.id) }));
 
   return (
     <section className="ck-card ck-grades" aria-labelledby="ck-grades-h">

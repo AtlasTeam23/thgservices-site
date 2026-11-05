@@ -35,6 +35,9 @@ export default function CompetitorPanel({ yours, rows, onInput, onAdd, onRemove,
       </h3>
       <p className="ck-muted">{copy.COMPARE_TEXT}</p>
 
+      <p className="ck-sr" role="status" aria-live="polite">
+        {busy ? 'Checking competitor websites.' : ''}
+      </p>
       <div className="ck-comp-rows">
         {rows.map((r, i) => (
           <div key={r.key} className="ck-field ck-comp-row">
@@ -55,7 +58,7 @@ export default function CompetitorPanel({ yours, rows, onInput, onAdd, onRemove,
                 aria-describedby={r.message ? `${id}-m${r.key}` : undefined}
               />
               {r.status === 'loading' ? (
-                <Loader2 size={20} className="ck-spin" aria-label="Checking" />
+                <Loader2 size={20} className="ck-spin" aria-hidden="true" />
               ) : (
                 <button
                   type="button"

@@ -18,6 +18,9 @@ const NOINDEX = '<meta name="robots" content="noindex">';
 // Routes that get their own copy of the page but ARE meant to be indexed. Each
 // one gets its own title, description, canonical and social tags in place of the
 // homepage's, and no noindex.
+// TODO (public launch): add https://thgservices.io/website-checker/ to
+// public/sitemap.xml together with the nav, footer and Consulting links
+// (CHECKER_LINKS_LIVE in src/lib/checker/config.ts). It stays out during the hidden launch.
 const INDEXABLE_ROUTES = [
   {
     path: 'website-checker',
@@ -52,6 +55,8 @@ function withOwnHead(source, route) {
   swap(/<meta\s+property="og:url"[^>]*>/i, `<meta property="og:url" content="${c}" />`);
   swap(/<meta\s+name="twitter:title"[^>]*>/i, `<meta name="twitter:title" content="${t}" />`);
   swap(/<meta\s+name="twitter:description"[^>]*>/i, `<meta name="twitter:description" content="${d}" />`);
+  // The homepage's Organization JSON-LD describes the homepage, not this page.
+  source = source.replace(/\s*<script\s+type="application\/ld\+json">[\s\S]*?<\/script>/gi, '');
   return source;
 }
 

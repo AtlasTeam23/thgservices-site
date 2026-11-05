@@ -93,6 +93,7 @@
   text-transform: uppercase;
   color: var(--thg-text-tertiary);
 }
+.ck-h1:focus,
 .ck-h2:focus,
 .ck-failure:focus {
   outline: none;
@@ -192,6 +193,23 @@
   height: 20px;
   margin: 1px 0 0;
   flex: none;
+}
+.ck-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+.ck-copyfail {
+  margin-top: 12px;
+}
+.ck-copyfail input {
+  margin-top: 6px;
 }
 .ck-trap {
   position: absolute;

@@ -12,7 +12,9 @@ type Props = {
   notice?: string | null;
   /** Extra content between the notice and the plan (the optional email-me field). */
   children?: React.ReactNode;
-  linkCopied: boolean;
+  copyState: 'idle' | 'copied' | 'failed';
+  /** The report link, shown for selecting when copying fails. */
+  link: string | null;
   onHelp: () => void;
   onCopyLink: () => void;
   onRecheck: () => void;
@@ -128,7 +130,7 @@ function ComparisonTable({ report, competitors }: { report: Report; competitors:
                   )}
                 </th>
                 <td className="ck-col">
-                  <span className={`ck-mark ck-mark--${r.status}`} aria-label={copy.STATUS_LABEL[r.status]}>
+                  <span role="img" className={`ck-mark ck-mark--${r.status}`} aria-label={copy.STATUS_LABEL[r.status]}>
                     <StatusIcon status={r.status} />
                   </span>
                 </td>
@@ -137,11 +139,11 @@ function ComparisonTable({ report, competitors }: { report: Report; competitors:
                   return (
                     <td key={i} className="ck-col">
                       {st ? (
-                        <span className={`ck-mark ck-mark--${st}`} aria-label={copy.STATUS_LABEL[st]}>
+                        <span role="img" className={`ck-mark ck-mark--${st}`} aria-label={copy.STATUS_LABEL[st]}>
                           <StatusIcon status={st} />
                         </span>
                       ) : (
-                        <span className="ck-muted" aria-label="Not compared">-</span>
+                        <span role="img" className="ck-muted" aria-label="Not compared">-</span>
                       )}
                     </td>
                   );
@@ -155,7 +157,7 @@ function ComparisonTable({ report, competitors }: { report: Report; competitors:
   );
 }
 
-export default function Breakdown({ report, notice, children, linkCopied, onHelp, onCopyLink, onRecheck }: Props) {
+export default function Breakdown({ report, notice, children, copyState, link, onHelp, onCopyLink, onRecheck }: Props) {
   const titles = checkTitles(report);
   const plan = report.plan && (arr(report.plan.items).length > 0 || report.plan.summary) ? report.plan : null;
   const competitors = arr(report.competitors);
@@ -233,14 +235,20 @@ export default function Breakdown({ report, notice, children, linkCopied, onHelp
           {copy.GET_HELP}
         </button>
         <button type="button" className="ck-btn" onClick={onCopyLink}>
-          {linkCopied ? <Check size={18} aria-hidden="true" /> : <Copy size={18} aria-hidden="true" />}
-          {linkCopied ? copy.LINK_COPIED : copy.COPY_LINK}
+          {copyState === 'copied' ? <Check size={18} aria-hidden="true" /> : <Copy size={18} aria-hidden="true" />}
+          {copyState === 'copied' ? copy.LINK_COPIED : copy.COPY_LINK}
         </button>
         <button type="button" className="ck-btn" onClick={onRecheck}>
           <RotateCcw size={18} aria-hidden="true" />
           {copy.CHECK_AGAIN}
         </button>
       </div>
+      {copyState === 'failed' && link ? (
+        <div role="alert" className="ck-copyfail">
+          <p className="ck-error">{copy.COPY_FAILED}</p>
+          <input type="text" readOnly value={link} aria-label="Report link" onFocus={(e) => e.currentTarget.select()} />
+        </div>
+      ) : null}
       <p className="ck-muted ck-footnote">{copy.BREAKDOWN_FOOTER}</p>
     </div>
   );

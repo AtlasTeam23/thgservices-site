@@ -11,7 +11,7 @@ import {
   type Failure,
   type ScanOutcome,
 } from '../../lib/checker/api';
-import { MAX_COMPETITORS } from '../../lib/checker/config';
+import { MAX_COMPETITORS, industryLabel } from '../../lib/checker/config';
 import * as copy from '../../lib/checker/copy';
 import { displayHost, looksLikeSite, reportLink } from '../../lib/checker/format';
 import type { FailReason, Report, ScanOk, UnlockFields } from '../../lib/checker/types';
@@ -35,6 +35,10 @@ export const failureMessage = (f: Failure): string => {
       return copy.NOT_READY;
     case 'verify':
       return copy.VERIFY_ERROR;
+    case 'expired':
+      return copy.EXPIRED;
+    case 'bad_request':
+      return copy.BAD_REQUEST;
     case 'timeout':
       return copy.NETWORK_ERROR;
     default:
@@ -74,7 +78,7 @@ export function useCheckerFlow(token: string | null, clearToken: () => void) {
   const [emailFailed, setEmailFailed] = useState(false);
   const [serverFields, setServerFields] = useState<UnlockFields | null>(null);
   const [unlockError, setUnlockError] = useState<string | null>(null);
-  const [linkCopied, setLinkCopied] = useState(false);
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
 
   // Every start, reset and report load bumps this, so a late reply from an
   // older request cannot overwrite what the visitor is looking at now.
@@ -214,6 +218,11 @@ export function useCheckerFlow(token: string | null, clearToken: () => void) {
         setRows((rs) => rs.map((r) => (r.key === row.key ? { ...r, status: 'failed', message: copy.FAILURE.invalid_url('') } : r)));
         continue;
       }
+      const own = new Set([displayHost(scan.host), displayHost(values.website)].map((h) => h.toLowerCase()));
+      if (own.has(host)) {
+        setRows((rs) => rs.map((r) => (r.key === row.key ? { ...r, status: 'failed', message: copy.OWN_SITE } : r)));
+        continue;
+      }
       if (seen.has(host)) {
         setRows((rs) => rs.map((r) => (r.key === row.key ? { ...r, status: 'failed', message: 'You already added that site.' } : r)));
         continue;
@@ -229,9 +238,11 @@ export function useCheckerFlow(token: string | null, clearToken: () => void) {
         const msg = scanMessage(out, row.input);
         trackEvent('checker_scan_failed', { reason: msg.reason ?? out.kind });
         setRows((rs) => rs.map((r) => (r.key === row.key ? { ...r, status: 'failed', message: msg.text } : r)));
+        // A limit applies to every row that follows, so stop here.
+        if (out.kind === 'rate_limited' || out.kind === 'daily_cap') return;
       }
     }
-  }, [rows, scan, values.industry]);
+  }, [rows, scan, values.industry, values.website]);
 
   // ---- unlock ----
   const unlock = useCallback(
@@ -245,7 +256,8 @@ export function useCheckerFlow(token: string | null, clearToken: () => void) {
       const out = await unlockReport(
         {
           scanId: scan.scan_id,
-          industry: values.industry,
+          profile: values.industry,
+          industry: industryLabel(values.industry),
           city: values.city.trim() || undefined,
           competitors,
           ...(form ? { name: form.name, email: form.email, phone: form.phone, okToCall: form.okToCall } : {}),
@@ -272,14 +284,18 @@ export function useCheckerFlow(token: string | null, clearToken: () => void) {
 
   /** The optional "email me a copy" on the ungated path. Creates no lead. */
   const emailCopy = useCallback(
-    async (email: string): Promise<boolean> => {
-      if (!scan || !values.industry) return false;
-      const out = await unlockReport({ scanId: scan.scan_id, industry: values.industry, email }, trapRef.current);
-      if (out.kind === 'ok' && out.emailed) {
+    async (email: string): Promise<'sent' | 'already' | 'failed'> => {
+      if (!scan || !values.industry) return 'failed';
+      const out = await unlockReport(
+        { scanId: scan.scan_id, profile: values.industry, industry: industryLabel(values.industry), email },
+        trapRef.current
+      );
+      if (out.kind !== 'ok') return 'failed';
+      if (out.emailed) {
         setEmailedTo(email);
-        return true;
+        return 'sent';
       }
-      return false;
+      return 'already';
     },
     [scan, values.industry]
   );
@@ -295,8 +311,10 @@ export function useCheckerFlow(token: string | null, clearToken: () => void) {
   const copyLink = useCallback(async () => {
     if (!reportToken) return;
     const link = reportLink(reportToken);
+    let ok = false;
     try {
       await navigator.clipboard.writeText(link);
+      ok = true;
     } catch {
       // Older browsers: select a throwaway field and copy from it.
       const el = document.createElement('textarea');
@@ -307,19 +325,19 @@ export function useCheckerFlow(token: string | null, clearToken: () => void) {
       document.body.appendChild(el);
       el.select();
       try {
-        document.execCommand('copy');
+        ok = document.execCommand('copy');
       } catch {
-        // Nothing more to try.
+        ok = false;
       }
       el.remove();
     }
-    setLinkCopied(true);
-    window.setTimeout(() => setLinkCopied(false), 2500);
+    setCopyState(ok ? 'copied' : 'failed');
+    if (ok) window.setTimeout(() => setCopyState('idle'), 2500);
   }, [reportToken]);
 
   return {
     view, values, startError, failure, scan, busy, recheckMessage, rows, report, emailedTo, emailFailed,
-    serverFields, unlockError, linkCopied, reportToken,
+    serverFields, unlockError, copyState, reportToken,
     submitStart, recheck, backToStart, checkAnother, setRowInput, addRow, removeRow, compare,
     unlock, emailCopy, help, copyLink,
   };

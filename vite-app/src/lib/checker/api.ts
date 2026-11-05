@@ -27,6 +27,8 @@ const FAIL_REASONS: readonly FailReason[] = [
 
 type Failure =
   | { kind: 'rate_limited' }
+  | { kind: 'expired' }
+  | { kind: 'bad_request' }
   | { kind: 'daily_cap' }
   | { kind: 'not_ready' }
   | { kind: 'verify' }
@@ -87,16 +89,27 @@ async function send(
   }
 }
 
-function failureFrom(raw: Raw): Failure | null {
+/**
+ * What the Worker's answer means when it is not a success. The body's own
+ * words (`ok:false` + `reason`, then `error`) are read before the HTTP status.
+ */
+function failureFrom(raw: Raw, where: 'scan' | 'unlock' | 'report'): Failure | null {
   if (raw === 'timeout') return { kind: 'timeout' };
   if (raw === 'network') return { kind: 'network' };
-  const err = typeof raw.body.error === 'string' ? raw.body.error : '';
-  if (raw.status === 429 || err === 'rate_limited') {
-    return err === 'daily_cap' ? { kind: 'daily_cap' } : { kind: 'rate_limited' };
-  }
-  if (err === 'daily_cap') return { kind: 'daily_cap' };
-  if (err === 'checker_not_ready' || raw.status === 503) return { kind: 'not_ready' };
-  if (/verif|turnstile/i.test(err)) return { kind: 'verify' };
+  const { status, body } = raw;
+  const reason = body.ok === false && typeof body.reason === 'string' ? body.reason : '';
+  const err = typeof body.error === 'string' ? body.error : '';
+
+  if (reason === 'unavailable') return { kind: 'network' };
+  if (reason === 'not_found' && where !== 'scan') return { kind: 'expired' };
+  if (where === 'scan' && FAIL_REASONS.some((r) => r === reason)) return null; // handled by the caller
+
+  if (err === 'capacity' || err === 'daily_cap') return { kind: 'daily_cap' };
+  if (err === 'rate_limited') return { kind: 'rate_limited' };
+  if (err === 'checker_not_ready') return { kind: 'not_ready' };
+  if (err === 'unavailable') return { kind: 'network' };
+  if (err === 'verification_failed' || /verif|turnstile/i.test(err)) return { kind: 'verify' };
+  if (status === 429) return { kind: 'rate_limited' };
   return null;
 }
 
@@ -116,7 +129,7 @@ export async function scanSite(req: ScanRequest, honeypot = ''): Promise<ScanOut
     },
     SCAN_TIMEOUT_MS
   );
-  const failure = failureFrom(raw);
+  const failure = failureFrom(raw, 'scan');
   if (failure) return failure;
   if (typeof raw === 'string') return { kind: 'network' };
   const b = raw.body;
@@ -134,7 +147,10 @@ export async function scanSite(req: ScanRequest, honeypot = ''): Promise<ScanOut
 
 export type UnlockRequest = {
   scanId: string;
-  industry: Profile;
+  /** The picker's key, sent as `profile`. */
+  profile: Profile;
+  /** The picker's label, sent as `industry` (it reads better in the lead notes). */
+  industry: string;
   city?: string;
   competitors?: string[];
   name?: string;
@@ -145,7 +161,7 @@ export type UnlockRequest = {
 
 export async function unlockReport(req: UnlockRequest, honeypot = ''): Promise<UnlockOutcome> {
   const turnstileToken = await getToken().catch(() => null);
-  const body: Record<string, unknown> = { scanId: req.scanId, industry: req.industry };
+  const body: Record<string, unknown> = { scanId: req.scanId, industry: req.industry, profile: req.profile };
   if (req.city) body.city = req.city;
   if (req.competitors && req.competitors.length > 0) body.competitors = req.competitors;
   if (req.name !== undefined) body.name = req.name;
@@ -156,12 +172,17 @@ export async function unlockReport(req: UnlockRequest, honeypot = ''): Promise<U
   body.company_website = honeypot;
 
   const raw = await send('POST', '/checker/unlock', body, UNLOCK_TIMEOUT_MS);
-  const failure = failureFrom(raw);
+  const failure = failureFrom(raw, 'unlock');
   if (failure) return failure;
   if (typeof raw === 'string') return { kind: 'network' };
   const b = raw.body;
-  if (raw.status === 400 && b.ok === false && isObject(b.fields)) {
-    return { kind: 'fields', fields: b.fields };
+  if (raw.status === 400) {
+    const fields = isObject(b.fields) ? b.fields : null;
+    // Only name, email and phone can be shown beside a field; anything else is a bad request.
+    if (fields && ('name' in fields || 'email' in fields || 'phone' in fields)) {
+      return { kind: 'fields', fields };
+    }
+    return { kind: 'bad_request' };
   }
   if (b.ok === true && typeof b.report_token === 'string' && isObject(b.report)) {
     const report = b.report as unknown as Report;
@@ -173,9 +194,10 @@ export async function unlockReport(req: UnlockRequest, honeypot = ''): Promise<U
 }
 
 export async function fetchReport(token: string): Promise<ReportOutcome> {
-  const raw = await send('GET', `/checker/report?r=${encodeURIComponent(token)}`, undefined, UNLOCK_TIMEOUT_MS);
+  const raw = await send('GET', `/checker/report?r=${encodeURIComponent(token)}`, undefined, SCAN_TIMEOUT_MS);
   if (typeof raw !== 'string' && raw.status === 404) return { kind: 'not_found' };
-  const failure = failureFrom(raw);
+  const failure = failureFrom(raw, 'report');
+  if (failure?.kind === 'expired') return { kind: 'not_found' };
   if (failure) return failure;
   if (typeof raw === 'string') return { kind: 'network' };
   if (raw.body.ok === true && isObject(raw.body.report)) {

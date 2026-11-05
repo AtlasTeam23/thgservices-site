@@ -1,4 +1,4 @@
-import { useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Search } from 'lucide-react';
 import * as copy from '../../lib/checker/copy';
 import { INDUSTRIES, isProfile } from '../../lib/checker/config';
@@ -20,11 +20,19 @@ export default function StartForm({ initial, error, onSubmit }: Props) {
   const [city, setCity] = useState(initial.city);
   const [trap, setTrap] = useState('');
   const [industryError, setIndustryError] = useState(false);
+  const siteRef = useRef<HTMLInputElement>(null);
+  const industryRef = useRef<HTMLSelectElement>(null);
+
+  // A message from a failed attempt belongs to the website field: go there.
+  useEffect(() => {
+    if (error) siteRef.current?.focus();
+  }, [error]);
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!industry) {
       setIndustryError(true);
+      industryRef.current?.focus();
       return;
     }
     setIndustryError(false);
@@ -37,6 +45,7 @@ export default function StartForm({ initial, error, onSubmit }: Props) {
         <label htmlFor={`${id}-site`}>{copy.WEBSITE_LABEL}</label>
         <input
           id={`${id}-site`}
+          ref={siteRef}
           name="website"
           type="text"
           inputMode="url"
@@ -62,6 +71,7 @@ export default function StartForm({ initial, error, onSubmit }: Props) {
         <label htmlFor={`${id}-industry`}>{copy.INDUSTRY_LABEL}</label>
         <select
           id={`${id}-industry`}
+          ref={industryRef}
           name="industry"
           value={industry}
           onChange={(e) => {
@@ -124,6 +134,7 @@ export function Honeypot({ value, onChange }: { value: string; onChange: (v: str
           type="text"
           name="company_website"
           tabIndex={-1}
+          aria-hidden="true"
           autoComplete="off"
           value={value}
           onChange={(e) => onChange(e.target.value)}

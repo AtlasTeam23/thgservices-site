@@ -61,7 +61,11 @@ export default function UnlockForm({ gated, busy, serverFields, error, onSubmit 
     if (!EMAIL_RE.test(email.trim()) || email.trim().length > LIMITS.emailMax) next.email = copy.EMAIL_ERROR;
     if (!normalizePhone(phone)) next.phone = copy.PHONE_ERROR;
     setLocal(next);
-    if (next.name || next.email || next.phone) return;
+    const first = (['name', 'email', 'phone'] as const).find((k) => next[k]);
+    if (first) {
+      document.getElementById(`${id}-${first}`)?.focus();
+      return;
+    }
     onSubmit({ name: name.trim(), email: email.trim(), phone: phone.trim(), okToCall }, trap);
   };
 
@@ -130,7 +134,11 @@ export default function UnlockForm({ gated, busy, serverFields, error, onSubmit 
           autoComplete="tel"
           maxLength={20}
           value={phone}
-          onChange={(e) => setPhone(e.target.value)}
+          onChange={(e) => {
+            setPhone(e.target.value);
+            // The consent belongs to a phone number; clearing the number clears it.
+            if (e.target.value.replace(/\D/g, '') === '') setOkToCall(false);
+          }}
           required
           {...aria('phone')}
         />

@@ -7,10 +7,26 @@ const g = (score: number) => ({
   grade: score >= 90 ? 'A' : score >= 80 ? 'B' : score >= 70 ? 'C' : score >= 55 ? 'D' : 'F',
 });
 
+/** A stable UUID-shaped id for a host, like the ones the Worker returns. */
+export function scanId(host: string): string {
+  let h = 0x811c9dc5;
+  const hex: string[] = [];
+  for (let i = 0; hex.join('').length < 32; i++) {
+    h ^= host.charCodeAt(i % host.length) + i;
+    h = Math.imul(h, 16777619) >>> 0;
+    hex.push(h.toString(16).padStart(8, '0'));
+  }
+  const x = hex.join('').slice(0, 32).split('');
+  x[12] = '4';
+  x[16] = '8';
+  const j = x.join('');
+  return `${j.slice(0, 8)}-${j.slice(8, 12)}-${j.slice(12, 16)}-${j.slice(16, 20)}-${j.slice(20, 32)}`;
+}
+
 export function scanBody(host: string, extra: Record<string, unknown> = {}) {
   return {
     ok: true,
-    scan_id: `scan-${host}`,
+    scan_id: scanId(host),
     host,
     final_url: `https://${host}/`,
     cached: false,

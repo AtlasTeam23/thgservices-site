@@ -25,7 +25,9 @@ export function timeAgo(iso: string, now: number = Date.now()): string {
   return `${days} day${days === 1 ? '' : 's'} ago`;
 }
 
-/** The address a report link points at. The token never goes into the page URL itself. */
+/** The address a report link points at: always the live site, never the current origin. */
+export const REPORT_LINK_BASE = 'https://thgservices.io/website-checker/?r=';
+
 export function reportLink(token: string): string {
-  return `${window.location.origin}/website-checker/?r=${encodeURIComponent(token)}`;
+  return `${REPORT_LINK_BASE}${encodeURIComponent(token)}`;
 }

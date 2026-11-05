@@ -941,6 +941,17 @@ describe('A5: Cloudflare Web Analytics beacon', () => {
     expect(found[0].getAttribute('data-cf-beacon')).toBe('{"token":"abc123token","spa":true}');
   });
 
+  it('is not appended while a website-checker report token (r) is in the URL', async () => {
+    setUrl('/website-checker/?r=REPORTTOKEN1234567890');
+    enable();
+    vi.stubEnv('VITE_CF_BEACON_TOKEN', 'abc123token');
+    const a = await load();
+    a.initAnalytics();
+    expect(beaconScript()).toBeUndefined();
+    expect(gtagScript()).toBeDefined();
+    setUrl('/');
+  });
+
   it('is not appended when the token is empty or unset', async () => {
     enable();
     vi.stubEnv('VITE_CF_BEACON_TOKEN', '');

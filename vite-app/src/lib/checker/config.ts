@@ -13,7 +13,11 @@ export const CHECKER_LINK_LABEL = 'Free website checker';
 export const MAX_COMPETITORS = 3;
 /** The browser gives up on a scan after this long. */
 export const SCAN_TIMEOUT_MS = 35000;
-export const UNLOCK_TIMEOUT_MS = 35000;
+/**
+ * The Worker may spend up to 30 s on the grader and 20 s on the action plan
+ * before it answers; the lead and the email are queued after the reply.
+ */
+export const UNLOCK_TIMEOUT_MS = 60000;
 
 export const INDUSTRIES: readonly { value: Profile; label: string }[] = [
   {
@@ -32,5 +36,7 @@ export const INDUSTRIES: readonly { value: Profile; label: string }[] = [
   { value: 'software', label: 'Software and online services' },
   { value: 'general', label: 'Other local business' },
 ];
+
+export const industryLabel = (p: Profile): string => INDUSTRIES.find((i) => i.value === p)?.label ?? p;
 
 export const isProfile = (v: string): v is Profile => INDUSTRIES.some((i) => i.value === v);

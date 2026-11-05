@@ -11,14 +11,15 @@ import UnlockForm from '../components/checker/UnlockForm';
 import { useReportMeta } from '../components/checker/useReportMeta';
 import '../components/checker/checker.css';
 import * as copy from '../lib/checker/copy';
+import { reportLink } from '../lib/checker/format';
 import { useCheckerFlow } from './checker/useCheckerFlow';
 
 const TITLE = 'Free Website Checker | THG AI Services';
 const TOKEN_RE = /^[A-Za-z0-9_-]{16,200}$/;
 
-function OptionalEmailCopy({ onSend }: { onSend: (email: string) => Promise<boolean> }) {
+function OptionalEmailCopy({ onSend }: { onSend: (email: string) => Promise<'sent' | 'already' | 'failed'> }) {
   const [email, setEmail] = useState('');
-  const [state, setState] = useState<'idle' | 'sending' | 'failed'>('idle');
+  const [state, setState] = useState<'idle' | 'sending' | 'failed' | 'already'>('idle');
   const valid = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim());
   return (
     <form
@@ -27,8 +28,8 @@ function OptionalEmailCopy({ onSend }: { onSend: (email: string) => Promise<bool
         e.preventDefault();
         if (!valid) return;
         setState('sending');
-        const ok = await onSend(email.trim());
-        setState(ok ? 'idle' : 'failed');
+        const result = await onSend(email.trim());
+        setState(result === 'sent' ? 'idle' : result);
       }}
     >
       <label htmlFor="ck-copy-email">{copy.OPTIONAL_EMAIL_LABEL}</label>
@@ -44,6 +45,11 @@ function OptionalEmailCopy({ onSend }: { onSend: (email: string) => Promise<bool
           {copy.OPTIONAL_EMAIL_BUTTON}
         </button>
       </div>
+      {state === 'already' ? (
+        <p className="ck-notice" role="status">
+          {copy.ALREADY_SENT}
+        </p>
+      ) : null}
       {state === 'failed' ? (
         <p className="ck-error" role="alert">
           {copy.EMAIL_NOT_SENT}
@@ -106,7 +112,9 @@ function CheckerScreen({ rawToken }: { rawToken: string }) {
       </header>
 
       <main ref={mainRef} className="ck-main">
-        <h1 className="ck-h1">{copy.START_HEADING}</h1>
+        <h1 className="ck-h1" tabIndex={-1} {...(view === 'start' ? { 'data-focus-target': '' } : {})}>
+          {copy.START_HEADING}
+        </h1>
 
         {view === 'start' && (
           <>
@@ -179,7 +187,7 @@ function CheckerScreen({ rawToken }: { rawToken: string }) {
               onCompare={flow.compare}
             />
             <UnlockForm
-              gated={scan.gated}
+              gated={scan.gated !== false}
               busy={flow.busy}
               serverFields={flow.serverFields}
               error={flow.unlockError}
@@ -194,12 +202,13 @@ function CheckerScreen({ rawToken }: { rawToken: string }) {
             notice={
               flow.emailedTo ? copy.EMAILED_TO(flow.emailedTo) : flow.emailFailed ? copy.EMAIL_NOT_SENT : null
             }
-            linkCopied={flow.linkCopied}
+            copyState={flow.copyState}
+            link={flow.reportToken ? reportLink(flow.reportToken) : null}
             onHelp={() => flow.help('breakdown')}
             onCopyLink={flow.copyLink}
             onRecheck={flow.checkAnother}
           >
-            {scan && !scan.gated && !flow.emailedTo && !token ? (
+            {scan && scan.gated === false && !flow.emailedTo && !token ? (
               <OptionalEmailCopy onSend={flow.emailCopy} />
             ) : null}
           </Breakdown>

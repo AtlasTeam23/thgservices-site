@@ -103,6 +103,11 @@ export const FAILURE: Record<FailReason, (host: string) => string> = {
 
 export const RATE_LIMITED = "You've run several checks in a row. Try again in a few minutes.";
 export const DAILY_CAP = "We've run a lot of checks today. Try again tomorrow.";
+export const EXPIRED = 'That check has expired. Run the check again.';
+export const BAD_REQUEST = 'Something was off with that request. Run the check again.';
+export const ALREADY_SENT = 'We already sent a copy to that address today.';
+export const COPY_FAILED = "Couldn't copy, select the link instead.";
+export const OWN_SITE = 'That is your own website. Enter a competitor.';
 export const NOT_READY = "The checker isn't available right now. Please try again later.";
 export const NETWORK_ERROR = 'Something went wrong on our end. Please try again in a moment.';
 export const VERIFY_ERROR = "We couldn't verify your browser. Reload the page and try again.";

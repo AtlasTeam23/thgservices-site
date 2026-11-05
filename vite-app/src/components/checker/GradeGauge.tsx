@@ -69,13 +69,14 @@ export function GradePill({ grade, label }: { grade: Grade | null; label: string
   const letter = safeLetter(grade?.grade);
   if (!letter) {
     return (
-      <span className="ck-pill ck-pill--none" aria-label={`${label} not graded`}>
+      <span role="img" className="ck-pill ck-pill--none" aria-label={`${label} not graded`}>
         -
       </span>
     );
   }
   return (
     <span
+      role="img"
       className="ck-pill"
       style={{ color: `var(--ck-grade-${letter.toLowerCase()})` }}
       aria-label={`${label} grade ${letter}`}
