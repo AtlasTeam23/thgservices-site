@@ -15,14 +15,14 @@ We design, build, and support our own products, from the first idea through onbo
 We sit down with local business owners, learn how their day actually runs, and fix the busywork with the right mix of software and AI tools. Services:
 
 - Call handling: we set up your phone line with after-hours coverage, smart call routing, and lead capture from inbound calls.
-- Email and inbox: we automate sorting, response templates, escalation rules, and shared-inbox flows so nothing gets dropped.
-- Google Ads: we audit and optimize your ad spend with 15+ years of AdWords experience, built on running campaigns across multi-state operations.
-- Website upgrades: we modernize older sites, fix places where visitors drop off, and set up analytics and tracking that actually work.
-- Chat helpers and AI assistants: we set up helpers that answer common questions, qualify leads, and hand off to a person when something needs one.
-- AI coding tools: we use them to build internal tools, integrations, and one-off utilities much faster than traditional development.
-- Custom scripts and automation: we connect your tools together, pull the data you need, and generate the reports nobody wants to build by hand.
-- Faster profit and loss reports: we connect QuickBooks or Xero to dashboards that show margin and cash position in close to real time.
-- Bookkeeping cleanup: we clean up the books, set up better categories, and make life easier for your accountant.
+- AI Website Concierge: a chat and voice helper on your website that answers questions and captures leads around the clock, and sets up callbacks.
+- Google Ads management: campaign setup, audits, and ongoing optimization, built on 15+ years of AdWords experience, including running campaigns across multi-state operations.
+- SEO: on-page fixes, local search and your Google Business Profile, and content that targets the services you actually sell.
+- Website grade check: a review of your current site covering search readiness, mobile, speed signals, tracking, and lead capture, with a plain-language fix list.
+- Website upgrades and new builds: we modernize older sites, fix places where visitors drop off, and build landing pages for ads.
+- Analytics and tracking: we set up Google Analytics and conversion tracking so you can see where your leads come from.
+- Reviews and reputation: review requests sent at the right moment, and keeping your Google profile current.
+- Email and inbox automation: we automate sorting, response templates, escalation rules, and shared-inbox flows so nothing gets dropped. We also build internal tools and integrations much faster than traditional development with AI coding tools, write custom scripts and automation that connect your tools and generate the reports nobody wants to build by hand, connect QuickBooks or Xero to faster profit and loss dashboards that show margin and cash position in close to real time, and handle bookkeeping cleanup: cleaning up the books, setting up better categories, and making life easier for your accountant.
 
 If a visitor's problem isn't on this list, they can tell us about it and we'll figure out what tooling or process fixes it.
 

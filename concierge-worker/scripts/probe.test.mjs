@@ -14,6 +14,7 @@ import {
   REMOTE_EXPECTED_WORDS,
   REMOTE_FORBIDDEN_PHRASES,
   REMOTE_PROMPT,
+  SERVICE_PROMPTS,
   checkForbiddenPhrases,
   checkFormQuestions,
   checkReply,
@@ -278,6 +279,20 @@ test('evaluateOwnerGroup allows at most two of the five answers to end with the 
   assert.ok(problems[0].includes('3 of 5'), problems[0]);
   assert.ok(evaluateOwnerGroup([ask, ask, ask, ask, ask])[0].includes('5 of 5'));
   assert.deepEqual(evaluateOwnerGroup([]), []);
+});
+
+test('the two service prompts expect an affirmative answer: fallback, "unsure" and stray numbers fail', () => {
+  assert.deepEqual(SERVICE_PROMPTS.map(([, prompt]) => prompt), ['Do you do SEO?', "Can you look at my website and tell me what's wrong with it?"]);
+  assert.ok(SERVICE_PROMPTS.every(([, , intent]) => intent === 'answer'));
+  assert.ok(!SERVICE_PROMPTS.some(([, prompt]) => OWNER_PROMPTS.some(([, p]) => p === prompt)));
+  const [seo, review] = SERVICE_PROMPTS;
+  assert.deepEqual(evaluate(seo, 200, ownerBody('Yes, we do SEO: on-page fixes, local search, your Google Business Profile, and content for the services you sell.')), { problems: [], notes: [] });
+  assert.deepEqual(evaluate(review, 200, ownerBody('Yes, we can review your site for search readiness, mobile, speed, tracking, and lead capture, then give you a plain-language fix list.')), { problems: [], notes: [] });
+  for (const entry of SERVICE_PROMPTS) {
+    assert.ok(evaluate(entry, 200, ownerBody(FALLBACK_REPLY)).problems.length >= 1);
+    assert.ok(evaluate(entry, 200, { ...ownerBody('Not sure.'), intent: 'unsure' }).problems.length >= 1);
+    assert.ok(evaluate(entry, 200, ownerBody('Yes, and we have 50 clients who love it.')).problems.length >= 1);
+  }
 });
 
 // --- remote only: no in-person visit ---------------------------------------------------

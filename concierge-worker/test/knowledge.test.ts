@@ -38,8 +38,8 @@ describe('knowledge.md', () => {
     for (const title of [...ORIGINAL, ...ADDED]) expect(titles, title).toContain(title);
   });
 
-  it('stays under the 1,400-word budget', () => {
-    expect(words(KNOWLEDGE)).toBeLessThan(1400);
+  it('stays under the 1,500-word budget', () => {
+    expect(words(KNOWLEDGE)).toBeLessThan(1500); // was 1,400 before the full service list
   });
 
   it('keeps each added section short enough to read in chat', () => {
@@ -74,6 +74,15 @@ describe('knowledge.md', () => {
   it('has no timeline or guarantee language in the added sections', () => {
     const forbidden = /\b(guarantee[ds]?|promise[ds]?|within|overnight|same[- ]day|next (?:day|morning|week)|by tomorrow|right away|immediately|instantly|always|never fail)\b/i;
     for (const title of ADDED) expect(sections().get(title) ?? '', title).not.toMatch(forbidden);
+  });
+
+  it('lists SEO, the website grade check and the rest of the service range, and does not deny them', () => {
+    const body = sections().get('What we do, in plain words') ?? '';
+    for (const word of ['Call handling', 'AI Website Concierge', 'Google Ads management', 'SEO:', 'Google Business Profile', 'Website grade check', 'search readiness', 'Website upgrades and new builds', 'landing pages', 'Analytics and tracking', 'Reviews and reputation', 'Email and inbox automation', 'QuickBooks or Xero', 'bookkeeping cleanup', '15+ years of AdWords experience']) {
+      expect(body, word).toContain(word);
+    }
+    expect(KNOWLEDGE).not.toMatch(/don't list|do not list|not offer|isn't something we/i);
+    expect(KNOWLEDGE).not.toMatch(/https?:\/\/[^\s)]*grade/i);
   });
 
   it('has no draft markers or notes to the owner left in it', () => {
