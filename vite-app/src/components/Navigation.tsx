@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import BrandLogo from './BrandLogo';
 import ThemeToggle from './ThemeToggle';
 import { useIsMobile } from '../hooks/use-mobile';
+import { CHECKER_LINKS_LIVE, CHECKER_LINK_LABEL, CHECKER_PATH } from '../lib/checker/config';
 
 const navLinks = [
   { label: 'Why', href: '#why' },
@@ -10,6 +11,8 @@ const navLinks = [
   { label: 'Capabilities', href: '#capabilities' },
   { label: 'About', href: '#about' },
   { label: 'Contact', href: '#contact' },
+  // Shown only once the checker launches publicly (one constant, lib/checker/config.ts).
+  ...(CHECKER_LINKS_LIVE ? [{ label: CHECKER_LINK_LABEL, href: CHECKER_PATH }] : []),
 ];
 
 export default function Navigation() {
@@ -27,6 +30,8 @@ export default function Navigation() {
   }, []);
 
   const handleNavClick = (e: React.MouseEvent<HTMLAnchorElement>, href: string) => {
+    // A real page link (the website checker) navigates normally.
+    if (!href.startsWith('#')) return;
     e.preventDefault();
     const el = document.querySelector(href);
     if (el) {

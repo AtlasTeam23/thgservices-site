@@ -21,9 +21,21 @@ export const CHIPS = [
 ] as const;
 export const OFFER_CHIPS = ['Yes, call me', 'No thanks'] as const;
 
-/** Every chip label the widget can show; anything else is not a quick reply. */
+/**
+ * Messages other parts of the site may open the chat with. They are not shown as
+ * chips; the free website checker uses them ("Get help fixing this" and
+ * "Ask a person to look").
+ */
+export const SITE_QUICK_REPLIES = [
+  'I just checked my website and want help with the results',
+  'The website checker could not read my site and I would like a person to look at it',
+] as const;
+
+/** Every label the widget can run as a quick reply; anything else is dropped. */
 export const isKnownChip = (label: string): boolean =>
-  (CHIPS as readonly string[]).includes(label) || (OFFER_CHIPS as readonly string[]).includes(label);
+  (CHIPS as readonly string[]).includes(label) ||
+  (OFFER_CHIPS as readonly string[]).includes(label) ||
+  (SITE_QUICK_REPLIES as readonly string[]).includes(label);
 
 /** The chip that opens the lead form instead of sending text. */
 export const CALLBACK_CHIP = 'Request a callback';

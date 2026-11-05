@@ -5,7 +5,8 @@
 //
 // Asset URLs in dist/index.html are absolute (vite base '/'), so the copy works
 // from the subfolder unchanged. The copy is marked noindex so search engines
-// keep the homepage as the one canonical page.
+// keep the homepage as the one canonical page. Routes listed in INDEXABLE_ROUTES
+// (the website checker) are the exception: own head tags, no noindex.
 //
 // Usage: node scripts/postbuild.mjs [distDir]   (default: ../dist)
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -13,6 +14,48 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const NOINDEX = '<meta name="robots" content="noindex">';
+
+// Routes that get their own copy of the page but ARE meant to be indexed. Each
+// one gets its own title, description, canonical and social tags in place of the
+// homepage's, and no noindex.
+const INDEXABLE_ROUTES = [
+  {
+    path: 'website-checker',
+    title: 'Free Website Checker | THG AI Services',
+    description:
+      'Check your website for free. Get A to F grades for how easy it is to find in search and how well it turns visitors into customers, with a plain-language list of what to fix.',
+    canonical: 'https://thgservices.io/website-checker/',
+  },
+];
+
+const escapeAttr = (value) =>
+  value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+/** Swap the homepage's head tags for a route's own (src/test/postbuild.test.ts runs the script). */
+function withOwnHead(source, route) {
+  const t = escapeAttr(route.title);
+  const d = escapeAttr(route.description);
+  const c = escapeAttr(route.canonical);
+  const swap = (re, replacement) => {
+    if (re.test(source)) {
+      source = source.replace(re, () => replacement);
+    } else {
+      // The tag is missing (the homepage normally has them all): add it to <head>.
+      source = source.replace(/<\/head>/i, () => `  ${replacement}\n  </head>`);
+    }
+  };
+  swap(/<title>[\s\S]*?<\/title>/i, `<title>${escapeHtml(route.title)}</title>`);
+  swap(/<meta\s+name="description"[^>]*>/i, `<meta name="description" content="${d}" />`);
+  swap(/<link\s+rel="canonical"[^>]*>/i, `<link rel="canonical" href="${c}" />`);
+  swap(/<meta\s+property="og:title"[^>]*>/i, `<meta property="og:title" content="${t}" />`);
+  swap(/<meta\s+property="og:description"[^>]*>/i, `<meta property="og:description" content="${d}" />`);
+  swap(/<meta\s+property="og:url"[^>]*>/i, `<meta property="og:url" content="${c}" />`);
+  swap(/<meta\s+name="twitter:title"[^>]*>/i, `<meta name="twitter:title" content="${t}" />`);
+  swap(/<meta\s+name="twitter:description"[^>]*>/i, `<meta name="twitter:description" content="${d}" />`);
+  return source;
+}
+
+const escapeHtml = (value) => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 function fail(message) {
   console.error(`postbuild: ${message}`);
@@ -44,3 +87,10 @@ mkdirSync(targetDir, { recursive: true });
 writeFileSync(join(targetDir, 'index.html'), copy);
 
 console.log(`postbuild: wrote ${join(targetDir, 'index.html')}`);
+
+for (const route of INDEXABLE_ROUTES) {
+  const dir = join(distDir, route.path);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'index.html'), withOwnHead(html, route));
+  console.log(`postbuild: wrote ${join(dir, 'index.html')}`);
+}

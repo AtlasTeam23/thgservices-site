@@ -46,6 +46,23 @@ import { voiceBonusFormHeading } from './voice/copy';
 import { createVoiceController, initialVoiceState, type VoiceState } from './voice/controller';
 import { activeSpeechMode } from './voice/speech';
 
+/**
+ * The page address sent with a lead. A website-checker report link carries its
+ * token in `r`; that never leaves the browser through the chat.
+ */
+function pageUrl(): string {
+  try {
+    const url = new URL(window.location.href);
+    if (url.searchParams.has('r')) {
+      url.searchParams.delete('r');
+      return url.toString();
+    }
+  } catch {
+    // Fall through to the raw address.
+  }
+  return window.location.href;
+}
+
 export type ConciergeStatus = 'idle' | 'sending' | 'leadOnly' | 'ended';
 
 export type { VoiceState };
@@ -477,7 +494,7 @@ function createController() {
         ...input,
         sessionId: state.sessionId,
         transcript: buildTranscript(state.messages),
-        page: { url: window.location.href.slice(0, LIMITS.pageUrlMax), utm },
+        page: { url: pageUrl().slice(0, LIMITS.pageUrlMax), utm },
         ...(token ? { turnstileToken: token } : {}),
       };
       res = await postLead(request);

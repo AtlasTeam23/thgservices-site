@@ -479,6 +479,17 @@ describe('A3: trackPageView and trackEvent', () => {
     expect(JSON.stringify(sent())).not.toMatch(/jane|example\.com|5551234567|foo/i);
   });
 
+  it('never sends a website-checker report token (the r parameter), in any command', async () => {
+    setUrl('/website-checker/?r=REPORTTOKEN1234567890abcdef&utm_source=x');
+    const a = await ready();
+    vi.spyOn(console, 'debug').mockImplementation(() => {});
+    a.trackPageView('/website-checker');
+    a.trackEvent('checker_scan_done', { grade: 'A' });
+    const params = sent()[0][2] as Record<string, string>;
+    expect(params.page_location).toBe(`${window.location.origin}/website-checker?utm_source=x`);
+    expect(JSON.stringify(queued())).not.toContain('REPORTTOKEN');
+  });
+
   it('strips the hash and leaves no "?" when no allowed key is present', async () => {
     setUrl('/?email=a%40b.com#ai-concierge');
     const a = await ready();
