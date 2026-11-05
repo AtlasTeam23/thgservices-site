@@ -1,7 +1,8 @@
 import type { VoiceDeps } from './ai';
 import { handleChat } from './chat';
+import { handleChecker, type CheckerDeps } from './checker';
 import { checkOrigin, originDenied, preflight, withCors } from './cors';
-import { isEmailConfigured, isTurnstileConfigured, llmStatus, ttsProvider, voiceHealth, type Env } from './env';
+import { isCheckerConfigured, isEmailConfigured, isTurnstileConfigured, llmStatus, ttsProvider, voiceHealth, type Env } from './env';
 import { json, methodNotAllowed } from './http';
 import { handleLead, type LeadDeps } from './lead';
 import type { GenerateDeps } from './llm';
@@ -15,6 +16,7 @@ export interface AppDeps {
   llm?: GenerateDeps;
   lead?: LeadDeps;
   voice?: VoiceDeps;
+  checker?: CheckerDeps;
 }
 
 const route = async (request: Request, env: Env, deps: AppDeps): Promise<Response> => {
@@ -29,6 +31,8 @@ const route = async (request: Request, env: Env, deps: AppDeps): Promise<Respons
         email: isEmailConfigured(env),
         turnstile: isTurnstileConfigured(env),
         voice: voiceHealth(env),
+        // Present only when the checker's grader, its secret and its lead intake are all configured.
+        ...(isCheckerConfigured(env) ? { checker: true } : {}),
       });
 
     case '/chat':
@@ -48,6 +52,11 @@ const route = async (request: Request, env: Env, deps: AppDeps): Promise<Respons
       if (ttsProvider(env) === 'browser') return json({ error: 'not_found' }, 404);
       if (request.method !== 'POST') return methodNotAllowed('POST, OPTIONS');
       return handleTts(request, env, deps.voice);
+
+    case '/checker/scan':
+    case '/checker/unlock':
+    case '/checker/report':
+      return handleChecker(request, env, pathname, deps.checker);
 
     default:
       return json({ error: 'not_found' }, 404);

@@ -10,6 +10,8 @@ export interface LeadEmail {
   html: string;
   /** The visitor's address, when they gave one, so "Reply" in the inbox reaches them. */
   replyTo?: string;
+  /** Recipients; the lead notification address (LEAD_TO_EMAIL) when omitted. */
+  to?: string[];
 }
 
 // --- time formatting (everything in the email is Eastern time) ----------------------
@@ -46,7 +48,7 @@ export const formatPhone = (digits: string): string => {
 const NOT_PROVIDED = '(not provided)';
 const LABEL_WIDTH = 17;
 
-const escapeHtml = (value: string): string =>
+export const escapeHtml = (value: string): string =>
   value
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -169,7 +171,7 @@ export const sendViaResend = async (env: Env, email: LeadEmail, options: SendOpt
 
   const body = JSON.stringify({
     from: env.LEAD_FROM_EMAIL,
-    to: [env.LEAD_TO_EMAIL],
+    to: email.to ?? [env.LEAD_TO_EMAIL],
     subject: email.subject,
     text: email.text,
     html: email.html,

@@ -10,6 +10,9 @@ The React widget lives in `../vite-app/src/components/concierge/`. The two halve
 | `POST /chat` | One visitor message in, one reply out: `{reply, intent, offerCallback, readyToConfirm, lead}`. See "The reply" below. |
 | `POST /lead` | A callback request. Emailed through Resend and optionally forwarded to a LeadQuik webhook. |
 | `POST /stt` | Push-to-talk voice: one short recording in, `{text, durationMs}` out (Whisper on Workers AI). See "Voice". |
+| `POST /checker/scan` | Free website checker: grades a site. Body `{url, profile?, force?, turnstileToken?, company_website?}`; answers the grader's grades plus `gated`. See "Website checker". |
+| `POST /checker/unlock` | Free website checker: the full breakdown, an action plan, the lead and the email. See "Website checker". |
+| `GET /checker/report?r=<token>` | Free website checker: a saved report by its link token. |
 | `POST /tts` | The paid reply voice (Aura on Workers AI, or ElevenLabs), an MPEG stream out, capped per visitor. A `404` unless `VOICE_TTS` is `aura` or `elevenlabs`. See "Voice". |
 
 Only the origins in `ALLOWED_ORIGINS` (see `wrangler.jsonc`) can call it from a browser. Requests with no `Origin` header (curl, monitors) are allowed; rate limits and Turnstile are the real guards.
@@ -41,6 +44,7 @@ src/sanitize.ts       HTML / control-character stripping
 src/email.ts          lead email builder + Resend sender
 src/leadquik.ts       LeadQuik webhook sender and payload type
 src/turnstile.ts      Turnstile siteverify
+src/checker/          the free website checker routes (see "Website checker")
 src/copy.ts           visitor-facing strings the Worker returns itself
 scripts/probe.mjs     bot-behavior checklist against a running Worker
 scripts/eleven-voices.mjs  lists the ElevenLabs voices to choose from (`npm run eleven:voices`)
@@ -123,6 +127,8 @@ Public settings, committed in `wrangler.jsonc`:
 | `MODEL` | `claude-haiku-5-5` |
 | `DAILY_LLM_CAP` | `2000` model calls per Eastern-time day. `0` switches the model off (chat answers the lead-only response); a missing, blank, non-numeric or negative value falls back to 2000. |
 | `LEAD_TO_EMAIL` / `LEAD_FROM_EMAIL` | `developer@leadquik.com` / `THG AI Services <concierge@leadquik.com>` |
+| `CHECKER_REQUIRE_TURNSTILE` | `false` for now. While `false`, `/checker/scan` and `/checker/unlock` run with the honeypot and rate limits only (a Turnstile token is verified if the page sends one). Set it to `true` the day the Turnstile site key is published on the site: then, without `TURNSTILE_SECRET_KEY` and off a local page, both routes answer `503 checker_not_ready`. If the var is removed the code treats it as `true`. |
+| `CHECKER_DAILY_SCANS` | `1000` scans per Eastern-time day, all visitors. Over it, `/checker/scan` answers `503 capacity`. `0` refuses every scan. |
 | `RATE_SALT` | Random string used only to hash IPs into Durable Object names. Not a secret. |
 | `LLM_PROVIDER` | `anthropic` (local runs use `mock`) |
 | `VOICE_TTS` | `elevenlabs`. Who reads replies aloud: `elevenlabs`, `aura` (Workers AI), or `browser`, which means nobody: the widget has no voice of its own, so replies stay text. The first two switch on `POST /tts` (see "Voice"). Any other value means `browser`. |
@@ -147,6 +153,9 @@ Secrets, set with Wrangler and never stored in the repo:
 | `RESEND_API_KEY` | yes | `/lead` answers `502 delivery_failed` unless the LeadQuik hook succeeded |
 | `TURNSTILE_SECRET_KEY` | recommended | Verification is skipped (one warning per isolate); `/health` shows `turnstile: false` |
 | `LEADQUIK_WEBHOOK_URL` | optional | The LeadQuik hook is skipped |
+| `SITE_CHECKER_URL` | for the checker | `/checker/*` answers `503 checker_not_ready`; `/health` has no `checker` key. The grader function's URL. |
+| `SITE_CHECKER_SECRET` | for the checker | Same as above. Sent to the grader in the `x-checker-secret` header; must equal the grader's own secret. |
+| `CHECKER_LEADQUIK_URL` | for the checker | A gated sign-up's lead is not sent; its details are emailed to `LEAD_TO_EMAIL` instead. `/health` has no `checker` key. The lead intake URL, including its own token. |
 | `ELEVENLABS_API_KEY` | only for `VOICE_TTS=elevenlabs` | `/tts` answers `503` (reason `server`) and `/health` shows `configured: false`. Never in the repo, never logged, never in a response. |
 
 ## Deploy
@@ -184,6 +193,17 @@ Until `TURNSTILE_SECRET_KEY` exists, the Worker skips Turnstile and rate limits 
 3. **Only then** run `npx wrangler secret put TURNSTILE_SECRET_KEY`.
 
 The order matters: once the secret is set, `/lead` requires a valid token on every request and `/chat` requires one after the tenth message. A site build that has no Site Key yet would have every lead rejected with `403 verification_failed`.
+
+## Website checker
+
+Routes under `/checker/`, in `src/checker/`. The Worker sits between the page and a grader function and never holds the grading rules. The grader's URL, its shared secret and the lead intake URL are Worker secrets (table above); nothing about them is in this repo.
+
+- `POST /checker/scan` body `{url, profile, force?, turnstileToken?, company_website?}`. `profile` is `trade | professional | health | retail | software | general`; anything else is `general`. A filled `company_website` (the honeypot) gets a normal-looking answer and no calls. The answer is the grader's, unchanged except that anything belonging to the breakdown (`report`, `report_token`, `checks`, `sections`, `top_fixes`, `finding`, `fix`, `plan`) is removed and `gated: boolean` is added. `gated` is true when `request.cf.country` is `US` or missing, `XX` or `T1`, and false for any other country.
+- `POST /checker/unlock` body `{scanId, industry, city?, competitors?: [up to 3 scan ids], name?, email?, phone?, okToCall?, turnstileToken?, company_website?}`. The Worker works out `gated` itself from the country, never from the body. Gated: name, a valid email and a 10-digit phone are required (same rules and messages as `/lead`). Not gated: no contact field is required, nothing is sent to the lead intake, and an email is sent only if the visitor typed an address. Order: validate, sign-up limit, Turnstile, grader `unlock`, action plan (Claude Haiku, counted against `DAILY_LLM_CAP`, at most 700 output tokens, stored with a second `unlock`), then lead and email side by side. A lead, email or plan failure never fails the answer: each logs one counter event, and a failed lead is emailed to `LEAD_TO_EMAIL` so nothing is lost. Answer: `{ok, report_token, report, plan, emailed}`, where `plan` is `{summary, items: [{check_id, text}]}` or `null`.
+- `GET /checker/report?r=<token>`: the grader's saved report, passed through.
+- Limits (Durable Object, per address unless noted): scans 10 per 10 minutes and 30 per Eastern day; sign-ups 5 per hour; report reads 60 per 10 minutes; all scans together `CHECKER_DAILY_SCANS` per Eastern day. Competitor scans are ordinary scans. Turnstile tokens work once, so the page sends a fresh one with each request.
+- Logs hold counters, status codes and reasons only: `checker_scan`, `checker_unlock`, `checker_report`, `checker_grader_error`, `checker_lead_undelivered`, `checker_lead_fallback_sent`, `checker_lead_fallback_failed`, `checker_email_failed`, `checker_plan_failed`, `checker_plan_store_failed`. Never a host, address, name, token or URL.
+- `/health` gets `"checker": true` only when all three checker secrets are set.
 
 ### Updating what the helper knows
 

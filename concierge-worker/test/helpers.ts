@@ -20,6 +20,12 @@ export const testEnv = (overrides: Partial<Record<keyof Env, unknown>> = {}): En
     TURNSTILE_SECRET_KEY: undefined,
     LEADQUIK_WEBHOOK_URL: undefined,
     ELEVENLABS_API_KEY: undefined,
+    SITE_CHECKER_URL: undefined,
+    SITE_CHECKER_SECRET: undefined,
+    CHECKER_LEADQUIK_URL: undefined,
+    // The checker's own vars are pinned so the shipped wrangler.jsonc values never change a result.
+    CHECKER_REQUIRE_TURNSTILE: undefined,
+    CHECKER_DAILY_SCANS: undefined,
     // The shipped config names a paid voice; the suite's baseline is no spoken replies, and the voice tests
     // switch a provider on per test (elevenEnv(), aura overrides), so the production voice id never
     // changes a result.
@@ -60,6 +66,8 @@ export interface CallOptions {
   /** Objects are JSON-encoded; strings are sent as-is; FormData is sent as multipart. */
   body?: unknown;
   env?: Env;
+  /** The country Cloudflare would attach to the request (request.cf.country). Omitted means none, as for an unknown country. */
+  country?: string;
   app?: { fetch: (request: Request, env: Env, ctx: ExecutionContext) => Promise<Response> };
 }
 
@@ -78,6 +86,7 @@ export const call = async (path: string, options: CallOptions = {}): Promise<Res
     method: options.method ?? (body === undefined ? 'GET' : 'POST'),
     headers,
     body,
+    ...(options.country ? { cf: { country: options.country } } : {}),
   });
   const ctx = createExecutionContext();
   const response = await (options.app ?? worker).fetch(request, options.env ?? testEnv(), ctx);
