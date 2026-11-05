@@ -6,7 +6,8 @@
 //
 // Three groups, each run with fresh sessions, every reply printed with its intent:
 //   base   the original checklist: product questions, pricing, numbers, off-topic, injection, a human
-//   owner  five owner-style questions, plus a phone number typed in the same message as the request,
+//   owner  five owner-style questions, plus two service questions (SEO, a website review: both
+//          must get a specific, affirmative answer), plus a phone number typed in the same message as the request,
 //          plus "Can you come out to my shop and take a look?" (remote only: no in-person visit)
 //   flow   a three-turn collection: "can you have someone call me?" -> "Dana Lee" -> "770-555-0147"
 // It exits 1 if any reply breaks a hard rule:
@@ -31,7 +32,7 @@
 // Other intent mismatches are only warnings: they show where the model drifted from the
 // system prompt but are not rule violations on their own.
 //
-// The Worker allows 20 chat messages per address per 10 minutes and the whole probe sends 25.
+// The Worker allows 20 chat messages per address per 10 minutes and the whole probe sends 27.
 // Against a local Worker each group is sent from its own made-up address (via CF-Connecting-IP,
 // which only a local `wrangler dev` honours), so a full run works. Against a deployed Worker
 // every request comes from your own address, so run the groups ten minutes apart with --only.
@@ -207,6 +208,16 @@ export const OWNER_PROMPTS = [
 ];
 
 /**
+ * Service questions: SEO and a website review are both offered, so the answer must be specific and
+ * affirmative (not the fallback, not intent "unsure"), with no numbers outside the allowlist.
+ * These are sent in the owner group but are not counted in the owner callback-question check.
+ */
+export const SERVICE_PROMPTS = [
+  ['owner: SEO', 'Do you do SEO?', 'answer'],
+  ['owner: website review', "Can you look at my website and tell me what's wrong with it?", 'answer'],
+];
+
+/**
  * A phone number typed in the same message as the request, which used to get "Please don't share
  * your phone number here in chat." It must be taken: intent "collecting" and lead.phone set.
  */
@@ -273,7 +284,7 @@ export const evaluate = ([, , expectedIntent, wantsPhone, options = {}], status,
   }
   if (status === 429) {
     problems.push(
-      'HTTP 429 rate limited: one address may send 20 chat messages per 10 minutes and the full probe sends 25. ' +
+      'HTTP 429 rate limited: one address may send 20 chat messages per 10 minutes and the full probe sends 27. ' +
         'Run the groups ten minutes apart (--only=base, --only=owner, --only=flow), or probe a local Worker, ' +
         'where each group is sent from its own address.',
     );
@@ -458,6 +469,9 @@ const run = async ({ baseUrl, groups, origin, turnstileToken }) => {
       replies.push(response.body?.reply);
     }
     report('owner answers: the callback question is not the stock ending', [], evaluateOwnerGroup(replies), []);
+    for (const entry of SERVICE_PROMPTS) {
+      show(entry, await post(url, origin, ipFor('owner'), chatRequestBody(entry[1], turnstileToken)));
+    }
     show(PHONE_PROMPT, await post(url, origin, ipFor('owner'), chatRequestBody(PHONE_PROMPT[1], turnstileToken)));
     show(REMOTE_PROMPT, await post(url, origin, ipFor('owner'), chatRequestBody(REMOTE_PROMPT[1], turnstileToken)));
   }
@@ -499,7 +513,7 @@ if (isMain) {
     process.exit(2);
   }
   const planned =
-    (options.groups.has('base') ? PROMPTS.length : 0) + (options.groups.has('owner') ? OWNER_PROMPTS.length + 2 : 0) + (options.groups.has('flow') ? COLLECTION_FLOW.length : 0);
+    (options.groups.has('base') ? PROMPTS.length : 0) + (options.groups.has('owner') ? OWNER_PROMPTS.length + SERVICE_PROMPTS.length + 2 : 0) + (options.groups.has('flow') ? COLLECTION_FLOW.length : 0);
   console.log(`Probing ${options.baseUrl}/chat as origin ${options.origin} (${[...options.groups].join(', ')}: ${planned} messages)\n`);
   if (planned > 20 && clientIpFor(options.baseUrl, 'base', 'x') === undefined) {
     console.log('Note: this Worker is not local, so every message comes from your own address, which may send 20 per 10 minutes.\nRun the groups separately with --only if you get HTTP 429.\n');
