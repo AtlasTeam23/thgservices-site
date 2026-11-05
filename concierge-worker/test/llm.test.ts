@@ -79,7 +79,7 @@ describe('mock provider', () => {
 describe('system prompt', () => {
   it('has the knowledge section substituted exactly once', () => {
     expect(SYSTEM_PROMPT).not.toContain('{{KNOWLEDGE}}');
-    expect(SYSTEM_PROMPT).toContain('You are the THG helper');
+    expect(SYSTEM_PROMPT).toContain('You are the THG AI Concierge Agent');
     expect(SYSTEM_PROMPT).toMatch(/KNOWLEDGE\n[\s\S]+$/);
   });
 
@@ -88,7 +88,7 @@ describe('system prompt', () => {
       expect(SYSTEM_PROMPT, heading).toContain(`\n${heading}\n`);
     }
     expect(SYSTEM_PROMPT).toContain('\nHard rules. These hold for the whole conversation.');
-    expect(SYSTEM_PROMPT).toMatch(/^You are the THG helper, the chat helper on thgservices\.io/);
+    expect(SYSTEM_PROMPT).toMatch(/^You are the THG AI Concierge Agent, the chat helper on thgservices\.io/);
     // Remote only: the first paragraph says so, and the helper is told never to offer an in-person visit.
     expect(SYSTEM_PROMPT).toContain(
       'you help visitors set up a quick phone call, and from there a virtual meeting by video, with David\'s team. THG AI Services works with clients remotely, so never offer or suggest an in-person visit.',

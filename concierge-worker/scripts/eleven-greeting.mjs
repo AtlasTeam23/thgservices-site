@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Records the chat widget's opening greeting once, in the Worker's own voice, as a static MP3 the site serves.
 //
-//   npm run eleven:greeting -- --text "Hi there! I'm the THG helper. ..."
+//   npm run eleven:greeting -- --text "Hi there! I'm the THG AI Concierge Agent. ..."
 //   node scripts/eleven-greeting.mjs --text "<greeting text>" [--out PATH] [--env-file PATH] [--wrangler-file PATH] [--base-url URL]
 //
 // The widget plays this file the moment a visitor opens the chat (see vite-app/src/components/concierge/voice/greeting.ts),

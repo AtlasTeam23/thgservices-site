@@ -251,7 +251,7 @@ The helper answers only from `knowledge.md`. Its first sections were copied from
 
 ### The lead email
 
-To `developer@leadquik.com` from `THG AI Services <concierge@leadquik.com>`. Subject: `New website lead: {Business} — {Name}`. The body has name, phone, email, business, need, callback window, page URL, UTM values, a timestamp in Eastern time, the consent statement, and the chat as `[time] You: ...` / `[time] THG helper: ...` lines. `reply_to` is the visitor's email when they gave one (addresses containing `< > , ; "` or whitespace are refused). The page URL is shown as text, and becomes a link only when it is on `https://thgservices.io` or `https://www.thgservices.io`.
+To `developer@leadquik.com` from `THG AI Services <concierge@leadquik.com>`. Subject: `New website lead: {Business} — {Name}`. The body has name, phone, email, business, need, callback window, page URL, UTM values, a timestamp in Eastern time, the consent statement, and the chat as `[time] You: ...` / `[time] THG AI Concierge Agent: ...` lines. `reply_to` is the visitor's email when they gave one (addresses containing `< > , ; "` or whitespace are refused). The page URL is shown as text, and becomes a link only when it is on `https://thgservices.io` or `https://www.thgservices.io`.
 
 ### LeadQuik webhook payload
 
