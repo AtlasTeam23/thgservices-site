@@ -18,9 +18,8 @@ const NOINDEX = '<meta name="robots" content="noindex">';
 // Routes that get their own copy of the page but ARE meant to be indexed. Each
 // one gets its own title, description, canonical and social tags in place of the
 // homepage's, and no noindex.
-// TODO (public launch): add https://thgservices.io/website-checker/ to
-// public/sitemap.xml together with the nav, footer and Consulting links
-// (CHECKER_LINKS_LIVE in src/lib/checker/config.ts). It stays out during the hidden launch.
+// The checker is listed in public/sitemap.xml and linked from the nav, footer and
+// Consulting section (CHECKER_LINKS_LIVE in src/lib/checker/config.ts).
 const INDEXABLE_ROUTES = [
   {
     path: 'website-checker',

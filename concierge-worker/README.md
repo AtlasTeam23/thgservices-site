@@ -115,7 +115,7 @@ It exits 1 if a reply:
 
 Other intent mismatches print as `?` notes and do not fail the run. Against the mock the probe only proves the plumbing; run it against a Worker with a real `LLM_API_KEY` to judge the model (the log line for each call has its `output_tokens`, which is how to check the cost of `effort: medium`). It sends `Origin: http://localhost:3000` (override with `PROBE_ORIGIN`).
 
-The full probe sends 27 messages, and one address may send 20 per 10 minutes. Against a **local** Worker each group is sent from its own made-up address (the probe sets `CF-Connecting-IP`, which only `wrangler dev` honours), so a full run works. Against a **deployed** Worker every message comes from your own address: run the groups ten minutes apart with `--only=base`, `--only=owner`, `--only=flow`.
+The full probe sends 29 messages, and one address may send 20 per 10 minutes. Against a **local** Worker each group is sent from its own made-up address (the probe sets `CF-Connecting-IP`, which only `wrangler dev` honours), so a full run works. Against a **deployed** Worker every message comes from your own address: run the groups ten minutes apart with `--only=base`, `--only=owner`, `--only=flow`.
 
 ## Configuration
 
@@ -127,7 +127,7 @@ Public settings, committed in `wrangler.jsonc`:
 | `MODEL` | `claude-haiku-5-5` |
 | `DAILY_LLM_CAP` | `2000` model calls per Eastern-time day. `0` switches the model off (chat answers the lead-only response); a missing, blank, non-numeric or negative value falls back to 2000. |
 | `LEAD_TO_EMAIL` / `LEAD_FROM_EMAIL` | `developer@leadquik.com` / `THG AI Services <concierge@leadquik.com>` |
-| `CHECKER_REQUIRE_TURNSTILE` | `false` for now. While `false`, `/checker/scan` and `/checker/unlock` run with the honeypot and rate limits only (a Turnstile token is verified if the page sends one). Set it to `true` the day the Turnstile site key is published on the site: then, without `TURNSTILE_SECRET_KEY` and unless the Worker itself is reached on localhost (decided from the request URL, never the `Origin` header), both routes answer `503 checker_not_ready`. If the var is removed the code treats it as `true`. |
+| `CHECKER_REQUIRE_TURNSTILE` | `true`: the Turnstile site key is published on the site and verification is on. Without `TURNSTILE_SECRET_KEY` and unless the Worker itself is reached on localhost (decided from the request URL, never the `Origin` header), both `/checker/scan` and `/checker/unlock` answer `503 checker_not_ready`. If the var is removed the code treats it as `true`. (Setting it to `false` would leave only the honeypot and rate limits, with a token verified if the page sends one.) |
 | `CHECKER_DAILY_SCANS` | `1000` scans per Eastern-time day, all visitors. Over it, `/checker/scan` answers `503 capacity`. `0` refuses every scan. |
 | `CHECKER_DAILY_PLANS` | `300` action plans (one model call each) per Eastern-time day, all visitors. A plan is written only when this and `DAILY_LLM_CAP` both have room; otherwise the report comes back without one. `0` switches plans off. |
 | `RATE_SALT` | Random string used only to hash IPs into Durable Object names. Not a secret. |
