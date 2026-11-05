@@ -285,16 +285,19 @@ describe('WebsiteChecker page', () => {
       expect(bodiesFor(fetchMock, '/checker/unlock')).toHaveLength(0);
     });
 
-    it('shows the consent box only once a phone number is typed, unchecked', async () => {
+    it('has no consent checkbox and puts the consent text directly above the button', async () => {
       installFetch(gatedHandlers());
       const user = userEvent.setup();
       renderPage();
       await startScan(user);
       await screen.findByLabelText('Phone');
-      expect(screen.queryByLabelText('OK to call or text me about my results')).not.toBeInTheDocument();
       await user.type(screen.getByLabelText('Phone'), '5');
-      const box = screen.getByLabelText('OK to call or text me about my results');
-      expect(box).not.toBeChecked();
+      expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+      expect(screen.queryByLabelText('OK to call or text me about my results')).not.toBeInTheDocument();
+      const consent = screen.getByText(/By tapping Show my breakdown you agree that THG AI Services may call, text or email you about your website results\. You can opt out any time\./);
+      const button = screen.getByRole('button', { name: 'Show my breakdown' });
+      expect(consent.nextElementSibling).toBe(button);
+      expect(button).toHaveAccessibleDescription(/may call, text or email you/);
       expect(screen.getByRole('link', { name: 'Privacy policy' })).toHaveAttribute('href', '/privacy.html#website-checker');
     });
 
@@ -311,7 +314,6 @@ describe('WebsiteChecker page', () => {
       await user.click(screen.getByRole('button', { name: 'Compare' }));
       await screen.findByTestId('competitor-grades');
       await fillGated(user);
-      await user.click(screen.getByLabelText('OK to call or text me about my results'));
       await user.click(screen.getByRole('button', { name: 'Show my breakdown' }));
 
       expect(await screen.findByTestId('breakdown')).toBeInTheDocument();
@@ -707,7 +709,7 @@ describe('WebsiteChecker page', () => {
       expect(await screen.findByText('1 to fix, 2 to improve, 3 passing.')).toBeInTheDocument();
     });
 
-    it('clears the consent when the phone number is cleared', async () => {
+    it('sends okToCall: true on every gated unlock, since the submit is the acceptance', async () => {
       installFetch({
         '/checker/scan': () => json(200, scanBody('example.com')),
         '/checker/unlock': () => unlockOk(),
@@ -716,14 +718,10 @@ describe('WebsiteChecker page', () => {
       renderPage();
       await startScan(user);
       await screen.findByLabelText('Name');
-      await user.type(screen.getByLabelText('Phone'), '5');
-      await user.click(screen.getByLabelText('OK to call or text me about my results'));
-      await user.clear(screen.getByLabelText('Phone'));
-      expect(screen.queryByLabelText('OK to call or text me about my results')).not.toBeInTheDocument();
       await fillGated(user);
       await user.click(screen.getByRole('button', { name: 'Show my breakdown' }));
       await screen.findByTestId('breakdown');
-      expect(bodiesFor(fetchMock, '/checker/unlock')[0].okToCall).toBe(false);
+      expect(bodiesFor(fetchMock, '/checker/unlock')[0].okToCall).toBe(true);
     });
 
     it('focuses the first invalid field on a failed submit', async () => {

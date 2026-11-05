@@ -27,7 +27,6 @@ export default function UnlockForm({ gated, busy, serverFields, error, onSubmit 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
-  const [okToCall, setOkToCall] = useState(false);
   const [trap, setTrap] = useState('');
   const [local, setLocal] = useState<{ name?: string; email?: string; phone?: string }>({});
 
@@ -66,10 +65,9 @@ export default function UnlockForm({ gated, busy, serverFields, error, onSubmit 
       document.getElementById(`${id}-${first}`)?.focus();
       return;
     }
-    onSubmit({ name: name.trim(), email: email.trim(), phone: phone.trim(), okToCall }, trap);
+    onSubmit({ name: name.trim(), email: email.trim(), phone: phone.trim(), okToCall: true }, trap);
   };
 
-  const hasPhone = phone.replace(/\D/g, '').length > 0;
   const field = (key: 'name' | 'email' | 'phone', label: string, input: React.ReactNode) => (
     <div className="ck-field">
       <label htmlFor={`${id}-${key}`}>{label}</label>
@@ -134,33 +132,22 @@ export default function UnlockForm({ gated, busy, serverFields, error, onSubmit 
           autoComplete="tel"
           maxLength={20}
           value={phone}
-          onChange={(e) => {
-            setPhone(e.target.value);
-            // The consent belongs to a phone number; clearing the number clears it.
-            if (e.target.value.replace(/\D/g, '') === '') setOkToCall(false);
-          }}
+          onChange={(e) => setPhone(e.target.value)}
           required
           {...aria('phone')}
         />
       )}
 
-      {hasPhone ? (
-        <label className="ck-check-label">
-          <input type="checkbox" checked={okToCall} onChange={(e) => setOkToCall(e.target.checked)} />
-          <span>{copy.OK_TO_CALL}</span>
-        </label>
-      ) : null}
-
       <Honeypot value={trap} onChange={setTrap} />
       {error ? <p className="ck-error" role="alert">{error}</p> : null}
 
-      <button type="submit" className="ck-btn ck-btn--primary ck-btn--block" disabled={busy}>
+      <p className="ck-muted" id={`${id}-consent`}>
+        {copy.UNLOCK_CONSENT} <a href={copy.PRIVACY_HREF}>{copy.PRIVACY_LINK_TEXT}</a>.
+      </p>
+      <button type="submit" className="ck-btn ck-btn--primary ck-btn--block" disabled={busy} aria-describedby={`${id}-consent`}>
         {busy ? <Loader2 size={18} className="ck-spin" aria-hidden="true" /> : <Unlock size={18} aria-hidden="true" />}
         {copy.SHOW_BREAKDOWN}
       </button>
-      <p className="ck-muted">
-        {copy.UNLOCK_SMALL_PRINT} <a href={copy.PRIVACY_HREF}>{copy.PRIVACY_LINK_TEXT}</a>.
-      </p>
     </form>
   );
 }

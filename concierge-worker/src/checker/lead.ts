@@ -63,14 +63,14 @@ export const buildNotes = (input: LeadInput): string => {
     `Industry: ${input.industry}`,
     input.city ? `City: ${input.city}` : '',
     hosts.length > 0 ? `Competitors: ${hosts.join(', ')}` : '',
-    `OK to call or text: ${input.okToCall ? 'yes' : 'no'}`,
+    `Consent to call, text or email: ${input.okToCall ? 'yes (given at submit)' : 'no'}`,
     `Visitor country: ${input.country ?? 'XX'}`,
   ]
     .filter((line) => line !== '')
     .join('\n');
 };
 
-/** The lead intake body. `sms_consent` is never sent: the checkbox answer lives in the notes only. */
+/** The lead intake body. `sms_consent` is never sent: the consent answer lives in the notes only. */
 export interface CheckerLeadPayload {
   name: string;
   email: string;

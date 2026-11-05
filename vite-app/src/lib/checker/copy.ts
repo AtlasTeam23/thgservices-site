@@ -48,10 +48,9 @@ export const UNLOCK_TEXT = 'Every check, what we found, and how to fix it.';
 export const NAME_LABEL = 'Name';
 export const EMAIL_LABEL = 'Email';
 export const PHONE_LABEL = 'Phone';
-export const OK_TO_CALL = 'OK to call or text me about my results';
 export const SHOW_BREAKDOWN = 'Show my breakdown';
-export const UNLOCK_SMALL_PRINT =
-  "We'll email you a copy and may follow up by email about your results.";
+export const UNLOCK_CONSENT =
+  'By tapping Show my breakdown you agree that THG AI Services may call, text or email you about your website results. You can opt out any time.';
 export const PRIVACY_LINK_TEXT = 'Privacy policy';
 export const PRIVACY_HREF = '/privacy.html#website-checker';
 export const NAME_ERROR = 'Enter your name.';

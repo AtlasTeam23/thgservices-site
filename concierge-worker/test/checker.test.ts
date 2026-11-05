@@ -608,7 +608,7 @@ describe('POST /checker/unlock for a gated visitor', () => {
         'Industry: Home services',
         'City: Woodstock',
         `Competitors: ${RIVAL}`,
-        'OK to call or text: yes',
+        'Consent to call, text or email: yes (given at submit)',
         'Visitor country: US',
       ].join('\n'),
     });
@@ -631,11 +631,11 @@ describe('POST /checker/unlock for a gated visitor', () => {
     expect(mail.html).not.toMatch(/gradient|background-image/i);
   });
 
-  it('records OK to call: no and a missing city, and an unknown country as XX', async () => {
+  it('records consent: no and a missing city, and an unknown country as XX', async () => {
     const net = stubNetwork();
     await unlock(gatedBody({ okToCall: false }), { country: undefined });
     const notes = String(net.lead()[0]!.json.notes);
-    expect(notes).toContain('OK to call or text: no');
+    expect(notes).toContain('Consent to call, text or email: no');
     expect(notes).toContain('Visitor country: XX');
     expect(notes).not.toContain('City:');
   });
