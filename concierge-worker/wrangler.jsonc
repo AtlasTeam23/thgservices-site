@@ -26,7 +26,7 @@
     "LEAD_TO_EMAIL": "developer@leadquik.com",
     "LEAD_FROM_EMAIL": "THG AI Services <concierge@leadquik.com>",
     // Used only to hash client IPs into Durable Object names. Not a secret.
-    "RATE_SALT": "92fc073eb83ffe453544cd5c7fdcfa7c",
+    "RATE_SALT": "754befd861b9c1e6eccc60be5fe04f7d",
     // `.dev.vars` and the test config override this with "mock".
     "LLM_PROVIDER": "anthropic",
 
