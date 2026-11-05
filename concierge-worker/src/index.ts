@@ -1,7 +1,8 @@
 import type { VoiceDeps } from './ai';
 import { handleChat } from './chat';
+import { handleChecker, type CheckerDeps } from './checker';
 import { checkOrigin, originDenied, preflight, withCors } from './cors';
-import { isEmailConfigured, isTurnstileConfigured, llmStatus, ttsProvider, voiceHealth, type Env } from './env';
+import { isCheckerConfigured, isEmailConfigured, isTurnstileConfigured, llmStatus, ttsProvider, voiceHealth, type Env } from './env';
 import { json, methodNotAllowed } from './http';
 import { handleLead, type LeadDeps } from './lead';
 import type { GenerateDeps } from './llm';
@@ -15,9 +16,10 @@ export interface AppDeps {
   llm?: GenerateDeps;
   lead?: LeadDeps;
   voice?: VoiceDeps;
+  checker?: CheckerDeps;
 }
 
-const route = async (request: Request, env: Env, deps: AppDeps): Promise<Response> => {
+const route = async (request: Request, env: Env, ctx: ExecutionContext, deps: AppDeps): Promise<Response> => {
   const { pathname } = new URL(request.url);
 
   switch (pathname) {
@@ -29,6 +31,8 @@ const route = async (request: Request, env: Env, deps: AppDeps): Promise<Respons
         email: isEmailConfigured(env),
         turnstile: isTurnstileConfigured(env),
         voice: voiceHealth(env),
+        // Present only when the checker's grader, its secret and its lead intake are all configured.
+        ...(isCheckerConfigured(env) ? { checker: true } : {}),
       });
 
     case '/chat':
@@ -49,19 +53,24 @@ const route = async (request: Request, env: Env, deps: AppDeps): Promise<Respons
       if (request.method !== 'POST') return methodNotAllowed('POST, OPTIONS');
       return handleTts(request, env, deps.voice);
 
+    case '/checker/scan':
+    case '/checker/unlock':
+    case '/checker/report':
+      return handleChecker(request, env, ctx, pathname, deps.checker);
+
     default:
       return json({ error: 'not_found' }, 404);
   }
 };
 
 export const createApp = (deps: AppDeps = {}) => ({
-  async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const origin = checkOrigin(request, env);
     if (origin.status === 'denied') return originDenied();
     if (request.method === 'OPTIONS') return preflight(origin);
 
     try {
-      return withCors(await route(request, env, deps), origin);
+      return withCors(await route(request, env, ctx, deps), origin);
     } catch (error) {
       // Log the error type only: messages can echo request data.
       console.error(JSON.stringify({ event: 'unhandled', error: (error as Error)?.name ?? 'Error' }));

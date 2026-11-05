@@ -50,6 +50,19 @@ export const ttsDailyRule = fixedDayRule;
 /** The daily lead cap. */
 export const LEAD_DAILY: LimitRule = fixedDayRule(LEAD_DAILY_LIMIT);
 
+// Free website checker. Competitor scans are ordinary scans, so a visitor who grades three
+// competitors alongside their own site uses four of the ten.
+export const CHECKER_SCAN_IP: LimitRule = { limit: 10, windowSeconds: 10 * 60 };
+export const CHECKER_SCAN_DAY_LIMIT = 30;
+export const CHECKER_SIGNUP_IP: LimitRule = { limit: 5, windowSeconds: 60 * 60 };
+export const CHECKER_REPORT_IP: LimitRule = { limit: 60, windowSeconds: 10 * 60 };
+/** Real unlocks (lead, email, plan) per email address per hour: stops the form being used to mail someone else. */
+export const CHECKER_EMAIL_HOURLY: LimitRule = { limit: 3, windowSeconds: 60 * 60 };
+/** Action plans per Eastern-time day across all visitors (the CHECKER_DAILY_PLANS var). */
+export const checkerPlanDailyRule = fixedDayRule;
+/** Scans per Eastern-time day across all visitors (the CHECKER_DAILY_SCANS var). */
+export const checkerDailyRule = fixedDayRule;
+
 /**
  * Messages after which Turnstile is required: the 11th message, counting either the session's
  * messages or the address's messages (so rotating session ids does not dodge it).
@@ -79,6 +92,30 @@ export const ttsSpokenIpName = async (ip: string, salt: string): Promise<string>
 /** Set to 1 once an address has earned today's bonus replies by leaving its contact details. */
 export const ttsBonusIpName = async (ip: string, salt: string): Promise<string> =>
   `ip:tts-bonus:${await sha256Hex(ipBucketKey(ip) + salt)}`;
+
+export const checkerScanIpName = async (ip: string, salt: string): Promise<string> =>
+  `ip:checker-scan:${await sha256Hex(ipBucketKey(ip) + salt)}`;
+
+/** Scans by one address today; the rule for it is untilMidnightRule(CHECKER_SCAN_DAY_LIMIT). */
+export const checkerScanDayIpName = async (ip: string, salt: string): Promise<string> =>
+  `ip:checker-scan-day:${await sha256Hex(ipBucketKey(ip) + salt)}`;
+
+export const checkerSignupIpName = async (ip: string, salt: string): Promise<string> =>
+  `ip:checker-signup:${await sha256Hex(ipBucketKey(ip) + salt)}`;
+
+export const checkerReportIpName = async (ip: string, salt: string): Promise<string> =>
+  `ip:checker-report:${await sha256Hex(ipBucketKey(ip) + salt)}`;
+
+/** The lowercased address is hashed with the salt, so no address is stored or visible in a DO listing. */
+export const checkerEmailName = async (email: string, salt: string): Promise<string> =>
+  `email:checker:${await sha256Hex(email.trim().toLowerCase() + salt)}`;
+
+/** One real unlock per scan per Eastern day; the rule for it is untilMidnightRule(1). */
+export const checkerUnlockName = (scanId: string): string => `checker-unlock:${scanId.toLowerCase()}`;
+
+/** One report email per scan and address per Eastern day; the rule for it is untilMidnightRule(1). */
+export const checkerUnlockEmailName = async (scanId: string, email: string, salt: string): Promise<string> =>
+  `checker-unlock-email:${await sha256Hex(`${scanId.toLowerCase()}:${email.trim().toLowerCase()}${salt}`)}`;
 
 export const sessionName = (sessionId: string): string => `session:${sessionId}`;
 
@@ -128,6 +165,10 @@ export const untilMidnightRule = (limit: number, now: Date = new Date()): LimitR
 export const globalName = (now: Date = new Date()): string => `global:${etDay(now)}`;
 
 export const globalLeadName = (now: Date = new Date()): string => `global:lead:${etDay(now)}`;
+
+export const globalCheckerScanName = (now: Date = new Date()): string => `global:checker-scan:${etDay(now)}`;
+
+export const globalCheckerPlanName = (now: Date = new Date()): string => `global:checker-plan:${etDay(now)}`;
 
 export const globalVoiceName = (now: Date = new Date()): string => `global:voice:${etDay(now)}`;
 

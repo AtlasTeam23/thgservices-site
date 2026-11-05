@@ -38,6 +38,12 @@ export interface Env {
   VOICE_SESSION_SECONDS: string;
   /** Premium text-to-speech characters per Eastern-time day. */
   VOICE_DAILY_TTS_CHARS: string;
+  /** Free website checker: "false" lets /checker/scan and /checker/unlock run without Turnstile; anything else requires it. */
+  CHECKER_REQUIRE_TURNSTILE?: string;
+  /** Free website checker: scans per Eastern-time day across all visitors (default 1000). */
+  CHECKER_DAILY_SCANS?: string;
+  /** Free website checker: action plans written per Eastern-time day across all visitors (default 300). */
+  CHECKER_DAILY_PLANS?: string;
 
   // Durable Object binding
   LIMITER: DurableObjectNamespace<Limiter>;
@@ -51,6 +57,12 @@ export interface Env {
   TURNSTILE_SECRET_KEY?: string;
   LEADQUIK_WEBHOOK_URL?: string;
   ELEVENLABS_API_KEY?: string;
+  /** Free website checker: the grader function's URL. */
+  SITE_CHECKER_URL?: string;
+  /** Free website checker: the shared secret sent to the grader in a header. */
+  SITE_CHECKER_SECRET?: string;
+  /** Free website checker: the lead intake URL (includes its own token). */
+  CHECKER_LEADQUIK_URL?: string;
 }
 
 // Make `import { env } from 'cloudflare:workers'` carry the same type.
@@ -78,6 +90,9 @@ export const resendApiKey = (env: Env): string | undefined => trimmed(env.RESEND
 export const turnstileSecret = (env: Env): string | undefined => trimmed(env.TURNSTILE_SECRET_KEY);
 export const leadquikUrl = (env: Env): string | undefined => trimmed(env.LEADQUIK_WEBHOOK_URL);
 export const elevenLabsKey = (env: Env): string | undefined => trimmed(env.ELEVENLABS_API_KEY);
+export const siteCheckerUrl = (env: Env): string | undefined => trimmed(env.SITE_CHECKER_URL);
+export const siteCheckerSecret = (env: Env): string | undefined => trimmed(env.SITE_CHECKER_SECRET);
+export const checkerLeadquikUrl = (env: Env): string | undefined => trimmed(env.CHECKER_LEADQUIK_URL);
 
 export const isMockProvider = (env: Env): boolean =>
   env.LLM_PROVIDER?.trim().toLowerCase() === 'mock';
@@ -93,6 +108,18 @@ export const llmStatus = (env: Env): LlmStatus => {
 export const isEmailConfigured = (env: Env): boolean => resendApiKey(env) !== undefined;
 
 export const isTurnstileConfigured = (env: Env): boolean => turnstileSecret(env) !== undefined;
+
+/** True when the checker can reach its grader and take leads: all three checker secrets are set. */
+export const isCheckerConfigured = (env: Env): boolean =>
+  siteCheckerUrl(env) !== undefined && siteCheckerSecret(env) !== undefined && checkerLeadquikUrl(env) !== undefined;
+
+/** True when the checker can call its grader (the lead URL is not needed for that). */
+export const isCheckerGraderConfigured = (env: Env): boolean =>
+  siteCheckerUrl(env) !== undefined && siteCheckerSecret(env) !== undefined;
+
+/** "true" unless CHECKER_REQUIRE_TURNSTILE says exactly "false" (ignoring case and spaces). */
+export const checkerRequiresTurnstile = (env: Env): boolean =>
+  env.CHECKER_REQUIRE_TURNSTILE?.trim().toLowerCase() !== 'false';
 
 export const allowedOrigins = (env: Env): string[] =>
   (env.ALLOWED_ORIGINS ?? '')
@@ -111,6 +138,12 @@ const wholeNumber = (value: string | undefined, fallback: number): number => {
  * switches the model off; missing, blank, non-numeric or negative values fall back to 2000.
  */
 export const dailyLlmCap = (env: Env): number => wholeNumber(env.DAILY_LLM_CAP, 2000);
+
+/** Website checker scans per Eastern-time day, all visitors (default 1000). 0 refuses every scan. */
+export const checkerDailyScans = (env: Env): number => wholeNumber(env.CHECKER_DAILY_SCANS, 1000);
+
+/** Website checker action plans per Eastern-time day, all visitors (default 300). 0 switches plans off. */
+export const checkerDailyPlans = (env: Env): number => wholeNumber(env.CHECKER_DAILY_PLANS, 300);
 
 // --- voice ------------------------------------------------------------------------
 
