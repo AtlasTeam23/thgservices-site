@@ -58,7 +58,7 @@ describe('MessageList', () => {
     );
     const items = screen.getAllByRole('listitem');
     expect(items).toHaveLength(2);
-    expect(items[0]).toHaveTextContent('THG helper: Hi there');
+    expect(items[0]).toHaveTextContent('THG AI Concierge Agent: Hi there');
     expect(items[1]).toHaveTextContent('You: What do you do?');
     expect(screen.getByText('What do you do?')).toBeInTheDocument();
   });
@@ -124,7 +124,7 @@ describe('MessageList', () => {
 
   it('shows a typing indicator that screen readers hear', () => {
     render(<MessageList messages={[]} typing formVisible={false} />);
-    expect(screen.getByText('THG helper is typing')).toBeInTheDocument();
+    expect(screen.getByText('THG AI Concierge Agent is typing')).toBeInTheDocument();
   });
 
   it('renders children (chips, lead form) after the log, inside the scroller', () => {

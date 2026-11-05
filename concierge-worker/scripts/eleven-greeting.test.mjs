@@ -16,7 +16,7 @@ const SCRIPT = fileURLToPath(new URL('./eleven-greeting.mjs', import.meta.url));
 const REAL_WRANGLER = fileURLToPath(new URL('../wrangler.jsonc', import.meta.url));
 const KEY = 'sk_placeholder_not_a_real_key_0123456789';
 const VOICE = '21m00Tcm4TlvDq8ikWAM';
-const GREETING = "Hi there! I'm the THG helper.   What can I help with?";
+const GREETING = "Hi there! I'm the THG AI Concierge Agent.   What can I help with?";
 
 const WRANGLER = `{
   // comments and trailing commas are normal in wrangler.jsonc
@@ -124,7 +124,7 @@ describe('requestBody', () => {
     const body = requestBody(GREETING, 'eleven_flash_v2_5');
     assert.deepEqual(Object.keys(body), ['text', 'model_id', 'voice_settings', 'apply_text_normalization']);
     assert.deepEqual(body, {
-      text: "Hi there! I'm the THG helper. What can I help with?", // whitespace collapsed, as the widget does before /tts
+      text: "Hi there! I'm the THG AI Concierge Agent. What can I help with?", // whitespace collapsed, as the widget does before /tts
       model_id: 'eleven_flash_v2_5',
       voice_settings: { stability: 0.5, similarity_boost: 0.75, style: 0, use_speaker_boost: true },
       apply_text_normalization: 'auto',

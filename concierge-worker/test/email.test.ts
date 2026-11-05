@@ -69,11 +69,11 @@ describe('buildLeadEmail', () => {
     expect(text).not.toContain(String.fromCharCode(0x202f)); // no narrow no-break space left over
   });
 
-  it('writes the transcript as "[time] You: ..." and "[time] THG helper: ..." lines in order', () => {
+  it('writes the transcript as "[time] You: ..." and "[time] THG AI Concierge Agent: ..." lines in order', () => {
     const lines = buildLeadEmail(lead(), NOW).text.split('\n');
     const start = lines.findIndex((line) => line.includes('What do you do?'));
     expect(lines[start]).toBe('[4:00 PM] You: What do you do?');
-    expect(lines[start + 1]).toBe('[4:00 PM] THG helper: We help local businesses save time with AI.');
+    expect(lines[start + 1]).toBe('[4:00 PM] THG AI Concierge Agent: We help local businesses save time with AI.');
     expect(lines[start + 2]).toBe('[4:04 PM] You: Yes, call me');
   });
 

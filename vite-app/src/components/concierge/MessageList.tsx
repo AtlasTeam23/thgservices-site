@@ -72,7 +72,7 @@ export default function MessageList({
               aria-live={m.role === 'user' ? 'off' : undefined}
             >
               <div className={`thg-cc-msg thg-cc-msg--${m.role}`}>
-                <span className="thg-cc-sr">{m.role === 'user' ? 'You: ' : 'THG helper: '}</span>
+                <span className="thg-cc-sr">{m.role === 'user' ? 'You: ' : 'THG AI Concierge Agent: '}</span>
                 {m.role === 'assistant' ? <PhoneText text={m.content} /> : m.content}
               </div>
               {m.role === 'assistant' && m.callLink && !m.content.includes(PHONE_DISPLAY) && (
@@ -99,7 +99,7 @@ export default function MessageList({
           {typing && (
             <li className="thg-cc-row thg-cc-row--assistant">
               <div className="thg-cc-msg thg-cc-msg--assistant thg-cc-typing">
-                <span className="thg-cc-sr">THG helper is typing</span>
+                <span className="thg-cc-sr">THG AI Concierge Agent is typing</span>
                 <span className="thg-cc-dots" aria-hidden="true">
                   <i />
                   <i />

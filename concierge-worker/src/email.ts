@@ -54,7 +54,7 @@ const escapeHtml = (value: string): string =>
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
 
-const speaker = (role: 'user' | 'assistant'): string => (role === 'user' ? 'You' : 'THG helper');
+const speaker = (role: 'user' | 'assistant'): string => (role === 'user' ? 'You' : 'THG AI Concierge Agent');
 
 // The page URL is attacker-controlled text, so it only becomes a clickable link when it is on
 // one of our own origins. Comparing the parsed origin (not a prefix) defeats tricks like

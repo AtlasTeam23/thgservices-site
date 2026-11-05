@@ -8,11 +8,11 @@ export const PHONE_HREF = 'tel:+18665197993';
 export const PRIVACY_HREF = '/privacy.html#ai-chat';
 
 export const BUBBLE_LABEL = 'Questions? Chat with us';
-export const PANEL_TITLE = 'THG helper';
+export const PANEL_TITLE = 'THG AI Concierge Agent';
 export const DISCLOSURE =
   "You're chatting with an AI assistant. Don't share sensitive info.";
 export const GREETING =
-  "Hi there! I'm the THG helper. I can answer questions about how we help local businesses save time with AI, or set up a quick call with David's team. What can I help with?";
+  "Hi there! I'm the THG AI Concierge Agent. I can answer questions about how we help local businesses save time with AI, or set up a quick call with David's team. What can I help with?";
 
 export const CHIPS = [
   'What do you do?',

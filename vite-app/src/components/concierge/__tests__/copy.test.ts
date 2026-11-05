@@ -6,12 +6,12 @@ import * as copy from '../copy';
 describe('concierge copy (contract section 2.7)', () => {
   it('has the exact fixed strings', () => {
     expect(copy.BUBBLE_LABEL).toBe('Questions? Chat with us');
-    expect(copy.PANEL_TITLE).toBe('THG helper');
+    expect(copy.PANEL_TITLE).toBe('THG AI Concierge Agent');
     expect(copy.DISCLOSURE).toBe(
       "You're chatting with an AI assistant. Don't share sensitive info."
     );
     expect(copy.GREETING).toBe(
-      "Hi there! I'm the THG helper. I can answer questions about how we help local businesses save time with AI, or set up a quick call with David's team. What can I help with?"
+      "Hi there! I'm the THG AI Concierge Agent. I can answer questions about how we help local businesses save time with AI, or set up a quick call with David's team. What can I help with?"
     );
     expect(copy.CHIPS).toEqual([
       'What do you do?',
