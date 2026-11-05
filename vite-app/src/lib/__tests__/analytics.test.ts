@@ -479,6 +479,17 @@ describe('A3: trackPageView and trackEvent', () => {
     expect(JSON.stringify(sent())).not.toMatch(/jane|example\.com|5551234567|foo/i);
   });
 
+  it('never sends a website-checker report token (the r parameter), in any command', async () => {
+    setUrl('/website-checker/?r=REPORTTOKEN1234567890abcdef&utm_source=x');
+    const a = await ready();
+    vi.spyOn(console, 'debug').mockImplementation(() => {});
+    a.trackPageView('/website-checker');
+    a.trackEvent('checker_scan_done', { grade: 'A' });
+    const params = sent()[0][2] as Record<string, string>;
+    expect(params.page_location).toBe(`${window.location.origin}/website-checker?utm_source=x`);
+    expect(JSON.stringify(queued())).not.toContain('REPORTTOKEN');
+  });
+
   it('strips the hash and leaves no "?" when no allowed key is present', async () => {
     setUrl('/?email=a%40b.com#ai-concierge');
     const a = await ready();
@@ -928,6 +939,17 @@ describe('A5: Cloudflare Web Analytics beacon', () => {
     expect(found[0].src).toBe('https://static.cloudflareinsights.com/beacon.min.js');
     expect(found[0].defer).toBe(true);
     expect(found[0].getAttribute('data-cf-beacon')).toBe('{"token":"abc123token","spa":true}');
+  });
+
+  it('is not appended while a website-checker report token (r) is in the URL', async () => {
+    setUrl('/website-checker/?r=REPORTTOKEN1234567890');
+    enable();
+    vi.stubEnv('VITE_CF_BEACON_TOKEN', 'abc123token');
+    const a = await load();
+    a.initAnalytics();
+    expect(beaconScript()).toBeUndefined();
+    expect(gtagScript()).toBeDefined();
+    setUrl('/');
   });
 
   it('is not appended when the token is empty or unset', async () => {

@@ -54,6 +54,18 @@ describe('concierge copy (contract section 2.7)', () => {
     expect(copy.LEAD_FORM_DISMISS).toBe('Not now, keep chatting');
   });
 
+  it('knows the site quick replies (website checker) as runnable, but does not list them as chips', () => {
+    expect(copy.SITE_QUICK_REPLIES).toEqual([
+      'I just checked my website and want help with the results',
+      'The website checker could not read my site and I would like a person to look at it',
+    ]);
+    for (const label of copy.SITE_QUICK_REPLIES) {
+      expect(copy.isKnownChip(label)).toBe(true);
+      expect((copy.CHIPS as readonly string[]).includes(label)).toBe(false);
+    }
+    expect(copy.isKnownChip('Something else entirely')).toBe(false);
+  });
+
   it('labels the four callback windows', () => {
     expect(copy.WINDOWS).toEqual({
       morning_9_11: 'Weekday morning (9–11 AM ET)',

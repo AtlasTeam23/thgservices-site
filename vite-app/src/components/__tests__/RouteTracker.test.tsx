@@ -16,6 +16,7 @@ function Tree({ initial }: { initial: string }) {
       <Link to="/from-estimate">estimate</Link>
       <Link to="/from-estimate?utm_campaign=sunshine">query</Link>
       <Link to="/from-estimate?utm_campaign=sunshine#ai-concierge">hash</Link>
+      <Link to="/website-checker?r=REPORTTOKEN1234567890">report</Link>
     </MemoryRouter>
   );
 }
@@ -53,6 +54,15 @@ describe('RouteTracker', () => {
     go('estimate');
     go('home');
     expect(paths()).toEqual(['/', '/from-estimate', '/']);
+  });
+
+  it('never passes a website-checker report token (r) to analytics', () => {
+    render(<Tree initial="/website-checker?r=REPORTTOKEN1234567890&utm_source=x" />);
+    go('home');
+    go('report');
+    // Pathname only: no query string at all reaches trackPageView, so `r` cannot.
+    expect(vi.mocked(trackPageView).mock.calls).toEqual([['/website-checker'], ['/'], ['/website-checker']]);
+    expect(JSON.stringify(vi.mocked(trackPageView).mock.calls)).not.toContain('REPORTTOKEN');
   });
 
   it('sends nothing when only the query or hash changes', () => {

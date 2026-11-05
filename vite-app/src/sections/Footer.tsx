@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import BrandLogo from '../components/BrandLogo';
+import { CHECKER_LINKS_LIVE, CHECKER_LINK_LABEL, CHECKER_PATH } from '../lib/checker/config';
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -11,6 +12,8 @@ const navLinks = [
   { label: 'Capabilities', anchor: '#capabilities' },
   { label: 'About', anchor: '#about' },
   { label: 'Contact', anchor: '#contact' },
+  // Shown only once the checker launches publicly (one constant, lib/checker/config.ts).
+  ...(CHECKER_LINKS_LIVE ? [{ label: CHECKER_LINK_LABEL, anchor: CHECKER_PATH }] : []),
 ];
 
 export default function Footer() {
@@ -134,6 +137,8 @@ export default function Footer() {
                 key={link.label}
                 href={link.anchor}
                 onClick={(e) => {
+                  // A real page link (the website checker) navigates normally.
+                  if (!link.anchor.startsWith('#')) return;
                   e.preventDefault();
                   document.querySelector(link.anchor)?.scrollIntoView({ behavior: 'smooth' });
                 }}

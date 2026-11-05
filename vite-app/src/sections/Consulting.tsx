@@ -2,11 +2,15 @@ import { useEffect, useRef } from 'react';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 
+import { CHECKER_LINKS_LIVE, CHECKER_LINK_LABEL, CHECKER_PATH } from '../lib/checker/config';
+
 gsap.registerPlugin(ScrollTrigger);
 
 type Service = {
   title: string;
   body: string;
+  /** An optional link under the text. */
+  link?: { label: string; href: string };
 };
 
 const services: Service[] = [
@@ -25,6 +29,8 @@ const services: Service[] = [
   {
     title: 'Website upgrades',
     body: 'Modernize legacy sites, fix conversion gaps, and set up analytics and tracking that actually work.',
+    // Shown only once the checker launches publicly (one constant, lib/checker/config.ts).
+    ...(CHECKER_LINKS_LIVE ? { link: { label: `${CHECKER_LINK_LABEL} \u2192`, href: CHECKER_PATH } } : {}),
   },
   {
     title: 'Chatbots & AI assistants',
@@ -248,6 +254,24 @@ export default function Consulting() {
               >
                 {s.body}
               </p>
+              {s.link ? (
+                <a
+                  href={s.link.href}
+                  data-cta-id="consulting_checker"
+                  data-cta-label="Free website checker"
+                  style={{
+                    display: 'inline-block',
+                    marginTop: '12px',
+                    fontFamily: "'Outfit', sans-serif",
+                    fontSize: '14px',
+                    fontWeight: 600,
+                    color: '#2563EB',
+                    textDecoration: 'none',
+                  }}
+                >
+                  {s.link.label}
+                </a>
+              ) : null}
             </div>
           ))}
         </div>

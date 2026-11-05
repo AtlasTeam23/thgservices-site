@@ -555,6 +555,20 @@ describe('useConcierge: lead submit', () => {
     expect(url).toBe(window.location.href.slice(0, 500));
   });
 
+  it('never sends a website-checker report token (the r parameter) in page.url', async () => {
+    window.history.replaceState({}, '', '/website-checker/?r=SECRETTOKEN1234567890&utm_source=google');
+    postLeadMock.mockResolvedValue({ kind: 'ok', delivery: 'email' });
+    const { result } = setup();
+    await open(result);
+    await act(async () => {
+      await result.current.submitLead(leadInput);
+    });
+    const url = postLeadMock.mock.calls[0][0].page.url as string;
+    expect(url).not.toContain('SECRETTOKEN');
+    expect(url).not.toMatch(/[?&]r=/);
+    expect(url).toContain('utm_source=google');
+  });
+
   it('works in lead-only mode and stays lead-only afterwards', async () => {
     postChatMock.mockResolvedValue({ kind: 'lead_only' });
     postLeadMock.mockResolvedValue({ kind: 'ok', delivery: 'leadquik' });
