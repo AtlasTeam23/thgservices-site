@@ -32,6 +32,10 @@ export const testEnv = (overrides: Partial<Record<keyof Env, unknown>> = {}): En
     // changes a result.
     VOICE_TTS: 'browser',
     VOICE_ELEVEN_VOICE_ID: '',
+    // The shipped config switches voice input off (VOICE_DAILY_STT_SECONDS "0"). The speech-to-text code and its
+    // tests stay in place, so the suite's baseline is the budget it was written for, and a test that wants the
+    // shipped setting passes the value from the config explicitly (see health.test.ts).
+    VOICE_DAILY_STT_SECONDS: '9000',
     // Workers AI runs on Cloudflare's network, never in the test runtime: voice tests pass `aiStub().ai`.
     AI: undefined,
     ...overrides,

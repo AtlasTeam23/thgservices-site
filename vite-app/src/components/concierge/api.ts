@@ -1,5 +1,5 @@
-// Network layer for the chat widget (plan section 2.1) and for push-to-talk voice
-// (voice plan sections 1.1 to 1.3). No function here throws: every outcome is a
+// Network layer for the chat widget (plan section 2.1) and for spoken replies
+// (/health, /tts). No function here throws: every outcome is a
 // typed result the state machine can switch on.
 
 import { apiBase } from './config';
@@ -18,14 +18,8 @@ export { fetchVoiceCaps, HEALTH_TIMEOUT_MS, type VoiceCaps } from './voice/healt
 export const CHAT_TIMEOUT_MS = 15000;
 // A lead may wait on email delivery and one retry server-side.
 export const LEAD_TIMEOUT_MS = 30000;
-// The Worker gives each Workers AI attempt 8 s and does not retry after a timeout, so a
-// transcript is back within about 8 s of the upload reaching it. 20 s adds room for a slow
-// mobile upload of a full-length clip (80 KB at 32 kbps) without hanging the "Transcribing…" state.
-export const STT_TIMEOUT_MS = 20000;
-// One 8 s model attempt; past that the browser voice reads the reply instead.
+// One 8 s model attempt; past that the reply simply stays text.
 export const TTS_TIMEOUT_MS = 8000;
-/** The Worker refuses longer clips; keep the figure we report inside its limit. */
-export const MAX_REPORTED_DURATION_MS = 20000;
 
 const INTENTS: readonly Intent[] = [
   'answer',
@@ -46,14 +40,6 @@ export type ChatResult =
   | { kind: 'too_long'; reply?: string }
   | { kind: 'error'; reason: 'network' | 'timeout' | 'bad_request' | 'server' };
 
-export type SttResult =
-  | { kind: 'ok'; text: string; durationMs: number | null }
-  | { kind: 'bad_audio' }
-  | { kind: 'verification_required' }
-  | { kind: 'rate_limited' }
-  /** `budget`: the day's allowance is spent. `server`: Workers AI is failing (or there is no /stt at all). */
-  | { kind: 'voice_unavailable'; reason: 'budget' | 'server' }
-  | { kind: 'error'; reason: 'network' | 'timeout' | 'server' };
 
 /**
  * `limit`: the visitor's daily allowance of spoken replies is used up (429 tts_limit);
@@ -221,67 +207,7 @@ export async function postLead(req: LeadRequest): Promise<LeadResult> {
   return { kind: 'error', reason: 'server' };
 }
 
-// File names and bare MIME types for the multipart upload. The recorder reports a
-// full type such as "audio/webm;codecs=opus"; the Worker allows the bare types only.
-const AUDIO_EXTENSIONS: Record<string, string> = {
-  'audio/webm': 'webm',
-  'audio/mp4': 'm4a',
-  'audio/ogg': 'ogg',
-  'audio/wav': 'wav',
-};
-
-const bareMime = (mime: string): string => mime.split(';')[0].trim().toLowerCase();
-
-/**
- * Speech to text. `durationMs` is the client's own measurement of the clip; the
- * Worker uses it for the daily voice budget, so send it when it is known.
- */
-export async function postStt(
-  blob: Blob,
-  mime: string,
-  sessionId: string,
-  token?: string | null,
-  durationMs?: number
-): Promise<SttResult> {
-  const type = bareMime(mime);
-  const form = new FormData();
-  form.append('audio', new Blob([blob], { type }), `speech.${AUDIO_EXTENSIONS[type] ?? 'bin'}`);
-  form.append('sessionId', sessionId);
-  if (token) form.append('turnstileToken', token);
-  if (typeof durationMs === 'number' && Number.isFinite(durationMs)) {
-    form.append(
-      'durationMs',
-      String(Math.min(MAX_REPORTED_DURATION_MS, Math.max(0, Math.round(durationMs))))
-    );
-  }
-
-  // No Content-Type header: the browser adds the multipart boundary itself.
-  const res = await call('/stt', { method: 'POST', body: form }, STT_TIMEOUT_MS, readJson, null);
-  if (!res.ok) return { kind: 'error', reason: res.reason };
-
-  const { status, body } = res;
-  const error = asString(body?.error);
-
-  if (status === 200) {
-    if (typeof body?.text !== 'string') return { kind: 'error', reason: 'server' };
-    return {
-      kind: 'ok',
-      text: body.text,
-      durationMs: typeof body.durationMs === 'number' ? body.durationMs : null,
-    };
-  }
-  if (status === 400 && error === 'bad_audio') return { kind: 'bad_audio' };
-  if (status === 403 && error === 'verification_required') return { kind: 'verification_required' };
-  if (status === 429) return { kind: 'rate_limited' };
-  if (status === 503) {
-    return { kind: 'voice_unavailable', reason: body?.reason === 'budget' ? 'budget' : 'server' };
-  }
-  // A Worker from before voice has no /stt route, which is the same thing to the visitor.
-  if (status === 404) return { kind: 'voice_unavailable', reason: 'server' };
-  return { kind: 'error', reason: 'server' };
-}
-
-/** The server voice (only called when /health says the voice is not the browser's). */
+/** The server voice (only called when /health says there is a server voice). */
 export async function fetchTts(
   text: string,
   sessionId: string,

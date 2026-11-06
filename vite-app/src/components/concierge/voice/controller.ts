@@ -1,22 +1,12 @@
-// Push-to-talk and reading replies aloud, as a controller the chat state machine owns
-// (voice plan section 3, W4). It never touches React: it reads and writes the chat's state
-// through `get` and `patch`, and sends a finished transcript through `send`, so every guard,
-// limit and analytics rule that applies to typing applies to speaking too.
+// Reading replies aloud (and taking over the opening greeting), as a controller the chat state
+// machine owns. It never touches React: it reads and writes the chat's state through `get` and
+// `patch`. There is no voice input: visitors type, and the chat talks back.
 
 import { track } from '../../../lib/track';
-import { fetchTts, fetchVoiceCaps, postStt, type SttResult, type VoiceCaps } from '../api';
-import { RATE_LIMITED } from '../copy';
-import { makeMessage, TURNSTILE_AFTER_TURN } from '../thread';
-import { getToken } from '../turnstile';
+import { fetchTts, fetchVoiceCaps, type VoiceCaps } from '../api';
 import type { ConciergeState } from '../useConcierge';
 import {
   DEFAULT_BONUS_REPLIES,
-  VOICE_DENIED,
-  VOICE_ERROR,
-  VOICE_HEARD_NOTHING,
-  VOICE_HOLD_HINT,
-  VOICE_NO_MIC,
-  VOICE_OFF,
   VOICE_SOUND_OFF_HINT,
   VOICE_SPOKEN_LIMIT_DONE,
 } from './copy';
@@ -30,14 +20,6 @@ import {
   type VoicePrefs,
 } from './prefs';
 import {
-  isRecordingSupported,
-  MIN_RECORDING_MS,
-  startRecording,
-  VoiceError,
-  type Recording,
-  type RecordingResult,
-} from './recorder';
-import {
   speak,
   speakBlob,
   stopSpeaking as stopReading,
@@ -47,24 +29,20 @@ import {
 } from './speech';
 
 /**
- * `off` means no voice controls at all: this browser cannot record, the Worker has no speech
- * to text, or voice gave up for the session. It is also the state before the first /health
- * answer arrives.
+ * `off` means no voice controls at all: the Worker has no server voice, or voice gave up for the
+ * session. It is also the state before the first /health answer arrives.
  */
-export type VoiceState = 'idle' | 'recording' | 'transcribing' | 'speaking' | 'off';
+export type VoiceState = 'off' | 'idle' | 'speaking';
 
 export type VoiceHost = {
   get: () => ConciergeState;
   patch: (patch: Partial<ConciergeState>) => void;
-  /** Send text as the visitor's message through the normal chat path. */
-  send: (text: string) => Promise<void>;
 };
 
 /** The voice part of the chat state, as it starts out. */
 export function initialVoiceState(): Pick<
   ConciergeState,
   | 'voice'
-  | 'voiceEnding'
   | 'voiceNotice'
   | 'speakEnabled'
   | 'speakAvailable'
@@ -75,7 +53,6 @@ export function initialVoiceState(): Pick<
 > {
   return {
     voice: 'off',
-    voiceEnding: false,
     voiceNotice: null,
     speakEnabled: loadVoicePrefs().speak ?? false,
     speakAvailable: false,
@@ -86,7 +63,7 @@ export function initialVoiceState(): Pick<
   };
 }
 
-export function createVoiceController({ get, patch, send }: VoiceHost) {
+export function createVoiceController({ get, patch }: VoiceHost) {
   let prefs: VoicePrefs = loadVoicePrefs();
 
   /** Whether replies are read aloud (by the server voice); /health decides. 'none' is text only. */
@@ -97,26 +74,10 @@ export function createVoiceController({ get, patch, send }: VoiceHost) {
    */
   let held: { blob: Blob; messageId: string; mode: SpeechMode } | null = null;
   let checked = false;
-  /** Voice gave up for this session (budget spent, no microphone); a late /health cannot revive it. */
-  let blocked = prefs.blocked;
+  /** Voice gave up for this tab (a stored flag from an older visit); a late /health cannot revive it. */
+  const blocked = prefs.blocked;
   /** The panel is open and the tab visible: the only time a reply is read aloud. */
   let active = true;
-  let recording: Recording | null = null;
-  /** Identifies the press that is waiting on the microphone; bumped to abandon it. */
-  let pressId = 0;
-  let awaitingMic = false;
-  let releasedEarly = false;
-  /** Bumped to drop a transcript that is still on its way. */
-  let transcriptId = 0;
-  const levelListeners = new Set<(level: number) => void>();
-
-  const subscribeLevel = (listener: (level: number) => void) => {
-    levelListeners.add(listener);
-    return () => {
-      levelListeners.delete(listener);
-    };
-  };
-
   /**
    * The cap on spoken replies is in force. A cap that has lapsed (an hour, or a new day) is
    * dropped here, so even a panel left open comes back to asking for audio.
@@ -134,11 +95,11 @@ export function createVoiceController({ get, patch, send }: VoiceHost) {
   const canSpeak = (): boolean => ttsMode === 'server' && !capInForce();
 
   /**
-   * Ask the Worker once whether voice is on. Browsers that cannot record never ask. The answer the
+   * Ask the Worker once whether it has a server voice. The answer the
    * bubble fetched when the page loaded (for the greeting) is reused rather than asked for again.
    */
   const checkVoice = async (): Promise<void> => {
-    if (checked || blocked || !isRecordingSupported()) return;
+    if (checked || blocked) return;
     checked = true;
     let caps: VoiceCaps | null = null;
     try {
@@ -168,31 +129,10 @@ export function createVoiceController({ get, patch, send }: VoiceHost) {
     if (get().voice === 'speaking') patch({ voice: 'idle' });
   };
 
-  /**
-   * Throw away a recording in progress or a press still waiting on the microphone. A transcript
-   * already on its way is left to finish (a hidden tab, for one, should not lose the question).
-   */
-  const cancelRecording = () => {
-    pressId += 1;
-    const rec = recording;
-    recording = null;
-    rec?.cancel();
-    const { voice, voiceEnding } = get();
-    if (voice === 'recording' || voiceEnding) patch({ voice: 'idle', voiceEnding: false });
-  };
-
-  /** A recording, a press waiting on the microphone, and a transcript in flight: all dropped. */
-  const cancelVoice = () => {
-    transcriptId += 1;
-    cancelRecording();
-    if (get().voice === 'transcribing') patch({ voice: 'idle' });
-  };
-
-  /** The panel was closed or unmounted: the microphone and the speaker both stop. */
+  /** The panel was closed or unmounted: the speaker stops. */
   const stopAll = () => {
-    cancelVoice();
     stopSpeaking();
-    // The microphone line was for this first visit to voice; it is not shown a second time.
+    // The read-aloud line was for this first visit to voice; it is not shown a second time.
     if (get().voiceDisclosed) patch({ voiceDisclosed: false });
   };
 
@@ -201,181 +141,7 @@ export function createVoiceController({ get, patch, send }: VoiceHost) {
     active = value;
   };
 
-  /** Hide every voice control for the rest of the session. */
-  const voiceOff = (reason: 'unsupported' | 'budget' | 'server', notice: string) => {
-    blocked = true;
-    if (reason === 'budget') {
-      // The day's allowance is gone: a reload in this tab should not offer the mic again.
-      prefs = { ...prefs, blocked: true };
-      saveVoicePrefs(prefs);
-    }
-    cancelVoice();
-    stopReading();
-    track('concierge_voice_error', { reason });
-    patch({ voice: 'off', voiceEnding: false, voiceNotice: notice });
-  };
-
-  const failStart = (error: unknown) => {
-    const reason = error instanceof VoiceError ? error.reason : 'device';
-    if (reason === 'permission') {
-      track('concierge_voice_error', { reason: 'permission' });
-      patch({ voice: 'idle', voiceEnding: false, voiceNotice: VOICE_DENIED });
-    } else if (reason === 'unsupported') {
-      voiceOff('unsupported', VOICE_NO_MIC);
-    } else {
-      // Busy or broken for now: say so, keep the button.
-      track('concierge_voice_error', { reason: 'unsupported' });
-      patch({ voice: 'idle', voiceEnding: false, voiceNotice: VOICE_NO_MIC });
-    }
-  };
-
-  const transcribe = async (clip: RecordingResult): Promise<void> => {
-    transcriptId += 1;
-    const id = transcriptId;
-    patch({ voice: 'transcribing', voiceEnding: false, voiceNotice: null });
-
-    let res: SttResult;
-    try {
-      // Same rule as /chat: a token from the 11th message on.
-      const token = get().turn + 1 > TURNSTILE_AFTER_TURN ? await getToken() : null;
-      res = await postStt(clip.blob, clip.mime, get().sessionId, token, clip.durationMs);
-      if (res.kind === 'verification_required') {
-        // Fetch a token and retry once; a second demand is a plain error.
-        const retryToken = await getToken();
-        res = retryToken
-          ? await postStt(clip.blob, clip.mime, get().sessionId, retryToken, clip.durationMs)
-          : { kind: 'error', reason: 'server' };
-      }
-    } catch {
-      res = { kind: 'error', reason: 'network' };
-    }
-    if (id !== transcriptId) return; // cancelled while waiting
-
-    switch (res.kind) {
-      case 'ok': {
-        const text = res.text.trim();
-        if (!text) {
-          track('concierge_voice_empty');
-          patch({ voice: 'idle', voiceNotice: VOICE_HEARD_NOTHING });
-          return;
-        }
-        track('concierge_voice_transcribed', {
-          seconds: Math.min(20, Math.max(0, Math.round(clip.durationMs / 1000))),
-        });
-        patch({ voice: 'idle' });
-        await send(text);
-        return;
-      }
-      case 'voice_unavailable':
-        voiceOff(res.reason, VOICE_OFF);
-        return;
-      case 'rate_limited':
-        track('concierge_rate_limited');
-        patch({
-          messages: [...get().messages, makeMessage('assistant', RATE_LIMITED)],
-          voice: 'idle',
-          status: 'idle',
-          chips: [],
-        });
-        return;
-      default:
-        // bad_audio, a second verification demand, network, timeout, server
-        track('concierge_voice_error', { reason: 'server' });
-        patch({ voice: 'idle', voiceNotice: VOICE_ERROR });
-    }
-  };
-
-  const onRecorded = (rec: Recording, clip: RecordingResult | null, hold: boolean) => {
-    if (recording !== rec) return; // cancelled, or replaced by a newer recording
-    recording = null;
-    if (!clip || clip.durationMs < MIN_RECORDING_MS) {
-      // Nothing worth sending. A touch press that was let go at once gets the hint.
-      patch({
-        voice: 'idle',
-        voiceEnding: false,
-        voiceNotice: hold && clip ? VOICE_HOLD_HINT : VOICE_HEARD_NOTHING,
-      });
-      return;
-    }
-    void transcribe(clip);
-  };
-
-  /**
-   * The mic was pressed. `hold` is true for a touch press-and-hold (a too-short press then
-   * gets a "hold the button" hint instead of "didn't catch that"). Everything before the
-   * first await runs inside the visitor's tap, which is what iOS needs for audio.
-   */
-  const startVoice = async (opts: { hold?: boolean } = {}): Promise<void> => {
-    if (get().voice !== 'idle' && get().voice !== 'speaking') return;
-    if (get().status !== 'idle') return;
-
-    stopSpeaking();
-    unlock();
-    patch({ voice: 'recording', voiceEnding: false, voiceNotice: null });
-
-    pressId += 1;
-    const id = pressId;
-    awaitingMic = true;
-    releasedEarly = false;
-    const hold = opts.hold === true;
-
-    let rec: Recording;
-    try {
-      rec = await startRecording({
-        onLevel: (level) => levelListeners.forEach((listener) => listener(level)),
-        onEnding: () => {
-          if (recording && get().voice === 'recording') patch({ voiceEnding: true });
-        },
-      });
-    } catch (error) {
-      if (id !== pressId) return; // abandoned while waiting
-      awaitingMic = false;
-      failStart(error);
-      return;
-    }
-
-    if (id !== pressId) {
-      rec.cancel(); // cancelled while the permission prompt was open
-      return;
-    }
-    awaitingMic = false;
-    if (releasedEarly) {
-      // Let go before the microphone was ready (the permission prompt): nothing was said.
-      rec.cancel();
-      patch({
-        voice: 'idle',
-        voiceEnding: false,
-        voiceNotice: hold ? VOICE_HOLD_HINT : VOICE_HEARD_NOTHING,
-      });
-      return;
-    }
-
-    // The first time a recording really starts: show the microphone line, and read replies
-    // aloud unless the visitor already chose otherwise. A refused or abandoned first press
-    // is not a first use.
-    const first: Partial<ConciergeState> = {};
-    if (!prefs.disclosed) {
-      const speakOn = prefs.speak ?? true;
-      prefs = { ...prefs, speak: speakOn, disclosed: true };
-      saveVoicePrefs(prefs);
-      first.voiceDisclosed = true;
-      first.speakEnabled = speakOn;
-    }
-    if (Object.keys(first).length > 0) patch(first);
-
-    recording = rec;
-    track('concierge_voice_start');
-    void rec.result.then((clip) => onRecorded(rec, clip, hold));
-  };
-
-  /** The mic was released (or clicked a second time). */
-  const stopVoice = () => {
-    if (get().voice !== 'recording') return;
-    if (recording) recording.stop(); // onRecorded carries on from there
-    else if (awaitingMic) releasedEarly = true;
-  };
-
-  /** Inside a tap on the mic or the speaker toggle: let iOS know speech is wanted. */
+  /** Inside a tap on the speaker toggle: let iOS know speech is wanted. */
   const unlock = () => {
     if (ttsMode === 'server') unlockSpeech();
   };
@@ -476,7 +242,7 @@ export function createVoiceController({ get, patch, send }: VoiceHost) {
     clearBlocked(); // a newer reply replaces whatever was waiting for a tap
     const { speakEnabled, voice } = get();
     if (!active || !speakEnabled || !canSpeak()) return;
-    if (voice === 'off' || voice === 'recording' || voice === 'transcribing') return;
+    if (voice === 'off') return;
     speak(text, {
       fetchAudio: (t, signal) => fetchTts(t, get().sessionId, signal),
       canPlay: () => active, // closed or hidden while the request was out: drop the clip
@@ -490,8 +256,7 @@ export function createVoiceController({ get, patch, send }: VoiceHost) {
   /** The "Tap to hear replies" pill was tapped: play the reply that was waiting, inside this tap. */
   const playBlocked = () => {
     const pending = held;
-    const { voice } = get();
-    if (!pending || voice === 'recording' || voice === 'transcribing') return;
+    if (!pending) return;
     speakBlob(pending.blob, {
       mode: pending.mode,
       onStart: onSpeechStart,
@@ -520,10 +285,6 @@ export function createVoiceController({ get, patch, send }: VoiceHost) {
 
   return {
     checkVoice,
-    startVoice,
-    stopVoice,
-    cancelVoice,
-    cancelRecording,
     stopAll,
     setActive,
     stopSpeaking,
@@ -532,7 +293,5 @@ export function createVoiceController({ get, patch, send }: VoiceHost) {
     playBlocked,
     adoptGreeting,
     noteLeadSubmitted,
-    unlock,
-    subscribeLevel,
   };
 }

@@ -44,7 +44,7 @@ export type ChatPanelProps = {
 export default function ChatPanel({ open, request, onClose, returnFocusRef }: ChatPanelProps) {
   const chat = useConcierge();
   const { handleOpen, chips, showLeadForm, status, voice } = chat;
-  const { stopAll, cancelRecording, setActive, stopSpeaking } = chat;
+  const { stopAll, setActive, stopSpeaking } = chat;
   const panelRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const isMobile = useMediaQuery(PHONE_QUERY);
@@ -78,31 +78,27 @@ export default function ChatPanel({ open, request, onClose, returnFocusRef }: Ch
     const composer = composerRef.current;
     const target = !touch && composer && !composer.disabled ? composer : panel;
     target.focus({ preventScroll: true });
-    // `voice`: the mic (voice switched off) or the header equalizer (the reading stopped) can
-    // vanish under the focus ring.
+    // `voice`: the header equalizer (the reading stopped) can vanish under the focus ring.
   }, [open, touch, chips, showLeadForm, status, voice]);
 
-  // The panel stays mounted while closed: closing it must release the microphone and stop the
-  // voice, and replies are read aloud only while it is open and the tab is visible. An unmount
+  // The panel stays mounted while closed: closing it must stop the voice, and replies are read aloud only while it is open and the tab is visible. An unmount
   // (the page tearing it down) does the same.
   useEffect(() => {
     setActive(open && !document.hidden);
     if (!open) stopAll();
   }, [open, setActive, stopAll]);
   useEffect(() => stopAll, [stopAll]);
-  // A hidden tab must not keep recording or keep talking; a transcript already on its way is
-  // left to finish (its reply is shown, not read).
+  // A hidden tab must not keep talking (a reply that lands meanwhile is shown, not read).
   useEffect(() => {
     const onVisibility = () => {
       setActive(open && !document.hidden);
       if (document.hidden) {
-        cancelRecording();
         stopSpeaking();
       }
     };
     document.addEventListener('visibilitychange', onVisibility);
     return () => document.removeEventListener('visibilitychange', onVisibility);
-  }, [open, setActive, cancelRecording, stopSpeaking]);
+  }, [open, setActive, stopSpeaking]);
 
   // Full-screen on phones: track the visual viewport so the on-screen keyboard
   // never covers the composer, and keep the page behind from scrolling. Lenis
@@ -162,13 +158,7 @@ export default function ChatPanel({ open, request, onClose, returnFocusRef }: Ch
             AI
           </span>
         </div>
-        {(voice === 'recording' || voice === 'transcribing' || voice === 'speaking') && (
-          <Equalizer
-            mode={voice === 'recording' ? 'listening' : voice}
-            subscribeLevel={chat.subscribeLevel}
-            onStop={stopSpeaking}
-          />
-        )}
+        {voice === 'speaking' && <Equalizer onStop={stopSpeaking} />}
         {voice !== 'off' && chat.speakAvailable && (
           <SpeakToggle
             pressed={chat.speakEnabled}
@@ -242,15 +232,7 @@ export default function ChatPanel({ open, request, onClose, returnFocusRef }: Ch
               ? { count: chat.bonusCount, onShare: chat.shareDetails }
               : undefined
           }
-          voice={{
-            state: voice,
-            ending: chat.voiceEnding,
-            disclosed: chat.voiceDisclosed,
-            touch,
-            onStart: (opts) => void chat.startVoice(opts),
-            onStop: chat.stopVoice,
-            onUnlock: chat.unlockSpeech,
-          }}
+          readAloudNote={voice !== 'off' && chat.voiceDisclosed}
         />
       )}
 

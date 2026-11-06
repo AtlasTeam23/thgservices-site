@@ -91,7 +91,7 @@ export type ConciergeState = {
   /** Inline message for the composer (for example TOO_LONG). */
   composerError: string | null;
   /**
-   * A voice message shown in the same place (microphone blocked, nothing heard, voice off).
+   * A voice message shown in the same place (the sound-off hint, the read-aloud cap).
    * Kept apart from composerError because it is not a problem with what was typed.
    */
   voiceNotice: string | null;
@@ -99,8 +99,6 @@ export type ConciergeState = {
   /** User messages sent to the server this session. */
   turn: number;
   voice: VoiceState;
-  /** The last seconds of a recording (drives the countdown ring and its text). */
-  voiceEnding: boolean;
   /** Read each new reply aloud. */
   speakEnabled: boolean;
   /** Something can read replies aloud, and today's allowance is not used up (drives the speaker toggle). */
@@ -111,7 +109,7 @@ export type ConciergeState = {
   readAloudBonus: boolean;
   /** How many spoken replies that offer adds (the Worker's figure, or 5). */
   bonusCount: number;
-  /** Show the microphone line under the composer (from the first voice use until the panel closes). */
+  /** Show the read-aloud line under the composer (from the first voice use until the panel closes). */
   voiceDisclosed: boolean;
 };
 
@@ -239,7 +237,6 @@ function createController() {
   const voice = createVoiceController({
     get: getState,
     patch: set,
-    send: (text) => sendText(text),
   });
 
   /** Read the newest assistant message added since `fromIndex`, if any. */
@@ -280,7 +277,6 @@ function createController() {
   const shareDetails = () => {
     if (state.leadDone || state.showLeadForm || state.status === 'ended') return;
     clearDismissal();
-    voice.cancelVoice();
     voice.stopSpeaking();
     set({
       showLeadForm: true,
@@ -407,8 +403,8 @@ function createController() {
     voice.stopSpeaking();
   };
 
-  /** The send path shared by typing and by a finished voice transcript. */
-  const sendText = async (raw: string, opts: SendOptions = {}): Promise<void> => {
+  /** Typed (or chip) input. */
+  const send = async (raw: string, opts: SendOptions = {}): Promise<void> => {
     if (state.status !== 'idle') return;
     const text = raw.trim();
     if (!text) return;
@@ -443,15 +439,8 @@ function createController() {
     await converse(thread, turn);
   };
 
-  /** Typed (or chip) input: a recording or transcript in progress is dropped in its favour. */
-  const send = (raw: string, opts: SendOptions = {}): Promise<void> => {
-    voice.cancelVoice();
-    return sendText(raw, opts);
-  };
-
   const chip = async (label: string, opts: SendOptions = {}): Promise<void> => {
     if (state.status === 'ended') return;
-    voice.cancelVoice();
     stopReadingForInput(opts);
     // Only the widget's own chip labels are analytics values; never pass anything else along.
     track('concierge_quick_reply', isKnownChip(label) ? { chip: label } : undefined);
@@ -605,18 +594,12 @@ function createController() {
       submitLead,
       dismissLeadForm,
       clearComposerError,
-      startVoice: voice.startVoice,
-      stopVoice: voice.stopVoice,
-      cancelVoice: voice.cancelVoice,
-      cancelRecording: voice.cancelRecording,
       stopAll: voice.stopAll,
       setActive: voice.setActive,
       stopSpeaking: voice.stopSpeaking,
       setSpeakEnabled: voice.setSpeakEnabled,
       playBlocked: voice.playBlocked,
       shareDetails,
-      unlockSpeech: voice.unlock,
-      subscribeLevel: voice.subscribeLevel,
     },
   };
 }

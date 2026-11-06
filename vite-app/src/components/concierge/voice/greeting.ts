@@ -21,7 +21,6 @@ import { isFreshThread, loadState } from '../storage';
 import { spokenCapInForce, VOICE_PREFS_KEY } from './cap';
 import { prefetchVoiceCaps, resetVoiceHealth, voiceHealth } from './health';
 import { speakUrl } from './playback';
-import { isRecordingSupported } from './support';
 
 /** Where the recording is served from (the site's public/ folder). */
 export const GREETING_URL = `${import.meta.env.BASE_URL}concierge/greeting.mp3`;
@@ -57,17 +56,16 @@ function storedPrefs(): Record<string, unknown> {
 /**
  * Call this from inside the click (or tap) that opens the chat, before anything is awaited. Plays the
  * greeting when all of these hold, all decided right here from module state and sessionStorage:
- * this browser can record (so the mic, the speaker toggle and spoken replies exist at all), /health said
- * the server voice is there, this tab has not heard the greeting, the visitor has not turned sound off,
+ * /health said the server voice is there, this tab has not heard the greeting, the visitor has not turned sound off,
  * today's allowance of spoken replies is not used up, voice has not given up for the session, and nothing
  * has been said in the chat yet. Otherwise it does nothing, silently.
  *
  * Starting it is the visitor's first use of voice: replies are read aloud from here on (under the
- * usual per-visitor cap) and the microphone line is shown.
+ * usual per-visitor cap) and the read-aloud line is shown.
  */
 export function playGreetingOnOpen(): void {
   try {
-    if (started || typeof Audio === 'undefined' || !isRecordingSupported()) return;
+    if (started || typeof Audio === 'undefined') return;
     const health = voiceHealth();
     if (health === 'unknown') {
       // The answer is not in (the page was just loaded, or the request failed): ask again now, so
