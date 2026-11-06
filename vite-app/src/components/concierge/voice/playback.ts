@@ -59,6 +59,8 @@ export type Run = {
   end: () => void;
   /** Who joined the run after it began (the panel, for the greeting); at most one. */
   watcher: SpeechObserver | null;
+  /** Runs once when the run is over, however it ended (the reply queued behind the greeting). */
+  onFinish: (() => void) | null;
 };
 
 let active: Run | null = null;
@@ -91,6 +93,7 @@ export function stopSpeaking(): void {
   const run = active;
   active = null;
   if (!run) return;
+  run.onFinish = null; // stopped on purpose (close, mute, new input): nothing queued behind it plays
   run.halt();
   run.end();
 }
@@ -115,8 +118,12 @@ export function newRun(hooks: SpeakHooks): Run {
       hooks.onEnd?.();
       run.watcher?.onEnd?.();
       run.watcher = null;
+      const after = run.onFinish;
+      run.onFinish = null;
+      after?.();
     },
     watcher: null,
+    onFinish: null,
   };
   generation += 1;
   active = run;

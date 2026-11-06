@@ -20,7 +20,10 @@ import {
   type VoicePrefs,
 } from './prefs';
 import {
+  activeSpeechMode,
+  cancelQueued,
   speak,
+  speakAfterGreeting,
   speakBlob,
   stopSpeaking as stopReading,
   unlockSpeech,
@@ -54,7 +57,9 @@ export function initialVoiceState(): Pick<
   return {
     voice: 'off',
     voiceNotice: null,
-    speakEnabled: loadVoicePrefs().speak ?? false,
+    // On by default: the chat talks back (it only does so where /health reports a server voice). An
+    // explicit "sound off" the visitor chose is kept.
+    speakEnabled: loadVoicePrefs().speak ?? true,
     speakAvailable: false,
     voiceDisclosed: false,
     blockedReplyId: null,
@@ -125,6 +130,7 @@ export function createVoiceController({ get, patch }: VoiceHost) {
 
   /** Stop reading aloud (any new input does this). */
   const stopSpeaking = () => {
+    cancelQueued(); // a reply waiting behind the greeting goes too
     stopReading();
     if (get().voice === 'speaking') patch({ voice: 'idle' });
   };
@@ -150,6 +156,14 @@ export function createVoiceController({ get, patch }: VoiceHost) {
   const clearBlocked = () => {
     held = null;
     if (get().blockedReplyId !== null) patch({ blockedReplyId: null });
+  };
+
+  /**
+   * Inside the tap that sends a message: when replies will be read aloud and nothing is playing yet (no
+   * greeting played), let iOS know speech is wanted, so the first spoken reply can start without a gesture.
+   */
+  const unlockForSend = () => {
+    if (get().speakEnabled && activeSpeechMode() === null) unlock();
   };
 
   const setSpeakEnabled = (on: boolean) => {
@@ -243,14 +257,18 @@ export function createVoiceController({ get, patch }: VoiceHost) {
     const { speakEnabled, voice } = get();
     if (!active || !speakEnabled || !canSpeak()) return;
     if (voice === 'off') return;
-    speak(text, {
-      fetchAudio: (t, signal) => fetchTts(t, get().sessionId, signal),
+    const hooks = {
+      fetchAudio: (t: string, signal: AbortSignal) => fetchTts(t, get().sessionId, signal),
       canPlay: () => active, // closed or hidden while the request was out: drop the clip
       onStart: onSpeechStart,
       onEnd: onSpeechEnd,
       onLimit: limitReached,
-      onBlocked: (blob) => audioBlocked(blob, messageId),
-    });
+      onBlocked: (blob: Blob) => audioBlocked(blob, messageId),
+    };
+    // The greeting is still playing (the automatic question from a section button): the reply waits
+    // its turn instead of cutting the greeting off mid-sentence.
+    if (activeSpeechMode() === 'greeting' && speakAfterGreeting(text, hooks)) return;
+    speak(text, hooks);
   };
 
   /** The "Tap to hear replies" pill was tapped: play the reply that was waiting, inside this tap. */
@@ -285,6 +303,7 @@ export function createVoiceController({ get, patch }: VoiceHost) {
 
   return {
     checkVoice,
+    unlockForSend,
     stopAll,
     setActive,
     stopSpeaking,

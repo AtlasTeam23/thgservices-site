@@ -329,9 +329,108 @@ describe('a section button opens the chat with a question already asked', () => 
 
     answer(okChat('Here is the answer.'));
     await settle();
-    expect(audio().pause).toHaveBeenCalled(); // the reply took over from the greeting
+    // The text is shown at once, its audio was fetched, but the greeting is not cut off.
+    expect(screen.getByText('Here is the answer.')).toBeInTheDocument();
     expect(fetchTts).toHaveBeenCalledTimes(1);
     expect(vi.mocked(fetchTts).mock.calls[0][0]).toBe('Here is the answer.');
+    expect(audio().pause).not.toHaveBeenCalled();
+    expect(FakeAudio.played).toEqual([GREETING_URL]);
+  });
+
+  describe('a reply that arrives while the greeting plays waits for it', () => {
+    const answerDuringGreeting = async (text = 'Here is the answer.') => {
+      let answer!: (result: ChatResult) => void;
+      vi.mocked(postChat).mockReturnValueOnce(new Promise<ChatResult>((resolve) => (answer = resolve)));
+      await loadPage();
+      askWhileOpening();
+      await screen.findByRole('dialog');
+      await settle();
+      answer(okChat(text));
+      await settle();
+    };
+
+    it('plays after the greeting ends, on the one shared element, with no overlap', async () => {
+      await answerDuringGreeting();
+      expect(FakeAudio.instances).toHaveLength(1);
+      expect(FakeAudio.played).toEqual([GREETING_URL]); // fetched, but not played yet
+      expect(equalizer()).toBeInTheDocument(); // still the greeting
+
+      act(() => audio().onended?.());
+      await settle();
+      expect(FakeAudio.instances).toHaveLength(1);
+      expect(FakeAudio.played).toEqual([GREETING_URL, 'blob:fake']); // the reply only after the ended event
+      expect(fetchTts).toHaveBeenCalledTimes(1); // one fetch, so one against the cap
+      expect(spoken('concierge_greeting_played')).toHaveLength(1);
+      expect(spoken('concierge_voice_reply_spoken')).toHaveLength(1);
+      expect(equalizer()).toBeInTheDocument();
+    });
+
+    it('plays at once when the greeting fails to play', async () => {
+      await answerDuringGreeting();
+      act(() => audio().onerror?.());
+      await settle();
+      expect(FakeAudio.played).toEqual([GREETING_URL, 'blob:fake']);
+    });
+
+    it('starts as soon as it arrives when the greeting ended first', async () => {
+      let tts!: (r: { kind: 'ok'; blob: Blob }) => void;
+      vi.mocked(fetchTts).mockReturnValueOnce(new Promise((resolve) => (tts = resolve)));
+      await answerDuringGreeting();
+      act(() => audio().onended?.());
+      await settle();
+      expect(FakeAudio.played).toEqual([GREETING_URL]); // nothing to play yet
+      tts({ kind: 'ok', blob: new Blob([new Uint8Array([1])]) });
+      await settle();
+      expect(FakeAudio.played).toEqual([GREETING_URL, 'blob:fake']);
+    });
+
+    it('a typed message stops the greeting, drops the queued reply, and the newest reply is the one spoken', async () => {
+      const user = userEvent.setup();
+      await answerDuringGreeting('Here is the answer.');
+      vi.mocked(postChat).mockResolvedValue(okChat('The newest reply.'));
+      await user.type(screen.getByRole('textbox', { name: 'Message' }), 'hello{Enter}');
+      await settle();
+      expect(audio().pause).toHaveBeenCalled(); // the greeting stopped
+      expect(fetchTts).toHaveBeenCalledTimes(2);
+      expect(vi.mocked(fetchTts).mock.calls[1][0]).toBe('The newest reply.');
+      // Only the newest reply was played (the silent clip is the iOS unlock inside the send tap).
+      expect(FakeAudio.played.filter((src) => !src.startsWith('data:'))).toEqual([GREETING_URL, 'blob:fake']);
+      expect(spoken('concierge_voice_reply_spoken')).toHaveLength(1);
+    });
+
+    it('turning sound off during the greeting clears the queue', async () => {
+      const user = userEvent.setup();
+      await answerDuringGreeting();
+      await user.click(screen.getByRole('button', { name: vc.VOICE_SPEAK_TOGGLE }));
+      await settle();
+      expect(audio().pause).toHaveBeenCalled();
+      expect(FakeAudio.played).toEqual([GREETING_URL]);
+      expect(spoken('concierge_voice_reply_spoken')).toHaveLength(0);
+    });
+
+    it('closing the panel clears the queue', async () => {
+      const user = userEvent.setup();
+      await answerDuringGreeting();
+      await user.keyboard('{Escape}');
+      await settle();
+      act(() => audio().onended?.());
+      await settle();
+      expect(FakeAudio.played).toEqual([GREETING_URL]);
+      expect(spoken('concierge_voice_reply_spoken')).toHaveLength(0);
+    });
+
+    it('a newer reply replaces a queued one: only one is ever waiting', async () => {
+      await answerDuringGreeting('First answer.');
+      vi.mocked(postChat).mockResolvedValueOnce(okChat('Second answer.'));
+      askWhileOpening();
+      await settle();
+      expect(fetchTts).toHaveBeenCalledTimes(2);
+      expect(audio().pause).not.toHaveBeenCalled();
+      act(() => audio().onended?.());
+      await settle();
+      expect(FakeAudio.played).toEqual([GREETING_URL, 'blob:fake']); // one reply, not two
+      expect(spoken('concierge_voice_reply_spoken')).toHaveLength(1);
+    });
   });
 
   it('but a reply that is being read is stopped by it, like any new input', async () => {

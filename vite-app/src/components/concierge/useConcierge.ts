@@ -413,6 +413,7 @@ function createController() {
       return;
     }
 
+    voice.unlockForSend(); // still inside the visitor's tap, before anything is awaited
     stopReadingForInput(opts); // any new input stops the reading
     const userMessage = makeMessage('user', text);
 

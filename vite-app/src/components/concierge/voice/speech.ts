@@ -86,8 +86,74 @@ function playBlob(run: ReturnType<typeof newRun>, blob: Blob, hooks: SpeakHooks)
   playSource(run, made, hooks, () => URL.revokeObjectURL(made), () => hooks.onBlocked?.(blob));
 }
 
+/** The one reply waiting for the greeting to finish (its audio is fetched meanwhile). */
+type Queued = {
+  cancelled: boolean;
+  abort: AbortController;
+  blob: Blob | null;
+  greetingDone: boolean;
+};
+let queued: Queued | null = null;
+
+/** Forget the reply waiting behind the greeting: its request is cancelled and it will never play. */
+export function cancelQueued(): void {
+  const entry = queued;
+  queued = null;
+  if (!entry) return;
+  entry.cancelled = true;
+  entry.abort.abort();
+}
+
+/**
+ * A reply that arrived while the recorded greeting is still playing. The greeting is not cut off:
+ * the reply's audio is fetched now, so it is ready, and played as soon as the greeting ends (or at once
+ * if the greeting fails). One slot: a newer reply replaces a waiting one, and anything that stops
+ * speech on purpose (cancelQueued, which stopSpeaking callers use) drops it. Returns false when the
+ * greeting is not what is playing, and the caller should speak() as usual.
+ */
+export function speakAfterGreeting(text: string, hooks: SpeakHooks = {}): boolean {
+  const run = activeRun();
+  if (!run || run.ended || run.mode !== 'greeting') return false;
+  cancelQueued();
+  const clean = text.replace(/\s+/g, ' ').trim();
+  const { fetchAudio } = hooks;
+  if (!clean || !fetchAudio || clean.length > SERVER_MAX_CHARS) return true; // nothing to say: stays text
+  const entry: Queued = { cancelled: false, abort: new AbortController(), blob: null, greetingDone: false };
+  queued = entry;
+  const finish = () => {
+    if (queued === entry) queued = null;
+  };
+  const tryPlay = () => {
+    if (entry.cancelled || !entry.blob || !entry.greetingDone) return;
+    finish();
+    if (hooks.canPlay && !hooks.canPlay()) return;
+    playBlob(newRun(hooks), entry.blob, hooks);
+  };
+  run.onFinish = () => {
+    entry.greetingDone = true;
+    tryPlay();
+  };
+  fetchAudio(clean, entry.abort.signal).then(
+    (result) => {
+      if (entry.cancelled) return;
+      if (result.kind === 'ok') {
+        entry.blob = result.blob;
+        tryPlay();
+      } else {
+        if (result.kind === 'limit') hooks.onLimit?.(result.bonusAvailable, result.bonus);
+        finish();
+      }
+    },
+    () => {
+      if (!entry.cancelled) finish();
+    }
+  );
+  return true;
+}
+
 /** Fetch the audio for a reply and play it. Anything that goes wrong leaves the reply as text. */
 export function speak(text: string, hooks: SpeakHooks = {}): void {
+  cancelQueued();
   stopSpeaking();
   const clean = text.replace(/\s+/g, ' ').trim();
   if (!clean) {
@@ -127,6 +193,7 @@ export function speak(text: string, hooks: SpeakHooks = {}): void {
  * element) stays unlocked for the replies that follow.
  */
 export function speakBlob(blob: Blob, hooks: SpeakHooks = {}): void {
+  cancelQueued();
   stopSpeaking();
   playBlob(newRun(hooks), blob, hooks);
 }

@@ -40,7 +40,6 @@ export type ChatResult =
   | { kind: 'too_long'; reply?: string }
   | { kind: 'error'; reason: 'network' | 'timeout' | 'bad_request' | 'server' };
 
-
 /**
  * `limit`: the visitor's daily allowance of spoken replies is used up (429 tts_limit);
  * `bonusAvailable` says whether sharing contact details would add more, and `bonus`, when the

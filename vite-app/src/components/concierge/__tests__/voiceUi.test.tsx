@@ -241,16 +241,16 @@ describe('ChatPanel voice', () => {
     expect(mic()).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Hold to talk|Click to talk/ })).not.toBeInTheDocument();
     const toggle = speakerToggle()!;
-    expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    expect(toggle).toHaveAttribute('aria-pressed', 'true'); // sound is on by default
     expect(toggle.closest('.thg-cc-header')).not.toBeNull();
     // Only the Send button is beside the text box.
     expect(screen.getByRole('textbox', { name: 'Message' }).parentElement!.querySelectorAll('button')).toHaveLength(1);
   });
 
-  it('a typed question gets a reply that is read aloud once sound is on, with no recording events', async () => {
+  it('a typed question gets a reply that is read aloud by default, with no recording events', async () => {
     const user = userEvent.setup();
     await renderPanel();
-    await user.click(speakerToggle()!);
+    expect(unlockMock).not.toHaveBeenCalled();
     await user.type(screen.getByRole('textbox', { name: 'Message' }), 'what do you do{Enter}');
     await settle();
     expect(postChatMock).toHaveBeenCalledTimes(1);
@@ -265,6 +265,7 @@ describe('ChatPanel voice', () => {
 
   it('the speaker toggle flips, and is remembered when the panel is built again in the same tab', async () => {
     const user = userEvent.setup();
+    window.sessionStorage.setItem(VOICE_PREFS_KEY, JSON.stringify({ speak: false, disclosed: false }));
     const first = await renderPanel();
     await user.click(speakerToggle()!);
     expect(speakerToggle()).toHaveAttribute('aria-pressed', 'true');
@@ -449,6 +450,7 @@ describe('ChatPanel voice: the speaker toggle', () => {
   it('shows "Sound off" / "Sound on" as text on a touch screen, while the name stays fixed and aria-pressed carries the state', async () => {
     const user = userEvent.setup();
     stubMatchMedia(['pointer: coarse']);
+    window.sessionStorage.setItem(VOICE_PREFS_KEY, JSON.stringify({ speak: false, disclosed: false }));
     await renderPanel();
     const toggle = screen.getByRole('button', { name: 'Spoken replies' });
     expect(toggle).toHaveTextContent('Sound off');
@@ -467,6 +469,7 @@ describe('ChatPanel voice: the speaker toggle', () => {
 
   it('has the same fixed name with a pointer, in both states', async () => {
     const user = userEvent.setup();
+    window.sessionStorage.setItem(VOICE_PREFS_KEY, JSON.stringify({ speak: false, disclosed: false }));
     await renderPanel();
     const toggle = screen.getByRole('button', { name: 'Spoken replies' });
     await user.click(toggle);

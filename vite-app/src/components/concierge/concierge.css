@@ -358,7 +358,6 @@
   animation: thg-cc-eq 1.4s ease-in-out infinite;
 }
 
-
 .thg-cc-eq i:nth-child(1) {
   animation-delay: 0s;
   animation-duration: 1.1s;
@@ -683,7 +682,7 @@
     transition: none !important;
   }
 
-  /* The equalizer stands still: static bars, no pulsing, . */
+  /* The equalizer stands still: static bars, no pulsing. */
   .thg-cc-eq i {
     animation: none !important;
     transition: none !important;

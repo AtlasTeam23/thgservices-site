@@ -51,7 +51,6 @@ export default function Composer({
   const ref = textareaRef ?? ownRef;
   const labelId = useId();
   const messageId = useId();
-  const noteId = useId();
 
   const trimmed = value.trim();
   const length = trimmed.length;
@@ -148,7 +147,7 @@ export default function Composer({
         )}
       </div>
       {readAloudNote && (
-        <p id={noteId} className="thg-cc-voice-note">
+        <p className="thg-cc-voice-note">
           {VOICE_DISCLOSURE}
         </p>
       )}

@@ -130,20 +130,46 @@ describe('voice availability', () => {
 });
 
 describe('voice: reading replies aloud', () => {
-  it('is off until the visitor (or the greeting) turns it on, then remembered for the tab', async () => {
+  it('is on by default when there is a server voice, and the first typed send unlocks speech in the tap', async () => {
     const { result } = await openWithVoice();
-    expect(result.current.speakEnabled).toBe(false);
+    expect(result.current.speakEnabled).toBe(true);
+    expect(result.current.speakAvailable).toBe(true);
     expect(result.current.voiceDisclosed).toBe(false);
     expect(window.sessionStorage.getItem(VOICE_PREFS_KEY)).toBeNull();
 
-    act(() => result.current.setSpeakEnabled(true));
-    expect(result.current.speakEnabled).toBe(true);
+    unlockMock.mockClear();
+    await act(async () => {
+      await result.current.send('hello');
+    });
+    expect(unlockMock).toHaveBeenCalledTimes(1); // inside the send, before the reply: no greeting played
+    expect(speakMock).toHaveBeenCalledTimes(1); // and the reply is read
+  });
 
-    // A fresh controller in the same tab (panel remounted, page reloaded): reading aloud is remembered,
-    // the read-aloud line is not shown a second time.
+  it('an explicit "sound off" is respected: not on by default, nothing unlocked or spoken, and it is remembered', async () => {
+    window.sessionStorage.setItem(VOICE_PREFS_KEY, JSON.stringify({ speak: false, disclosed: true }));
+    const { result } = await openWithVoice();
+    expect(result.current.speakEnabled).toBe(false);
+    unlockMock.mockClear();
+    await act(async () => {
+      await result.current.send('hello');
+    });
+    expect(unlockMock).not.toHaveBeenCalled();
+    expect(speakMock).not.toHaveBeenCalled();
+
+    act(() => result.current.setSpeakEnabled(true));
     const again = await openWithVoice();
     expect(again.result.current.speakEnabled).toBe(true);
-    expect(again.result.current.voiceDisclosed).toBe(false);
+  });
+
+  it('the default does nothing without a server voice: no unlock, no audio request', async () => {
+    const { result } = await openWithVoice('none');
+    expect(result.current.speakAvailable).toBe(false);
+    unlockMock.mockClear();
+    await act(async () => {
+      await result.current.send('hello');
+    });
+    expect(unlockMock).not.toHaveBeenCalled();
+    expect(fetchTtsMock).not.toHaveBeenCalled();
   });
 
   it('the read-aloud line goes when the panel closes (stopAll)', async () => {
@@ -221,6 +247,7 @@ describe('voice: reading replies aloud', () => {
   });
 
   it('does not speak when reading aloud is off, or the server voice is off for this visit, or voice is off altogether', async () => {
+    window.sessionStorage.setItem(VOICE_PREFS_KEY, JSON.stringify({ speak: false, disclosed: true }));
     const { result } = await openWithVoice();
     await act(async () => {
       await result.current.send('hello');
