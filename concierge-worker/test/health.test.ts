@@ -51,6 +51,18 @@ describe('GET /health voice block', () => {
     expect(await voice({ AI: undefined })).toEqual({ stt: false, tts: 'browser' });
   });
 
+  it('with the shipped settings (config.test.ts pins them), voice input is off but spoken replies are on', async () => {
+    expect(
+      await voice({
+        AI: aiStub().ai,
+        VOICE_DAILY_STT_SECONDS: '0',
+        VOICE_TTS: 'elevenlabs',
+        VOICE_ELEVEN_VOICE_ID: 'XrExE9yKIg1WjnnlVkGX',
+        ELEVENLABS_API_KEY: 'k-placeholder',
+      }),
+    ).toEqual({ stt: false, tts: 'server', provider: 'elevenlabs', configured: true, ttsModel: 'eleven_flash_v2_5' });
+  });
+
   it.each(['0', '-3', 'abc'])('turns stt off when the daily budget is %j', async (value) => {
     // 0 is an explicit off switch; junk falls back to the default, which is on.
     const stt = value === '0';

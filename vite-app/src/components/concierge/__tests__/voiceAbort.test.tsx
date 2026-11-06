@@ -4,23 +4,17 @@ import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ChatResult } from '../api';
 
-// Everything real except the network and the microphone: the panel, the controller and the
+// Everything real except the network: the panel, the controller and the
 // speech module, to prove that a /tts request that is no longer wanted is actually cancelled.
 vi.mock('../api', () => ({
   postChat: vi.fn(),
   postLead: vi.fn(),
-  postStt: vi.fn(),
   fetchTts: vi.fn(),
   fetchVoiceCaps: vi.fn(),
 }));
 vi.mock('../turnstile', () => ({ getToken: vi.fn() }));
 vi.mock('../../../lib/track', () => ({ track: vi.fn() }));
 vi.mock('../../../hooks/useLenis', () => ({ getLenis: vi.fn() }));
-vi.mock('../voice/recorder', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../voice/recorder')>()),
-  isRecordingSupported: vi.fn(() => true),
-  startRecording: vi.fn(),
-}));
 
 import ChatPanel, { type OpenRequest } from '../ChatPanel';
 import { fetchTts, fetchVoiceCaps, postChat } from '../api';

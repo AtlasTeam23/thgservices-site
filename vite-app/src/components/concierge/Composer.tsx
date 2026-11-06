@@ -8,30 +8,8 @@ import {
   type RefObject,
 } from 'react';
 import { TOO_LONG } from './copy';
-import MicButton from './MicButton';
-import type { VoiceState } from './useConcierge';
 import { LIMITS } from './validation';
-import {
-  VOICE_DISCLOSURE,
-  VOICE_ENDING_SOON,
-  VOICE_LISTENING,
-  VOICE_SHARE_DETAILS,
-  VOICE_TRANSCRIBING,
-  voiceSpokenLimitBonus,
-} from './voice/copy';
-
-/** Push-to-talk, as the composer needs it. Leave out (or state 'off') for a text-only composer. */
-export type ComposerVoice = {
-  state: VoiceState;
-  ending: boolean;
-  /** Show the microphone line under the composer. */
-  disclosed: boolean;
-  /** A touch screen: press and hold rather than click. */
-  touch: boolean;
-  onStart: (opts: { hold: boolean }) => void;
-  onStop: () => void;
-  onUnlock: () => void;
-};
+import { VOICE_DISCLOSURE, VOICE_SHARE_DETAILS, voiceSpokenLimitBonus } from './voice/copy';
 
 type Props = {
   onSend: (text: string) => void;
@@ -42,10 +20,11 @@ type Props = {
   /** The chat has ended. */
   disabled: boolean;
   error: string | null;
-  /** A voice message (microphone blocked, nothing heard). Shown like an error, but the text box is not "invalid". */
+  /** A voice message (sound is off, read-aloud is done for the day). Shown like an error, but the text box is not "invalid". */
   notice?: string | null;
   textareaRef?: RefObject<HTMLTextAreaElement | null>;
-  voice?: ComposerVoice;
+  /** Show the line saying replies are read aloud. */
+  readAloudNote?: boolean;
   /**
    * Read-aloud is paused and sharing details would add more: the notice and a chip that opens
    * the lead form. It stays up (unlike a notice) until the details are shared.
@@ -64,7 +43,7 @@ export default function Composer({
   error,
   notice,
   textareaRef,
-  voice,
+  readAloudNote,
   readAloudBonus,
 }: Props) {
   const [value, setValue] = useState('');
@@ -72,7 +51,6 @@ export default function Composer({
   const ref = textareaRef ?? ownRef;
   const labelId = useId();
   const messageId = useId();
-  const noteId = useId();
 
   const trimmed = value.trim();
   const length = trimmed.length;
@@ -80,17 +58,6 @@ export default function Composer({
   const canSend = !disabled && !busy && length > 0 && !tooLong;
   const problem = error ?? (tooLong ? TOO_LONG : null);
   const message = problem ?? notice ?? null;
-
-  const micOn = voice !== undefined && voice.state !== 'off';
-  // What the microphone is doing, in words, for screen readers and for sighted visitors alike.
-  const voiceStatus =
-    voice?.state === 'recording'
-      ? voice.ending
-        ? VOICE_ENDING_SOON
-        : VOICE_LISTENING
-      : voice?.state === 'transcribing'
-        ? VOICE_TRANSCRIBING
-        : '';
 
   // Grow with the text, up to four lines.
   useEffect(() => {
@@ -142,19 +109,6 @@ export default function Composer({
           }}
           onKeyDown={handleKeyDown}
         />
-        {micOn && (
-          <MicButton
-            state={voice.state}
-            ending={voice.ending}
-            touch={voice.touch}
-            busy={busy}
-            disabled={disabled}
-            describedBy={voice.disclosed ? noteId : undefined}
-            onStart={voice.onStart}
-            onStop={voice.onStop}
-            onUnlock={voice.onUnlock}
-          />
-        )}
         <button
           type="submit"
           className="thg-cc-send"
@@ -173,11 +127,6 @@ export default function Composer({
         <span id={messageId} className="thg-cc-error" role="alert">
           {message}
         </span>
-        {micOn && (
-          <span className="thg-cc-voice-status" role="status">
-            {voiceStatus}
-          </span>
-        )}
         {length > 0 && (
           <span className={`thg-cc-counter${tooLong ? ' thg-cc-counter--over' : ''}`}>
             {`${formatCount(length)} / ${formatCount(LIMITS.messageMax)}`}
@@ -197,8 +146,8 @@ export default function Composer({
           </button>
         )}
       </div>
-      {micOn && voice.disclosed && (
-        <p id={noteId} className="thg-cc-voice-note">
+      {readAloudNote && (
+        <p className="thg-cc-voice-note">
           {VOICE_DISCLOSURE}
         </p>
       )}

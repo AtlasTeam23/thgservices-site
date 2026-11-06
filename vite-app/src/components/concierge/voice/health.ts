@@ -6,15 +6,15 @@
 // so there is one implementation of the request and of the allow-list that reads the answer.
 
 import { apiBase } from '../config';
-import { isRecordingSupported } from './support';
 
-// Only decides whether to show the mic; never worth making the panel wait.
+// Only decides whether to read replies aloud; never worth making the panel wait.
 export const HEALTH_TIMEOUT_MS = 5000;
 
 /**
- * What reads replies aloud (GET /health), given that the Worker offers speech to text at all:
- * audio fetched from the Worker's /tts (whichever provider it uses; the widget does not care
- * which), or nothing (text only). There is no browser voice.
+ * What reads replies aloud (GET /health): audio fetched from the Worker's /tts (whichever provider
+ * it uses; the widget does not care which), or nothing (text only). There is no browser voice.
+ * Whether the Worker also offers speech to text (`voice.stt`) is none of the widget's business:
+ * there is no voice input.
  */
 export type VoiceCaps = { tts: 'server' | 'none' };
 
@@ -23,13 +23,13 @@ const asBody = (v: unknown): Record<string, unknown> | null =>
 
 /**
  * What the Worker said about voice, or `undefined` when it said nothing usable. Three outcomes:
- *  - the voice caps: it offers speech to text, and `tts` says whether replies can be read aloud;
- *  - null: it ANSWERED, and the answer is no voice (a 2xx whose voice block is absent or has `stt` off, or a 4xx).
+ *  - the voice caps: `tts` says whether replies can be read aloud;
+ *  - null: it ANSWERED, and the answer is no voice (a 2xx with no voice block, or a 4xx).
  *    Asking again would get the same answer, so nobody should;
  *  - undefined: a failure (unreachable, a timeout, a 5xx, or a 2xx that is not JSON), which is worth asking about
  *    again later.
  * One more try after a network failure, a timeout or a 5xx, since a single dropped request should not cost
- * the visitor the mic for the whole visit. Each try is limited to HEALTH_TIMEOUT_MS, body included.
+ * the visitor the spoken replies for the whole visit. Each try is limited to HEALTH_TIMEOUT_MS, body included.
  */
 async function askHealth(): Promise<VoiceCaps | null | undefined> {
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -46,7 +46,7 @@ async function askHealth(): Promise<VoiceCaps | null | undefined> {
         if (controller.signal.aborted) continue; // it was the timeout that cut the body short
         return undefined; // answered, but not with JSON: not a Worker's answer, and not worth a second try now
       }
-      if (!voice || voice.stt !== true) return null;
+      if (!voice) return null;
       // An allow-list: the server voice is on only for exactly "server", and not when the Worker
       // says it is not configured. Anything else ("browser", "none", an older or unknown value,
       // nothing at all) is text only.
@@ -61,8 +61,8 @@ async function askHealth(): Promise<VoiceCaps | null | undefined> {
 }
 
 /**
- * Whether the Worker offers speech to text, and whether replies are read aloud. Null for anything else
- * (no voice block, `stt: false`, a 4xx, unreachable): the widget then shows no voice controls at all.
+ * Whether replies are read aloud. Null for anything else (no voice block, a 4xx, unreachable): the
+ * widget then shows no voice controls at all.
  */
 export async function fetchVoiceCaps(): Promise<VoiceCaps | null> {
   return (await askHealth()) ?? null;
@@ -84,13 +84,12 @@ export const voiceHealth = (): 'unknown' | 'server' | 'none' =>
 
 /**
  * Ask the Worker once whether it has a server voice, so a click can read the answer. The request has its own
- * timeout (5 s per try, one retry); until it answers the greeting simply does not play. Does nothing in a
- * browser that cannot record (no mic, no spoken replies: nothing to ask about), when the Worker has already
+ * timeout (5 s per try, one retry); until it answers the greeting simply does not play. Does nothing when the Worker has already
  * answered (including "no voice", which no click should ask about again), or while a request is in flight.
  * A request that failed leaves the answer unknown, so the next click asks again.
  */
 export function prefetchVoiceCaps(): void {
-  if (inFlight || answer !== undefined || !isRecordingSupported()) return;
+  if (inFlight || answer !== undefined) return;
   const request = (inFlight = (async () => {
     try {
       answer = await askHealth();

@@ -1,25 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useRef } from 'react';
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { ChatResult, SttResult } from '../api';
-import type { Recording, RecordingResult } from '../voice/recorder';
+import type { ChatResult } from '../api';
 
 vi.mock('../api', () => ({
   postChat: vi.fn(),
   postLead: vi.fn(),
-  postStt: vi.fn(),
   fetchTts: vi.fn(),
   fetchVoiceCaps: vi.fn(),
 }));
 vi.mock('../turnstile', () => ({ getToken: vi.fn() }));
 vi.mock('../../../lib/track', () => ({ track: vi.fn() }));
 vi.mock('../../../hooks/useLenis', () => ({ getLenis: vi.fn() }));
-vi.mock('../voice/recorder', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../voice/recorder')>()),
-  isRecordingSupported: vi.fn(),
-  startRecording: vi.fn(),
-}));
 vi.mock('../voice/speech', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../voice/speech')>()),
   speak: vi.fn(),
@@ -31,25 +24,20 @@ vi.mock('../voice/speech', async (importOriginal) => ({
 import ChatPanel, { type OpenRequest } from '../ChatPanel';
 import Composer from '../Composer';
 import Equalizer from '../Equalizer';
-import MicButton from '../MicButton';
-import { fetchVoiceCaps, postChat, postLead, postStt } from '../api';
+import { fetchVoiceCaps, postChat, postLead } from '../api';
 import { getToken } from '../turnstile';
 import { track } from '../../../lib/track';
-import { isRecordingSupported, startRecording, VoiceError } from '../voice/recorder';
 import { speak, speakBlob, stopSpeaking, unlockSpeech } from '../voice/speech';
 import { EMPTY_LEAD_DRAFT } from '../leadDraft';
 import { VOICE_PREFS_KEY } from '../voice/prefs';
 import * as vc from '../voice/copy';
 import * as copy from '../copy';
 
-const supportedMock = vi.mocked(isRecordingSupported);
-const startRecordingMock = vi.mocked(startRecording);
 const speakMock = vi.mocked(speak);
 const stopSpeakingMock = vi.mocked(stopSpeaking);
 const unlockMock = vi.mocked(unlockSpeech);
 const speakBlobMock = vi.mocked(speakBlob);
 const postLeadMock = vi.mocked(postLead);
-const postSttMock = vi.mocked(postStt);
 const postChatMock = vi.mocked(postChat);
 const trackMock = vi.mocked(track);
 
@@ -76,21 +64,6 @@ const okChat = (reply: string): ChatResult => ({
     lead: { ...EMPTY_LEAD_DRAFT },
   },
 });
-const okStt = (text: string): SttResult => ({ kind: 'ok', text, durationMs: 3000 });
-
-function fakeRecording(durationMs = 3000, mime = 'audio/webm;codecs=opus') {
-  let resolve!: (value: RecordingResult | null) => void;
-  const result = new Promise<RecordingResult | null>((r) => {
-    resolve = r;
-  });
-  const blob = new Blob([new Uint8Array(4)], { type: mime });
-  const recording: Recording = {
-    result,
-    stop: vi.fn(() => resolve({ blob, mime, durationMs })),
-    cancel: vi.fn(() => resolve(null)),
-  };
-  return { recording, blob, finish: resolve };
-}
 
 const settle = async () => {
   for (let i = 0; i < 4; i += 1) {
@@ -105,10 +78,7 @@ beforeEach(() => {
   window.sessionStorage.clear();
   vi.mocked(getToken).mockResolvedValue(null);
   postChatMock.mockResolvedValue(okChat('We help local businesses save time.'));
-  postSttMock.mockResolvedValue(okStt('what do you do'));
   vi.mocked(fetchVoiceCaps).mockResolvedValue({ tts: 'server' });
-  supportedMock.mockReturnValue(false);
-  startRecordingMock.mockReset();
 });
 
 afterEach(() => {
@@ -117,212 +87,14 @@ afterEach(() => {
   document.documentElement.style.overflow = '';
 });
 
-// ---- MicButton ---------------------------------------------------------------
-
-describe('MicButton', () => {
-  const setup = (props: Partial<Parameters<typeof MicButton>[0]> = {}) => {
-    const onStart = vi.fn();
-    const onStop = vi.fn();
-    const onUnlock = vi.fn();
-    const utils = render(
-      <MicButton
-        state="idle"
-        ending={false}
-        touch={false}
-        busy={false}
-        disabled={false}
-        onStart={onStart}
-        onStop={onStop}
-        onUnlock={onUnlock}
-        {...props}
-      />
-    );
-    const rerender = (next: Partial<Parameters<typeof MicButton>[0]>) =>
-      utils.rerender(
-        <MicButton
-          state="idle"
-          ending={false}
-          touch={false}
-          busy={false}
-          disabled={false}
-          onStart={onStart}
-          onStop={onStop}
-          onUnlock={onUnlock}
-          {...props}
-          {...next}
-        />
-      );
-    return { onStart, onStop, onUnlock, rerender, button: screen.getByRole('button') };
-  };
-
-  it('is a labelled toggle button: "Click to talk" with a pointer, "Hold to talk" on touch', () => {
-    const desktop = setup();
-    expect(desktop.button).toHaveAccessibleName(vc.VOICE_BUTTON_DESKTOP);
-    expect(desktop.button).toHaveAttribute('type', 'button');
-    expect(desktop.button).toHaveAttribute('aria-pressed', 'false');
-  });
-
-  it('is labelled "Hold to talk" on a touch screen', () => {
-    const { button } = setup({ touch: true });
-    expect(button).toHaveAccessibleName(vc.VOICE_BUTTON);
-  });
-
-  it('a click starts, a second click stops (aria-pressed follows)', async () => {
-    const user = userEvent.setup();
-    const { onStart, onStop, rerender, button } = setup();
-    await user.click(button);
-    expect(onStart).toHaveBeenCalledWith({ hold: false });
-
-    rerender({ state: 'recording' });
-    expect(button).toHaveAttribute('aria-pressed', 'true');
-    expect(button).toHaveAccessibleName(vc.VOICE_BUTTON_DESKTOP); // the name stays; pressed says the rest
-    expect(button).toHaveAttribute('title', vc.VOICE_STOP);
-    await user.click(button);
-    expect(onStop).toHaveBeenCalledTimes(1);
-    expect(onStart).toHaveBeenCalledTimes(1);
-  });
-
-  it('the Space bar and Enter toggle it when focused', async () => {
-    const user = userEvent.setup();
-    const { onStart, button } = setup();
-    button.focus();
-    await user.keyboard(' ');
-    expect(onStart).toHaveBeenCalledTimes(1);
-    await user.keyboard('{Enter}');
-    expect(onStart).toHaveBeenCalledTimes(2);
-  });
-
-  it('touch: pressing starts, letting go stops, and the click that follows does not toggle again', () => {
-    const { onStart, onStop, button } = setup({ touch: true });
-    fireEvent.pointerDown(button, { pointerType: 'touch', pointerId: 1, button: 0 });
-    expect(onStart).toHaveBeenCalledWith({ hold: true });
-    fireEvent.pointerUp(button, { pointerType: 'touch', pointerId: 1 });
-    expect(onStop).toHaveBeenCalledTimes(1);
-    fireEvent.click(button, { detail: 1 }); // the synthesized click after a touch
-    expect(onStart).toHaveBeenCalledTimes(1);
-    expect(onStop).toHaveBeenCalledTimes(1);
-  });
-
-  it('touch: a cancelled press (the system took the touch) also stops', () => {
-    const { onStart, onStop, button } = setup({ touch: true });
-    fireEvent.pointerDown(button, { pointerType: 'touch', pointerId: 1, button: 0 });
-    fireEvent.pointerCancel(button, { pointerType: 'touch', pointerId: 1 });
-    expect(onStart).toHaveBeenCalledTimes(1);
-    expect(onStop).toHaveBeenCalledTimes(1);
-  });
-
-  it('a keyboard or screen-reader activation still toggles right after a touch', () => {
-    const { onStart, button } = setup({ touch: true });
-    fireEvent.pointerDown(button, { pointerType: 'touch', pointerId: 1, button: 0 });
-    fireEvent.pointerUp(button, { pointerType: 'touch', pointerId: 1 });
-    fireEvent.click(button, { detail: 0 });
-    expect(onStart).toHaveBeenCalledTimes(2);
-  });
-
-  it('unlocks speech inside every gesture: a touch press, its release (iOS counts the release, not the press), and a click', async () => {
-    const user = userEvent.setup();
-    const touch = setup({ touch: true });
-    fireEvent.pointerDown(touch.button, { pointerType: 'touch', pointerId: 1, button: 0 });
-    expect(touch.onUnlock).toHaveBeenCalledTimes(1);
-    fireEvent.pointerUp(touch.button, { pointerType: 'touch', pointerId: 1 });
-    expect(touch.onUnlock).toHaveBeenCalledTimes(2);
-    document.body.innerHTML = '';
-
-    const mouse = setup();
-    await user.click(mouse.button);
-    expect(mouse.onUnlock).toHaveBeenCalledTimes(1);
-    document.body.innerHTML = '';
-
-    // A press that is ignored (a reply is pending) is not a gesture worth unlocking for.
-    const busy = setup({ busy: true });
-    fireEvent.pointerDown(busy.button, { pointerType: 'touch', pointerId: 1, button: 0 });
-    await user.click(busy.button);
-    expect(busy.onUnlock).not.toHaveBeenCalled();
-  });
-
-  it('a mouse press does not start anything until the click', () => {
-    const { onStart, button } = setup();
-    fireEvent.pointerDown(button, { pointerType: 'mouse', pointerId: 1, button: 0 });
-    expect(onStart).not.toHaveBeenCalled();
-  });
-
-  it('suppresses the long-press context menu', () => {
-    const { button } = setup({ touch: true });
-    expect(fireEvent.contextMenu(button)).toBe(false);
-  });
-
-  it('while a reply is pending or a transcript is coming it ignores presses but stays focusable', async () => {
-    const user = userEvent.setup();
-    for (const props of [{ busy: true }, { state: 'transcribing' as const }]) {
-      const { onStart, onStop, button } = setup(props);
-      expect(button).toHaveAttribute('aria-disabled', 'true');
-      expect(button).not.toBeDisabled();
-      await user.click(button);
-      fireEvent.pointerDown(button, { pointerType: 'touch', pointerId: 1, button: 0 });
-      expect(onStart).not.toHaveBeenCalled();
-      expect(onStop).not.toHaveBeenCalled();
-      document.body.innerHTML = '';
-    }
-  });
-
-  it('is disabled once the chat has ended', () => {
-    const { button } = setup({ disabled: true });
-    expect(button).toBeDisabled();
-  });
-
-  it('shows a countdown ring and a ticking number in the last seconds, hidden from screen readers', () => {
-    vi.useFakeTimers();
-    const { button, rerender } = setup({ state: 'recording' });
-    expect(button.querySelector('.thg-cc-ring')).toBeNull();
-    rerender({ state: 'recording', ending: true });
-    const ring = button.querySelector('.thg-cc-ring');
-    expect(ring).not.toBeNull();
-    expect(ring).toHaveAttribute('aria-hidden', 'true');
-    const count = button.querySelector('.thg-cc-count') as HTMLElement;
-    expect(count).toHaveAttribute('aria-hidden', 'true');
-    expect(count.textContent).toBe('5');
-    act(() => {
-      vi.advanceTimersByTime(1000);
-    });
-    expect(count.textContent).toBe('4');
-    act(() => {
-      vi.advanceTimersByTime(10_000);
-    });
-    expect(count.textContent).toBe('1');
-  });
-});
-
-// ---- Equalizer ---------------------------------------------------------------
-
 describe('Equalizer', () => {
-  it('listening: decorative bars whose height follows the level without re-rendering', () => {
-    let listener: ((level: number) => void) | null = null;
-    const unsubscribe = vi.fn();
-    const subscribe = vi.fn((l: (level: number) => void) => {
-      listener = l;
-      return unsubscribe;
-    });
-    const { container, unmount } = render(
-      <Equalizer mode="listening" subscribeLevel={subscribe} />
-    );
-    const eq = container.querySelector('.thg-cc-eq') as HTMLElement;
-    expect(eq).toHaveAttribute('aria-hidden', 'true');
-    expect(eq).toHaveAttribute('data-mode', 'listening');
-    expect(eq.querySelectorAll('i')).toHaveLength(5);
-    expect(screen.queryByRole('button')).not.toBeInTheDocument();
-
-    act(() => listener!(0.5));
-    expect(eq.style.getPropertyValue('--thg-cc-level')).toBe('0.5');
-    unmount();
-    expect(unsubscribe).toHaveBeenCalled();
-  });
-
-  it('speaking: a button that stops the reading', async () => {
+  it('is a button that stops the reading', async () => {
     const onStop = vi.fn();
     const user = userEvent.setup();
-    render(<Equalizer mode="speaking" subscribeLevel={() => () => {}} onStop={onStop} />);
+    render(<Equalizer onStop={onStop} />);
     const button = screen.getByRole('button', { name: vc.VOICE_STOP_SPEAKING });
     expect(button).toHaveAttribute('data-mode', 'speaking');
+    expect(button.querySelectorAll('i')).toHaveLength(5);
     await user.click(button);
     expect(onStop).toHaveBeenCalledTimes(1);
     button.focus();
@@ -330,98 +102,47 @@ describe('Equalizer', () => {
     expect(onStop).toHaveBeenCalledTimes(2);
   });
 
-  it('transcribing: still bars', () => {
-    const { container } = render(<Equalizer mode="transcribing" subscribeLevel={() => () => {}} />);
-    expect(container.querySelector('.thg-cc-eq')).toHaveAttribute('data-mode', 'working');
-  });
-
-  it('reduced motion: marked as such and never listens to the level', () => {
+  it('reduced motion: marked as such', () => {
     stubMatchMedia(['prefers-reduced-motion']);
-    const subscribe = vi.fn(() => () => {});
-    const { container } = render(<Equalizer mode="listening" subscribeLevel={subscribe} />);
+    const { container } = render(<Equalizer onStop={() => {}} />);
     expect(container.querySelector('.thg-cc-eq')).toHaveAttribute('data-motion', 'reduced');
-    expect(subscribe).not.toHaveBeenCalled();
   });
 
   it('full motion is the default', () => {
-    const { container } = render(<Equalizer mode="speaking" subscribeLevel={() => () => {}} />);
+    const { container } = render(<Equalizer onStop={() => {}} />);
     expect(container.querySelector('.thg-cc-eq')).not.toHaveAttribute('data-motion');
   });
 });
 
 // ---- Composer ----------------------------------------------------------------
 
-describe('Composer with voice', () => {
-  const voice = (over: Partial<NonNullable<Parameters<typeof Composer>[0]['voice']>> = {}) => ({
-    state: 'idle' as const,
-    ending: false,
-    disclosed: false,
-    touch: false,
-    onStart: vi.fn(),
-    onStop: vi.fn(),
-    onUnlock: vi.fn(),
-    ...over,
-  });
-  const setup = (v: ReturnType<typeof voice> | undefined, extra: Partial<Parameters<typeof Composer>[0]> = {}) =>
-    render(
-      <Composer onSend={vi.fn()} busy={false} disabled={false} error={null} voice={v} {...extra} />
-    );
+describe('Composer with spoken replies', () => {
+  const setup = (extra: Partial<Parameters<typeof Composer>[0]> = {}) =>
+    render(<Composer onSend={vi.fn()} busy={false} disabled={false} error={null} {...extra} />);
 
-  it('has no mic without voice, or when voice is off', () => {
-    setup(undefined);
-    expect(screen.queryByRole('button', { name: /talk/i })).not.toBeInTheDocument();
-    document.body.innerHTML = '';
-    setup(voice({ state: 'off' }));
-    expect(screen.queryByRole('button', { name: /talk/i })).not.toBeInTheDocument();
+  it('has no microphone control, whatever the voice state', () => {
+    setup({ readAloudNote: true });
+    expect(screen.queryByRole('button', { name: /talk|microphone|record/i })).not.toBeInTheDocument();
+    // Only the Send button sits beside the text box.
+    expect(screen.getAllByRole('button')).toHaveLength(1);
+    expect(screen.getByRole('button', { name: 'Send message' })).toBeInTheDocument();
   });
 
-  it('puts the mic between the text box and the Send button', () => {
-    setup(voice());
-    const mic = screen.getByRole('button', { name: vc.VOICE_BUTTON_DESKTOP });
-    const send = screen.getByRole('button', { name: 'Send message' });
-    const box = screen.getByRole('textbox', { name: 'Message' });
-    expect(box.compareDocumentPosition(mic) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(mic.compareDocumentPosition(send) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(mic.parentElement).toBe(send.parentElement);
-  });
-
-  it('announces what the microphone is doing', () => {
-    const { rerender } = setup(voice({ state: 'recording' }));
-    const status = voiceStatus();
-    expect(status).toHaveTextContent(vc.VOICE_LISTENING);
-    rerender(
-      <Composer onSend={vi.fn()} busy={false} disabled={false} error={null} voice={voice({ state: 'transcribing' })} />
-    );
-    expect(voiceStatus()).toHaveTextContent(vc.VOICE_TRANSCRIBING);
-    rerender(
-      <Composer onSend={vi.fn()} busy={false} disabled={false} error={null} voice={voice({ state: 'recording', ending: true })} />
-    );
-    expect(voiceStatus()).toHaveTextContent(vc.VOICE_ENDING_SOON);
-    rerender(
-      <Composer onSend={vi.fn()} busy={false} disabled={false} error={null} voice={voice()} />
-    );
-    expect(voiceStatus()).toBeEmptyDOMElement();
-  });
-
-  it('shows the microphone disclosure under the composer once voice has been used, and ties it to the mic', () => {
-    const { rerender } = setup(voice());
+  it('shows the read-aloud line under the composer once voice has been used', () => {
+    const { rerender } = setup();
     expect(screen.queryByText(vc.VOICE_DISCLOSURE)).not.toBeInTheDocument();
-    rerender(
-      <Composer onSend={vi.fn()} busy={false} disabled={false} error={null} voice={voice({ disclosed: true })} />
-    );
+    rerender(<Composer onSend={vi.fn()} busy={false} disabled={false} error={null} readAloudNote />);
     expect(screen.getByText(vc.VOICE_DISCLOSURE)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: vc.VOICE_BUTTON_DESKTOP })).toHaveAccessibleDescription(
-      vc.VOICE_DISCLOSURE
-    );
+    expect(vc.VOICE_DISCLOSURE).toBe('Replies are read aloud. Use the speaker button to turn sound off.');
   });
 
   it('shows a voice notice in the alert line without calling the text box invalid', () => {
-    setup(voice(), { notice: vc.VOICE_DENIED });
-    expect(screen.getByRole('alert')).toHaveTextContent(vc.VOICE_DENIED);
+    setup({ notice: vc.VOICE_SOUND_OFF_HINT });
+    expect(screen.getByRole('alert')).toHaveTextContent(vc.VOICE_SOUND_OFF_HINT);
     expect(screen.getByRole('textbox', { name: 'Message' })).not.toHaveAttribute('aria-invalid');
     document.body.innerHTML = '';
     // A real typing problem still does.
-    setup(voice(), { error: 'Too long', notice: vc.VOICE_DENIED });
+    setup({ error: 'Too long', notice: vc.VOICE_SOUND_OFF_HINT });
     expect(screen.getByRole('alert')).toHaveTextContent('Too long');
     expect(screen.getByRole('textbox', { name: 'Message' })).toHaveAttribute('aria-invalid', 'true');
   });
@@ -435,7 +156,6 @@ describe('Composer with voice', () => {
         busy={false}
         disabled={false}
         error={null}
-        voice={voice()}
         readAloudBonus={readAloudBonus}
       />
     );
@@ -471,29 +191,15 @@ describe('Composer with voice', () => {
     });
   });
 
-  it('passes presses up, and typing still works', async () => {
+  it('typing still works', async () => {
     const user = userEvent.setup();
-    const v = voice();
-    setup(v);
-    await user.click(screen.getByRole('button', { name: vc.VOICE_BUTTON_DESKTOP }));
-    expect(v.onStart).toHaveBeenCalledWith({ hold: false });
+    setup();
     await user.type(screen.getByRole('textbox', { name: 'Message' }), 'hi');
     expect(screen.getByRole('button', { name: 'Send message' })).toBeEnabled();
   });
-
-  it('the mic goes quiet when a reply is pending and disabled when the chat has ended', () => {
-    setup(voice(), { busy: true });
-    expect(screen.getByRole('button', { name: vc.VOICE_BUTTON_DESKTOP })).toHaveAttribute(
-      'aria-disabled',
-      'true'
-    );
-    document.body.innerHTML = '';
-    setup(voice(), { disabled: true });
-    expect(screen.getByRole('button', { name: vc.VOICE_BUTTON_DESKTOP })).toBeDisabled();
-  });
 });
 
-// ---- The panel, end to end (recorder, speech and Worker mocked) --------------
+// ---- The panel, end to end (speech and Worker mocked) --------------
 
 function Harness({
   open = true,
@@ -512,128 +218,58 @@ function Harness({
 }
 
 const renderPanel = async (props: Parameters<typeof Harness>[0] = {}) => {
-  supportedMock.mockReturnValue(true);
   const utils = render(<Harness {...props} />);
   await settle();
   return utils;
 };
 
-// The mic's own status line (the composer has a second, for the read-aloud notice).
-const voiceStatus = () => document.querySelector<HTMLElement>('.thg-cc-voice-status')!;
-const mic = () => screen.queryByRole('button', { name: /^(Click|Hold) to talk$/ });
+// There is no voice input: nothing in the panel is a microphone or a talk button.
+const mic = () => screen.queryByRole('button', { name: /talk|microphone|record|listen/i });
 const speakerToggle = () => screen.queryByRole('button', { name: vc.VOICE_SPEAK_TOGGLE });
 
 describe('ChatPanel voice', () => {
-  it('shows no voice controls in a browser that cannot record', async () => {
-    supportedMock.mockReturnValue(false);
-    render(<Harness />);
-    await settle();
-    expect(mic()).not.toBeInTheDocument();
-    expect(speakerToggle()).not.toBeInTheDocument();
-    expect(vi.mocked(fetchVoiceCaps)).not.toHaveBeenCalled();
-    // The text chat is untouched.
-    expect(screen.getByRole('textbox', { name: 'Message' })).toBeInTheDocument();
-  });
-
-  it('shows no voice controls when the Worker has no speech to text', async () => {
+  it('shows no voice controls when the Worker has no voice, and the text chat is untouched', async () => {
     vi.mocked(fetchVoiceCaps).mockResolvedValue(null);
     await renderPanel();
     expect(mic()).not.toBeInTheDocument();
     expect(speakerToggle()).not.toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Message' })).toBeInTheDocument();
   });
 
-  it('shows the mic in the composer and the speaker toggle in the header when voice is on', async () => {
+  it('shows the speaker toggle in the header and no microphone anywhere when a server voice is on', async () => {
     await renderPanel();
-    const button = mic()!;
-    expect(button).toBeInTheDocument();
-    expect(button.closest('.thg-cc-composer')).not.toBeNull();
+    expect(mic()).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Hold to talk|Click to talk/ })).not.toBeInTheDocument();
     const toggle = speakerToggle()!;
-    expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    expect(toggle).toHaveAttribute('aria-pressed', 'true'); // sound is on by default
     expect(toggle.closest('.thg-cc-header')).not.toBeNull();
+    // Only the Send button is beside the text box.
+    expect(screen.getByRole('textbox', { name: 'Message' }).parentElement!.querySelectorAll('button')).toHaveLength(1);
   });
 
-  it('click to talk, click to stop: the transcript becomes the visitor\'s message and the reply arrives', async () => {
+  it('a typed question gets a reply that is read aloud by default, with no recording events', async () => {
     const user = userEvent.setup();
-    const rec = fakeRecording();
-    startRecordingMock.mockResolvedValue(rec.recording);
     await renderPanel();
-
-    await user.click(mic()!);
+    expect(unlockMock).not.toHaveBeenCalled();
+    await user.type(screen.getByRole('textbox', { name: 'Message' }), 'what do you do{Enter}');
     await settle();
-    expect(mic()).toHaveAttribute('aria-pressed', 'true');
-    expect(voiceStatus()).toHaveTextContent(vc.VOICE_LISTENING);
-    expect(trackMock).toHaveBeenCalledWith('concierge_voice_start');
-
-    await user.click(mic()!);
-    await settle();
-
-    expect(postSttMock).toHaveBeenCalledTimes(1);
     expect(postChatMock).toHaveBeenCalledTimes(1);
     const log = screen.getByRole('log', { name: 'Conversation' });
-    expect(within(log).getByText('what do you do')).toBeInTheDocument();
     expect(within(log).getByText('We help local businesses save time.')).toBeInTheDocument();
-    expect(mic()).toHaveAttribute('aria-pressed', 'false');
-    // First voice use: the disclosure line appears and replies are read aloud.
-    expect(screen.getByText(vc.VOICE_DISCLOSURE)).toBeInTheDocument();
-    expect(speakerToggle()).toHaveAttribute('aria-pressed', 'true');
     expect(speakMock).toHaveBeenCalledWith('We help local businesses save time.', expect.anything());
-  });
-
-  it('an empty transcript shows the "didn\'t catch that" copy and sends nothing', async () => {
-    const user = userEvent.setup();
-    postSttMock.mockResolvedValue(okStt(''));
-    startRecordingMock.mockResolvedValue(fakeRecording().recording);
-    await renderPanel();
-    await user.click(mic()!);
-    await settle();
-    await user.click(mic()!);
-    await settle();
-    expect(screen.getByRole('alert')).toHaveTextContent(vc.VOICE_HEARD_NOTHING);
-    expect(postChatMock).not.toHaveBeenCalled();
-    expect(trackMock).toHaveBeenCalledWith('concierge_voice_empty');
-  });
-
-  it('a refused microphone shows the blocked copy and records the event', async () => {
-    const user = userEvent.setup();
-    startRecordingMock.mockRejectedValue(new VoiceError('permission'));
-    await renderPanel();
-    await user.click(mic()!);
-    await settle();
-    expect(screen.getByRole('alert')).toHaveTextContent(vc.VOICE_DENIED);
-    expect(screen.getByRole('textbox', { name: 'Message' })).not.toHaveAttribute('aria-invalid');
-    expect(trackMock).toHaveBeenCalledWith('concierge_voice_error', { reason: 'permission' });
-    // Typing still works, and the mic is still there for another try.
-    expect(mic()).toBeInTheDocument();
-    await user.type(screen.getByRole('textbox', { name: 'Message' }), 'hello{Enter}');
-    await settle();
-    expect(postChatMock).toHaveBeenCalledTimes(1);
-  });
-
-  it('voice_unavailable takes the mic and the speaker toggle away for the session, with one explanation', async () => {
-    const user = userEvent.setup();
-    postSttMock.mockResolvedValue({ kind: 'voice_unavailable', reason: 'budget' });
-    startRecordingMock.mockResolvedValue(fakeRecording().recording);
-    await renderPanel();
-    await user.click(mic()!);
-    await settle();
-    await user.click(mic()!);
-    await settle();
-    expect(mic()).not.toBeInTheDocument();
-    expect(speakerToggle()).not.toBeInTheDocument();
-    expect(screen.getByRole('alert')).toHaveTextContent(vc.VOICE_OFF);
-    // Focus is not lost to the page body.
-    expect(document.activeElement).not.toBe(document.body);
-    // The text chat carries on.
-    await user.type(screen.getByRole('textbox', { name: 'Message' }), 'hello{Enter}');
-    await settle();
-    expect(postChatMock).toHaveBeenCalledTimes(1);
+    const events = trackMock.mock.calls.map(([event]) => event);
+    expect(events).not.toContain('concierge_voice_start');
+    expect(events).not.toContain('concierge_voice_transcribed');
+    expect(events).not.toContain('concierge_voice_empty');
   });
 
   it('the speaker toggle flips, and is remembered when the panel is built again in the same tab', async () => {
     const user = userEvent.setup();
+    window.sessionStorage.setItem(VOICE_PREFS_KEY, JSON.stringify({ speak: false, disclosed: false }));
     const first = await renderPanel();
     await user.click(speakerToggle()!);
     expect(speakerToggle()).toHaveAttribute('aria-pressed', 'true');
+    expect(unlockMock).toHaveBeenCalled(); // inside the tap, so iOS lets audio start later
     expect(JSON.parse(window.sessionStorage.getItem(VOICE_PREFS_KEY)!)).toEqual({
       speak: true,
       disclosed: false,
@@ -671,58 +307,27 @@ describe('ChatPanel voice', () => {
     expect(screen.getByRole('dialog')).toContainElement(document.activeElement as HTMLElement);
   });
 
-  it('the header equalizer shows while listening, as decoration', async () => {
-    const user = userEvent.setup();
-    startRecordingMock.mockResolvedValue(fakeRecording().recording);
-    await renderPanel();
-    await user.click(mic()!);
-    await settle();
-    const eq = document.querySelector('.thg-cc-eq')!;
-    expect(eq).toHaveAttribute('data-mode', 'listening');
-    expect(eq).toHaveAttribute('aria-hidden', 'true');
-    expect(eq.closest('.thg-cc-header')).not.toBeNull();
-  });
-
   it('reduced motion is passed to the equalizer', async () => {
     const user = userEvent.setup();
     stubMatchMedia(['prefers-reduced-motion']);
-    startRecordingMock.mockResolvedValue(fakeRecording().recording);
+    window.sessionStorage.setItem(VOICE_PREFS_KEY, JSON.stringify({ speak: true, disclosed: true }));
     await renderPanel();
-    await user.click(mic()!);
+    await user.type(screen.getByRole('textbox', { name: 'Message' }), 'hello{Enter}');
     await settle();
+    act(() => speakMock.mock.calls[0][1]!.onStart?.('server'));
     expect(document.querySelector('.thg-cc-eq')).toHaveAttribute('data-motion', 'reduced');
   });
 
-  it('on a touch screen the mic is the hold-to-talk kind', async () => {
-    stubMatchMedia(['pointer: coarse']);
-    await renderPanel();
-    expect(screen.getByRole('button', { name: vc.VOICE_BUTTON })).toBeInTheDocument();
-  });
-
-  it('closing the panel releases the microphone', async () => {
-    const user = userEvent.setup();
-    const rec = fakeRecording();
-    startRecordingMock.mockResolvedValue(rec.recording);
+  it('closing the panel stops the reading', async () => {
     const { rerender } = await renderPanel();
-    await user.click(mic()!);
-    await settle();
-    expect(rec.recording.cancel).not.toHaveBeenCalled();
-
-    supportedMock.mockReturnValue(true);
+    stopSpeakingMock.mockClear();
     rerender(<Harness open={false} />);
     await settle();
-    expect(rec.recording.cancel).toHaveBeenCalledTimes(1);
     expect(stopSpeakingMock).toHaveBeenCalled();
-    expect(postSttMock).not.toHaveBeenCalled();
   });
 
-  it('hiding the page (switching tabs) releases the microphone and stops the reading', async () => {
-    const user = userEvent.setup();
-    const rec = fakeRecording();
-    startRecordingMock.mockResolvedValue(rec.recording);
+  it('hiding the page (switching tabs) stops the reading', async () => {
     await renderPanel();
-    await user.click(mic()!);
-    await settle();
     stopSpeakingMock.mockClear();
 
     const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
@@ -732,7 +337,6 @@ describe('ChatPanel voice', () => {
     } finally {
       hidden.mockRestore();
     }
-    expect(rec.recording.cancel).toHaveBeenCalledTimes(1);
     expect(stopSpeakingMock).toHaveBeenCalled();
   });
 
@@ -770,19 +374,11 @@ const setHidden = (value: boolean) => {
 };
 
 describe('ChatPanel voice: cleanup and activity', () => {
-  it('unmounting the panel mid-recording stops the microphone and discards the clip', async () => {
-    const user = userEvent.setup();
-    const rec = fakeRecording();
-    startRecordingMock.mockResolvedValue(rec.recording);
+  it('unmounting the panel stops the speaker', async () => {
     const { unmount } = await renderPanel();
-    await user.click(mic()!);
-    await settle();
-    expect(rec.recording.cancel).not.toHaveBeenCalled();
-
+    stopSpeakingMock.mockClear();
     unmount();
     await settle();
-    expect(rec.recording.cancel).toHaveBeenCalledTimes(1);
-    expect(postSttMock).not.toHaveBeenCalled();
     expect(stopSpeakingMock).toHaveBeenCalled();
   });
 
@@ -791,7 +387,6 @@ describe('ChatPanel voice: cleanup and activity', () => {
     const { rerender } = await renderPanel();
     const chat = deferredChat();
     await typeAndSend('first question');
-    supportedMock.mockReturnValue(true);
     rerender(<Harness open={false} />);
     await settle();
 
@@ -833,101 +428,12 @@ describe('ChatPanel voice: cleanup and activity', () => {
     expect(speakMock).toHaveBeenCalledTimes(1);
     expect(speakMock.mock.calls[0][0]).toBe('Welcome back.');
   });
-
-  it('hiding the tab while a transcript is on its way does not lose the question', async () => {
-    const user = userEvent.setup();
-    let resolveStt!: (r: SttResult) => void;
-    postSttMock.mockReturnValue(
-      new Promise((r) => {
-        resolveStt = r;
-      })
-    );
-    startRecordingMock.mockResolvedValue(fakeRecording().recording);
-    await renderPanel();
-    await user.click(mic()!);
-    await settle();
-    await user.click(mic()!);
-    await settle();
-
-    const hidden = setHidden(true);
-    try {
-      await settle();
-      await act(async () => {
-        resolveStt(okStt('what do you do'));
-      });
-      await settle();
-    } finally {
-      hidden.mockRestore();
-    }
-    expect(postChatMock).toHaveBeenCalledTimes(1);
-    const log = screen.getByRole('log', { name: 'Conversation' });
-    expect(within(log).getByText('what do you do')).toBeInTheDocument();
-  });
-});
-
-describe('ChatPanel voice: unlocking speech inside a gesture', () => {
-  it('a touch press-and-hold unlocks on the release as well as the press', async () => {
-    stubMatchMedia(['pointer: coarse']);
-    startRecordingMock.mockResolvedValue(fakeRecording().recording);
-    await renderPanel();
-    const button = screen.getByRole('button', { name: vc.VOICE_BUTTON });
-    fireEvent.pointerDown(button, { pointerType: 'touch', pointerId: 1, button: 0 });
-    await settle();
-    const afterPress = unlockMock.mock.calls.length;
-    expect(afterPress).toBeGreaterThan(0);
-    fireEvent.pointerUp(button, { pointerType: 'touch', pointerId: 1 });
-    expect(unlockMock.mock.calls.length).toBe(afterPress + 1);
-  });
-});
-
-describe('ChatPanel voice: the microphone line', () => {
-  it('uses the new wording, shows from the first use, and is gone when the panel is reopened', async () => {
-    const user = userEvent.setup();
-    startRecordingMock.mockResolvedValue(fakeRecording().recording);
-    const { rerender } = await renderPanel();
-    expect(screen.queryByText(vc.VOICE_DISCLOSURE)).not.toBeInTheDocument();
-    await user.click(mic()!);
-    await settle();
-    expect(screen.getByText("Voice uses your microphone only while you're recording. Audio isn't stored.")).toBeInTheDocument();
-
-    supportedMock.mockReturnValue(true);
-    rerender(<Harness open={false} />);
-    await settle();
-    rerender(<Harness open />);
-    await settle();
-    expect(screen.queryByText(vc.VOICE_DISCLOSURE)).not.toBeInTheDocument();
-  });
-
-  it('a refused first press shows no line and leaves reading aloud off', async () => {
-    const user = userEvent.setup();
-    startRecordingMock.mockRejectedValue(new VoiceError('permission'));
-    await renderPanel();
-    await user.click(mic()!);
-    await settle();
-    expect(screen.queryByText(vc.VOICE_DISCLOSURE)).not.toBeInTheDocument();
-    expect(speakerToggle()).toHaveAttribute('aria-pressed', 'false');
-  });
-});
-
-describe('ChatPanel voice: the last seconds', () => {
-  it('says "Ending soon" in words while the ring runs', async () => {
-    const user = userEvent.setup();
-    startRecordingMock.mockResolvedValue(fakeRecording().recording);
-    await renderPanel();
-    await user.click(mic()!);
-    await settle();
-    expect(voiceStatus()).toHaveTextContent(vc.VOICE_LISTENING);
-    act(() => startRecordingMock.mock.calls[0][0]!.onEnding?.());
-    expect(voiceStatus()).toHaveTextContent('Ending soon');
-    expect(mic()!.querySelector('.thg-cc-ring')).not.toBeNull();
-  });
 });
 
 describe('ChatPanel voice: the speaker toggle needs a server voice', () => {
-  it('is hidden when the Worker has none (there is no browser voice): the mic is still there', async () => {
+  it('is hidden when the Worker has none (there is no browser voice)', async () => {
     vi.mocked(fetchVoiceCaps).mockResolvedValue({ tts: 'none' });
     await renderPanel();
-    expect(mic()).toBeInTheDocument();
     expect(speakerToggle()).not.toBeInTheDocument();
   });
 
@@ -944,6 +450,7 @@ describe('ChatPanel voice: the speaker toggle', () => {
   it('shows "Sound off" / "Sound on" as text on a touch screen, while the name stays fixed and aria-pressed carries the state', async () => {
     const user = userEvent.setup();
     stubMatchMedia(['pointer: coarse']);
+    window.sessionStorage.setItem(VOICE_PREFS_KEY, JSON.stringify({ speak: false, disclosed: false }));
     await renderPanel();
     const toggle = screen.getByRole('button', { name: 'Spoken replies' });
     expect(toggle).toHaveTextContent('Sound off');
@@ -962,6 +469,7 @@ describe('ChatPanel voice: the speaker toggle', () => {
 
   it('has the same fixed name with a pointer, in both states', async () => {
     const user = userEvent.setup();
+    window.sessionStorage.setItem(VOICE_PREFS_KEY, JSON.stringify({ speak: false, disclosed: false }));
     await renderPanel();
     const toggle = screen.getByRole('button', { name: 'Spoken replies' });
     await user.click(toggle);
@@ -1077,7 +585,7 @@ describe('ChatPanel voice: the cap on spoken replies', () => {
     await settle();
   };
 
-  it('with no bonus: one "done for today" notice, no chip, no speaker toggle, and the mic stays', async () => {
+  it('with no bonus: one "done for today" notice, no chip, no speaker toggle', async () => {
     await serverPanel();
     expect(speakerToggle()).toBeInTheDocument();
     await hitCap(false);
@@ -1086,7 +594,6 @@ describe('ChatPanel voice: the cap on spoken replies', () => {
     );
     expect(screen.queryByRole('button', { name: 'Share my details' })).not.toBeInTheDocument();
     expect(speakerToggle()).not.toBeInTheDocument();
-    expect(mic()).toBeInTheDocument();
     expect(trackMock).toHaveBeenCalledWith('concierge_voice_error', { reason: 'budget' });
   });
 

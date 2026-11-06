@@ -3,7 +3,7 @@
 import { newId } from './storage';
 import type { Message } from './types';
 
-/** From the Nth user message on, /chat and /stt want a Turnstile token. */
+/** From the Nth user message on, /chat wants a Turnstile token. */
 export const TURNSTILE_AFTER_TURN = 10;
 
 export const makeMessage = (

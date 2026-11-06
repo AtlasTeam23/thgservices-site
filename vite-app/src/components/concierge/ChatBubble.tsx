@@ -23,7 +23,6 @@ import { captureLanding } from './storage';
 import { playGreetingOnOpen } from './voice/greeting';
 import { prefetchVoiceCaps } from './voice/health';
 import { stopSpeaking } from './voice/playback';
-import { isRecordingSupported } from './voice/support';
 
 export type PanelLoader = () => Promise<{ default: ComponentType<ChatPanelProps> }>;
 
@@ -202,9 +201,8 @@ export default function ChatBubble({ panelLoader = defaultLoader }: { panelLoade
 
   // Ask the Worker once whether it has a server voice, so that the greeting can start inside a click
   // (a click cannot wait for the network). After the page has loaded and the browser is idle, not
-  // during the paint; a click that comes first asks again itself. Browsers that cannot record have no
-  // voice at all, so they never ask.
-  useEffect(() => (isRecordingSupported() ? whenIdle(prefetchVoiceCaps, 0) : undefined), []);
+  // during the paint; a click that comes first asks again itself.
+  useEffect(() => whenIdle(prefetchVoiceCaps, 0), []);
 
   // A tab that is hidden must not keep talking. The panel does this itself once it exists; this covers
   // the greeting that started in the click while the panel chunk was still on its way.
