@@ -453,6 +453,8 @@
   font-weight: 400;
   line-height: 1.4;
   cursor: pointer;
+  /* The whole row is the tap target for the checkbox, so it is never shorter than 44px. */
+  min-height: 44px;
 }
 
 .thg-cc-check input {
