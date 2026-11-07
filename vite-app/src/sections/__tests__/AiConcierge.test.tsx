@@ -120,8 +120,10 @@ describe('AiConcierge section', () => {
       expect(
         card.querySelectorAll('button, a, input, textarea, select, [tabindex], div, p, ol, ul, li')
       ).toHaveLength(0);
-      // The fake chips, input and send stay inert spans.
-      expect(card.querySelectorAll('.thg-cc-chip')).toHaveLength(2);
+      // The fake chip, input and send stay inert spans. Only "Yes, call me" is drawn (no "No thanks").
+      expect(card.querySelectorAll('.thg-cc-chip')).toHaveLength(1);
+      expect(card.querySelector('.thg-cc-chip')).toHaveTextContent('Yes, call me');
+      expect(card).not.toHaveTextContent('No thanks');
       expect(card.querySelector('.thg-cc-fake-input')?.tagName).toBe('SPAN');
       // The transcript is not exposed: every piece of it sits under an aria-hidden ancestor.
       for (const text of ['What do you do?', 'Yes, call me', 'Type your question…']) {

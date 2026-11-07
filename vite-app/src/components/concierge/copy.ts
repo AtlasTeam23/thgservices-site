@@ -12,14 +12,14 @@ export const PANEL_TITLE = 'THG AI Concierge Agent';
 export const DISCLOSURE =
   "You're chatting with an AI assistant. Don't share sensitive info.";
 export const GREETING =
-  "Hi there! I'm the THG AI Concierge Agent. I can answer questions about how we help local businesses save time with AI, or set up a quick call with David's team. What can I help with?";
+  "Hi there! I'm the THG AI Concierge Agent. I can answer questions about how we help local businesses save time with AI, or set up a quick call with David's team. You can type a question below at any time. What can I help with?";
 
 export const CHIPS = [
   'What do you do?',
   'Try the AI Concierge',
   'Request a callback',
 ] as const;
-export const OFFER_CHIPS = ['Yes, call me', 'No thanks'] as const;
+export const OFFER_CHIPS = ['Yes, call me'] as const;
 
 /**
  * Messages other parts of the site may open the chat with. They are not shown as
@@ -40,7 +40,6 @@ export const isKnownChip = (label: string): boolean =>
 /** The chip that opens the lead form instead of sending text. */
 export const CALLBACK_CHIP = 'Request a callback';
 export const OFFER_YES = 'Yes, call me';
-export const OFFER_NO = 'No thanks';
 
 export const CALLBACK_INTRO =
   'Happy to set that up. Fill in a few details and someone from our team will reach out during the window you pick.';

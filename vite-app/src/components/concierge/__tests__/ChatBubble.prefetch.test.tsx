@@ -5,6 +5,13 @@ import ChatBubble, { type PanelLoader } from '../ChatBubble';
 import type { ChatPanelProps } from '../ChatPanel';
 import * as copy from '../copy';
 
+// The page-load /health read is its own thing (voiceHealth.test.ts): it asks for an idle moment
+// right away, and must not reach the network here.
+vi.mock('../voice/health', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../voice/health')>()),
+  prefetchVoiceCaps: vi.fn(),
+}));
+
 // The panel chunk is fetched in the background, but never while the page is still
 // painting (the hero headline is the LCP element): at least 4 s after `load`, and
 // then only when the browser is idle.
@@ -53,9 +60,9 @@ describe('background prefetch of the panel chunk', () => {
   });
 
   it('after the 4 second wait it asks the browser for an idle moment, with the same 5 s timeout', () => {
-    let idleTask: (() => void) | undefined;
+    const tasks: Array<() => void> = [];
     const requestIdleCallback = vi.fn((cb: () => void) => {
-      idleTask = cb;
+      tasks.push(cb);
       return 7;
     });
     vi.stubGlobal('requestIdleCallback', requestIdleCallback);
@@ -63,15 +70,17 @@ describe('background prefetch of the panel chunk', () => {
     const loader = makeLoader();
     render(<ChatBubble panelLoader={loader} />);
 
+    // Only the voice availability check has asked so far (it has no 4 second wait).
     vi.advanceTimersByTime(DELAY - 1);
-    expect(requestIdleCallback).not.toHaveBeenCalled();
+    expect(requestIdleCallback).toHaveBeenCalledTimes(1);
     expect(loader).not.toHaveBeenCalled();
 
     vi.advanceTimersByTime(1);
-    expect(requestIdleCallback).toHaveBeenCalledWith(expect.any(Function), { timeout: 5000 });
+    expect(requestIdleCallback).toHaveBeenCalledTimes(2);
+    expect(requestIdleCallback).toHaveBeenLastCalledWith(expect.any(Function), { timeout: 5000 });
     expect(loader).not.toHaveBeenCalled(); // waiting for the browser to be idle
 
-    idleTask?.();
+    tasks.forEach((task) => task());
     expect(loader).toHaveBeenCalledTimes(1);
   });
 

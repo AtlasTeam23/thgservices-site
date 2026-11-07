@@ -73,8 +73,8 @@ Ask David, or the THG Georgia team, once, in one message. Defaults in brackets a
 | LeadQuik intake for the THG Georgia org | `LEADQUIK_WEBHOOK_URL` (secret) | **required.** David's decision (2026-11-04): concierge leads go into LeadQuik the same way the site's existing web form leads do. You own this wiring: find how `/form-config.js` and `/lead-popup.js` on hardwood-guys.com submit today and give the Worker an https URL that lands a lead in the same place. Payload in 5.2 |
 | Service area, services, hours, estimate process, pricing stance, warranty, financing, what not to say | `knowledge.md`, `system-prompt.md` | write it from the current hardwood-guys.com pages and David's answers; keep it in plain words |
 | Callback windows | `CALLBACK_WINDOWS` in both Worker and widget | weekdays 9–11, 11–1, 1–3, 3–5 Eastern |
-| Voice | `VOICE_ELEVEN_VOICE_ID` | Matilda `XrExE9yKIg1WjnnlVkGX`; list others with `npm run eleven:voices` |
-| Greeting text | `GREETING` in widget copy and the recorded MP3 | "Hi there! I'm the Hardwood Guys helper. …" (write it; then record it, section 7) |
+| Voice | `VOICE_ELEVEN_VOICE_ID` | not used: voice is thgservices.io-only for now (section 7); set `VOICE_TTS=browser` |
+| Greeting text | `GREETING` in widget copy | "Hi there! I'm the Hardwood Guys helper. …" (text only; no recording while voice is off) |
 | Daily budgets | `DAILY_LLM_CAP`, `VOICE_DAILY_TTS_CHARS`, `VOICE_DAILY_STT_SECONDS` | 2000 model calls, 50,000 TTS characters (about 150 spoken replies, about $2/day worst case), 9,000 STT seconds |
 | Anthropic key, Resend key, ElevenLabs key | secrets | David has all three. Prefer a fresh Anthropic key named `hg-concierge` with a monthly spend limit so costs are separable; the ElevenLabs key can be the same restricted key (Text to Speech + Voices read) |
 | Turnstile | site key (public) + secret | off until David creates an Invisible widget for `hardwood-guys.com`, `www.hardwood-guys.com`, `localhost` |
@@ -150,7 +150,11 @@ The widget calls a `track(event, params)` function (`vite-app/src/lib/track.ts` 
 
 Change the labels in `vite-app/src/components/concierge/copy.ts` and the matching Worker messages in `src/validation.ts` (`MESSAGES`) together; tests on both sides pin them.
 
-## 7. Voice: choosing and recording
+## 7. Voice: thgservices.io only (decision 2026-11-05)
+
+David's decision: spoken replies and the recorded greeting stay a thgservices.io feature for now. The hardwood-guys.com concierge ships **text only**: set `VOICE_TTS` to `browser` (which means no spoken replies at all) in your `wrangler.jsonc`, skip the ElevenLabs key, the voice id and the greeting recording, and leave the speaker toggle out of the embed configuration. Voice input (the microphone) has been removed from the widget everywhere. The rest of this section is kept for the day voice is extended to brand sites.
+
+### 7a. Voice: choosing and recording (when enabled)
 
 - Spoken replies use ElevenLabs Flash v2.5. Per visitor: 5 spoken replies per Eastern day, plus 5 after a lead with name, valid email and phone. Site-wide: `VOICE_DAILY_TTS_CHARS` characters a day (50,000 ≈ 150 replies ≈ $2 worst case). Each reply is about 400 characters.
 - Pick a voice: `npm run eleven:voices` (reads the key from `.dev.vars`, never prints it) lists the premade voices with sample links; `--json` writes a list a listening page can use. Put the id in `VOICE_ELEVEN_VOICE_ID`.

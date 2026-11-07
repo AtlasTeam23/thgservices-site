@@ -11,14 +11,14 @@ describe('concierge copy (contract section 2.7)', () => {
       "You're chatting with an AI assistant. Don't share sensitive info."
     );
     expect(copy.GREETING).toBe(
-      "Hi there! I'm the THG AI Concierge Agent. I can answer questions about how we help local businesses save time with AI, or set up a quick call with David's team. What can I help with?"
+      "Hi there! I'm the THG AI Concierge Agent. I can answer questions about how we help local businesses save time with AI, or set up a quick call with David's team. You can type a question below at any time. What can I help with?"
     );
     expect(copy.CHIPS).toEqual([
       'What do you do?',
       'Try the AI Concierge',
       'Request a callback',
     ]);
-    expect(copy.OFFER_CHIPS).toEqual(['Yes, call me', 'No thanks']);
+    expect(copy.OFFER_CHIPS).toEqual(['Yes, call me']);
     expect(copy.CALLBACK_INTRO).toBe(
       'Happy to set that up. Fill in a few details and someone from our team will reach out during the window you pick.'
     );

@@ -30,8 +30,8 @@
     // `.dev.vars` and the test config override this with "mock".
     "LLM_PROVIDER": "anthropic",
 
-    // Push-to-talk voice (see README "Voice"). Speech-to-text is on whenever the AI binding below
-    // exists. Replies are spoken only when VOICE_TTS is "aura" or "elevenlabs", which switch on POST /tts
+    // Spoken replies (see README "Voice"). There is no voice input on the site: speech-to-text is off
+    // (VOICE_DAILY_STT_SECONDS is 0 below). Replies are spoken only when VOICE_TTS is "aura" or "elevenlabs", which switch on POST /tts
     // (a paid voice; Aura also needs the Workers Paid plan); "browser" means no spoken replies at all.
     "VOICE_TTS": "elevenlabs",
     // Which Aura model speaks when VOICE_TTS is "aura": "aura-1" ($0.015 per 1,000 characters) or "aura-2"
@@ -49,9 +49,11 @@
     // that address earns the same day by leaving a name, a valid email and a phone number in the lead form.
     "VOICE_TTS_PER_IP_PER_DAY": "5",
     "VOICE_TTS_BONUS": "5",
-    // Audio seconds of speech-to-text per Eastern-time day across all visitors (9000 = 150 minutes,
-    // inside the Workers Free plan's 10,000 neurons a day), and per chat session (3 minutes).
-    "VOICE_DAILY_STT_SECONDS": "9000",
+    // Audio seconds of speech-to-text per Eastern-time day across all visitors. 0 turns voice input off
+    // (POST /stt answers 503 and /health reports stt: false). To turn it back on, set 9000 (150 minutes,
+    // inside the Workers Free plan's 10,000 neurons a day); the widget has no microphone button now.
+    // Below: the per-session allowance (3 minutes), used only when voice input is on.
+    "VOICE_DAILY_STT_SECONDS": "0",
     "VOICE_SESSION_SECONDS": "180",
     // Characters of paid text-to-speech per Eastern-time day, all visitors together (VOICE_TTS "aura" or
     // "elevenlabs"). 50000 is at most about $2 a day on ElevenLabs Flash ($0.04 per 1,000 characters), roughly
@@ -70,7 +72,7 @@
     "CHECKER_DAILY_PLANS": "300"
   },
 
-  // Workers AI: Whisper for POST /stt and, only when VOICE_TTS is "aura", Aura-1 for POST /tts.
+  // Workers AI: Whisper for POST /stt (off while VOICE_DAILY_STT_SECONDS is 0) and, only when VOICE_TTS is "aura", Aura-1 for POST /tts.
   // Billed to the account (Free plan: 10,000 neurons a day). It always runs on Cloudflare's network,
   // so `wrangler dev` needs a logged-in account for it.
   "ai": { "binding": "AI", "remote": true },

@@ -12,9 +12,9 @@ export { CAP_MAX_AGE_MS, capExpired, spokenCapInForce, VOICE_PREFS_KEY } from '.
 export type VoicePrefs = {
   /** Read replies aloud. Null until the visitor (or their first voice use) decides. */
   speak: boolean | null;
-  /** The first voice use has happened: the microphone line is not shown again this tab session. */
+  /** The first voice use has happened: the read-aloud line is not shown again this tab session. */
   disclosed: boolean;
-  /** The day's voice budget is spent: no mic for the rest of this tab session. */
+  /** The day's voice budget is spent: no voice for the rest of this tab session (kept for older visits). */
   blocked: boolean;
   /** The day's spoken-reply allowance is used up: no audio is requested while this holds. */
   spokenLimit: boolean;

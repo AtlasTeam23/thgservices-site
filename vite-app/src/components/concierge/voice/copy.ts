@@ -1,36 +1,16 @@
-// Visitor-facing strings for push-to-talk voice (plan section 1.4).
+// Visitor-facing strings for spoken replies (and the greeting).
 //
 // These live next to the voice code rather than in ../copy.ts: that module is
 // shared with the always-loaded bubble, so anything added there lands in the main
 // bundle. This file is only imported from the lazy panel chunk.
 
-/** Touch devices: press and hold. */
-export const VOICE_BUTTON = 'Hold to talk';
-/** Pointer devices: click to start, click again to stop. */
-export const VOICE_BUTTON_DESKTOP = 'Click to talk';
-export const VOICE_STOP = 'Stop';
-export const VOICE_LISTENING = 'Listening…';
-export const VOICE_TRANSCRIBING = 'Transcribing…';
-export const VOICE_HEARD_NOTHING = "I didn't catch that. Try again or type your question.";
-/** Daily budget spent, or the Worker could not do speech-to-text. */
-export const VOICE_OFF = 'Voice is taking a break today. You can still type.';
-/** The header toggle's name. Fixed: its state is announced once, by aria-pressed. */
-export const VOICE_SPEAK_TOGGLE = 'Spoken replies';
+/** The header toggle's name. Fixed: its state is announced once, by aria-pressed. It is the word the touch label starts with ("Sound on" / "Sound off"), so voice control can say what it sees (WCAG 2.5.3). */
+export const VOICE_SPEAK_TOGGLE = 'Sound';
 /** Its tooltip. */
 export const VOICE_SPEAK_TOGGLE_TITLE = 'Read replies aloud';
 export const VOICE_STOP_SPEAKING = 'Stop reading aloud';
-export const VOICE_DISCLOSURE =
-  "Voice uses your microphone only while you're recording. Audio isn't stored.";
-
-/** The browser (or the visitor) refused microphone access. */
-export const VOICE_DENIED =
-  'Microphone access is blocked. Allow it in your browser settings, or type your question.';
-/** There is no usable microphone, or another app has it. */
-export const VOICE_NO_MIC = "I couldn't use your microphone. You can still type your question.";
-/** The transcript could not be fetched this time (network, server, bad audio). */
-export const VOICE_ERROR = "Voice didn't work that time. Try again or type your question.";
-/** A press-and-hold that was released at once. */
-export const VOICE_HOLD_HINT = 'Hold the button while you talk.';
+/** Shown once, under the composer, from the first time replies are read aloud. */
+export const VOICE_DISCLOSURE = 'Replies are read aloud. Use the speaker button to turn sound off.';
 
 /** The header speaker toggle's visible label on touch screens (icon-only elsewhere). */
 export const VOICE_SOUND_ON = 'Sound on';
@@ -62,6 +42,3 @@ export const voiceBonusFormHeading = (n?: number | null) => {
 };
 /** The email field's error when the form was opened for the bonus and it is empty. */
 export const VOICE_EMAIL_FOR_BONUS = 'Enter your email so we can add your replies';
-
-/** Text equivalent of the countdown ring in the last 5 seconds of a recording. */
-export const VOICE_ENDING_SOON = 'Ending soon';

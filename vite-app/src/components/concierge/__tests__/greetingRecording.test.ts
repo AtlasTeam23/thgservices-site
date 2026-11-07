@@ -52,11 +52,11 @@ describe('the recorded greeting', () => {
 
   it('is explained in the privacy page, in the voice paragraph that names ElevenLabs', () => {
     const html = readFileSync(join(PUBLIC, 'privacy.html'), 'utf8');
-    const paragraph = html.split('\n').find((line) => line.includes('Voice (optional)')) ?? '';
+    const paragraph = html.split('\n').find((line) => line.includes('Spoken replies (optional)')) ?? '';
     expect(paragraph).toContain('ElevenLabs');
     for (const sentence of [
-      // opening the chat turns spoken replies on, so reply text goes to ElevenLabs even if the mic is never used
-      'Where spoken replies are available, opening the chat plays a short greeting and turns spoken replies on, whether or not you ever use the microphone.',
+      // opening the chat turns spoken replies on, so reply text goes to ElevenLabs
+      'Where spoken replies are available, opening the chat plays a short greeting and turns spoken replies on.',
       'The greeting is a recording served from this site, and nothing is sent anywhere to play it.',
       'While spoken replies are on, the text of each reply is sent to ElevenLabs',
       // the page-load /health request
@@ -64,5 +64,12 @@ describe('the recorded greeting', () => {
     ]) {
       expect(paragraph.split(sentence), sentence).toHaveLength(2);
     }
+  });
+
+  it('says nothing about a microphone, recording the visitor, or transcription', () => {
+    const html = readFileSync(join(PUBLIC, 'privacy.html'), 'utf8');
+    const paragraph = html.split('\n').find((line) => line.includes('Spoken replies (optional)')) ?? '';
+    expect(paragraph).not.toMatch(/microphone|transcri|speech to text|Workers AI|records only/i);
+    expect(html).toContain('Last updated: November 5, 2026');
   });
 });

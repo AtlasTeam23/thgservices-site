@@ -15,7 +15,7 @@ We design, build, and support our own products, from the first idea through onbo
 We sit down with local business owners, learn how their day actually runs, and fix the busywork with the right mix of software and AI tools. Services:
 
 - Call handling: we set up your phone line with after-hours coverage, smart call routing, and lead capture from inbound calls.
-- AI Website Concierge: a chat and voice helper on your website that answers questions and captures leads around the clock, and sets up callbacks.
+- AI Website Concierge: a chat helper on your website that answers questions, can read its answers aloud, captures leads around the clock, and sets up callbacks.
 - Google Ads management: campaign setup, audits, and ongoing optimization, built on 15+ years of AdWords experience, including running campaigns across multi-state operations.
 - SEO: on-page fixes, local search and your Google Business Profile, and content that targets the services you actually sell.
 - Website grade check: a review of your current site covering search readiness, mobile, speed signals, tracking, and lead capture, with a plain-language fix list.

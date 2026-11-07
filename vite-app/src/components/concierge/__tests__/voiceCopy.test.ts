@@ -3,38 +3,35 @@ import * as copy from '../voice/copy';
 
 // The voice strings live beside the voice code (not in copy.ts) so that nothing
 // voice-related is pulled into the always-loaded main bundle.
-describe('voice copy (plan section 1.4)', () => {
-  it('has the exact strings from the plan', () => {
-    expect(copy.VOICE_BUTTON).toBe('Hold to talk');
-    expect(copy.VOICE_BUTTON_DESKTOP).toBe('Click to talk');
-    expect(copy.VOICE_STOP).toBe('Stop');
-    expect(copy.VOICE_LISTENING).toBe('Listening…');
-    expect(copy.VOICE_HEARD_NOTHING).toBe(
-      "I didn't catch that. Try again or type your question."
-    );
-    expect(copy.VOICE_OFF).toBe('Voice is taking a break today. You can still type.');
-    expect(copy.VOICE_SPEAK_TOGGLE).toBe('Spoken replies');
+describe('voice copy', () => {
+  it('has the strings for the speaker toggle and the read-aloud line', () => {
+    expect(copy.VOICE_SPEAK_TOGGLE).toBe('Sound');
     expect(copy.VOICE_SPEAK_TOGGLE_TITLE).toBe('Read replies aloud');
-    expect(copy.VOICE_DISCLOSURE).toBe(
-      "Voice uses your microphone only while you're recording. Audio isn't stored."
-    );
+    expect(copy.VOICE_STOP_SPEAKING).toBe('Stop reading aloud');
+    expect(copy.VOICE_DISCLOSURE).toBe('Replies are read aloud. Use the speaker button to turn sound off.');
   });
 
-  it('has the supporting strings the widget needs beyond the plan table', () => {
-    expect(copy.VOICE_TRANSCRIBING).toBe('Transcribing…');
-    expect(copy.VOICE_DENIED).toBe(
-      'Microphone access is blocked. Allow it in your browser settings, or type your question.'
-    );
-    expect(copy.VOICE_NO_MIC).toBe(
-      "I couldn't use your microphone. You can still type your question."
-    );
-    expect(copy.VOICE_ERROR).toBe(
-      "Voice didn't work that time. Try again or type your question."
-    );
-    expect(copy.VOICE_HOLD_HINT).toBe('Hold the button while you talk.');
-    expect(copy.VOICE_STOP_SPEAKING).toBe('Stop reading aloud');
-    expect(copy.VOICE_ENDING_SOON).toBe('Ending soon');
-    expect('VOICE_SECONDS_LEFT' in copy).toBe(false);
+  it('has nothing left over from voice input', () => {
+    for (const key of [
+      'VOICE_BUTTON',
+      'VOICE_BUTTON_DESKTOP',
+      'VOICE_STOP',
+      'VOICE_LISTENING',
+      'VOICE_TRANSCRIBING',
+      'VOICE_HEARD_NOTHING',
+      'VOICE_OFF',
+      'VOICE_DENIED',
+      'VOICE_NO_MIC',
+      'VOICE_ERROR',
+      'VOICE_HOLD_HINT',
+      'VOICE_ENDING_SOON',
+    ]) {
+      expect(key in copy, key).toBe(false);
+    }
+    for (const [key, value] of Object.entries(copy)) {
+      if (typeof value === 'function') continue;
+      expect(String(value), key).not.toMatch(/microphone|hold to talk|click to talk|recording|transcrib/i);
+    }
   });
 
   it('has the strings for the sound toggle, the tap-to-hear pill and the cap on spoken replies', () => {

@@ -1,14 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// The page-load read of /health (voice/health.ts): one request for the whole page, only where voice can
-// exist, reusable by the panel's own check. (fetchVoiceCaps itself, the request and the allow-list that
+// The page-load read of /health (voice/health.ts): one request for the whole page, reusable by the
+// panel's own check, and decided by the server voice alone (never by speech to text or the browser's mic). (fetchVoiceCaps itself, the request and the allow-list that
 // reads the answer, is covered in voiceApi.test.ts through api.ts, which re-exports it.)
-
-const mic = vi.hoisted(() => ({ supported: true }));
-vi.mock('../voice/support', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../voice/support')>()),
-  isRecordingSupported: vi.fn(() => mic.supported),
-}));
 
 import { prefetchVoiceCaps, resetVoiceHealth, sharedVoiceCaps, voiceHealth } from '../voice/health';
 
@@ -27,7 +21,6 @@ describe('the page-load /health read', () => {
 
   beforeEach(() => {
     resetVoiceHealth();
-    mic.supported = true;
     vi.stubEnv('VITE_CONCIERGE_API_URL', 'http://localhost:8787');
     vi.stubGlobal('fetch', fetchMock);
     fetchMock.mockReset();
@@ -86,7 +79,7 @@ describe('the page-load /health read', () => {
 
   describe('a Worker that answered "no voice" is an answer, and nothing asks it again', () => {
     for (const [label, response] of [
-      ['stt is off', () => new Response(JSON.stringify({ voice: { stt: false, tts: 'browser' } }), { status: 200 })],
+      ['stt is off and replies are not read aloud', () => new Response(JSON.stringify({ voice: { stt: false, tts: 'browser' } }), { status: 200 })],
       ['there is no voice block', () => new Response(JSON.stringify({ ok: true }), { status: 200 })],
       ['the voice block is not an object', () => new Response(JSON.stringify({ voice: 'on' }), { status: 200 })],
       ['the JSON is not even an object', () => new Response('null', { status: 200 })],
@@ -110,13 +103,13 @@ describe('the page-load /health read', () => {
     }
 
     it('and the panel is told it as it is: no voice (null), not "ask for yourself" (undefined)', async () => {
-      fetchMock.mockResolvedValue(new Response(JSON.stringify({ voice: { stt: false } }), { status: 200 }));
+      fetchMock.mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
       prefetchVoiceCaps();
       await flush();
       expect(await sharedVoiceCaps()).toBeNull();
     });
 
-    it('while a text-only voice (stt on, replies not read aloud) is still caps for the panel', async () => {
+    it('while a text-only voice (replies not read aloud) is still caps for the panel', async () => {
       fetchMock.mockResolvedValue(answer('none'));
       prefetchVoiceCaps();
       await flush();
@@ -183,11 +176,31 @@ describe('the page-load /health read', () => {
     });
   });
 
-  it('does nothing in a browser that cannot record: no mic, no voice, nothing to ask about', async () => {
-    mic.supported = false;
+  it('stt: false with a configured server voice is server mode (there is no voice input to wait for)', async () => {
+    fetchMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({ ok: true, voice: { stt: false, tts: 'server', provider: 'elevenlabs', configured: true } }),
+        { status: 200 }
+      )
+    );
     prefetchVoiceCaps();
     await flush();
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(voiceHealth()).toBe('unknown');
+    expect(voiceHealth()).toBe('server');
+    expect(await sharedVoiceCaps()).toEqual({ tts: 'server' });
+  });
+
+  it('asks in a browser with no microphone API at all', async () => {
+    const mediaDevices = Object.getOwnPropertyDescriptor(navigator, 'mediaDevices');
+    Object.defineProperty(navigator, 'mediaDevices', { value: undefined, configurable: true });
+    try {
+      fetchMock.mockResolvedValue(answer('server', { stt: false, configured: true }));
+      prefetchVoiceCaps();
+      await flush();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(voiceHealth()).toBe('server');
+    } finally {
+      if (mediaDevices) Object.defineProperty(navigator, 'mediaDevices', mediaDevices);
+      else delete (navigator as unknown as Record<string, unknown>).mediaDevices;
+    }
   });
 });

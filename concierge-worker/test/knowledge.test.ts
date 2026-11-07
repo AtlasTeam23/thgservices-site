@@ -126,6 +126,13 @@ describe('knowledge.md', () => {
     expect(faq).toContain('- Can you come out to my shop? For THG AI Services, no; it all happens online. We start with a quick call, then a video meeting, and we set things up remotely.');
   });
 
+  it('describes the concierge as a chat helper that can read answers aloud (there is no voice input)', () => {
+    expect(KNOWLEDGE).toContain(
+      '- AI Website Concierge: a chat helper on your website that answers questions, can read its answers aloud, captures leads around the clock, and sets up callbacks.',
+    );
+    expect(KNOWLEDGE).not.toMatch(/chat and voice helper|talk to it|speak to it|push-to-talk/i);
+  });
+
   it('describes the after-hours call handling and the concierge for a business', () => {
     const calls = sections().get('After-hours calls') ?? '';
     for (const word of ['name', 'number', 'voicemail', 'text or email']) expect(calls, word).toContain(word);
