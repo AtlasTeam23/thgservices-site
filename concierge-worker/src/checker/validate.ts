@@ -23,6 +23,7 @@ export const URL_MAX = 2048;
 export const LABEL_MAX = 80;
 export const MAX_COMPETITORS = 3;
 export const BODY_MAX_BYTES = 16 * 1024;
+export const CONSENT_MAX = 400;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const REPORT_TOKEN = /^[A-Za-z0-9_-]{20,128}$/;
@@ -106,6 +107,8 @@ export interface UnlockRequest {
   industry: string;
   city: string;
   okToCall: boolean;
+  /** The consent sentence the page showed, or '' when missing or unusable (an older page). */
+  consentText: string;
   name: string;
   email: string | undefined;
   phone: string | undefined;
@@ -114,6 +117,16 @@ export interface UnlockRequest {
 }
 
 export type UnlockValidation = { ok: true; value: UnlockRequest } | { ok: false; fields: FieldErrors };
+
+/**
+ * The consent sentence the page sent with an unlock, sanitized like other visitor text. A value that is not a
+ * string, or is longer than CONSENT_MAX once cleaned, is dropped (''): it is never cut short, and it never blocks an unlock.
+ */
+export const cleanConsent = (value: unknown): string => {
+  if (typeof value !== 'string' || value.length > CONSENT_MAX * 4) return '';
+  const cleaned = singleLine(sanitizeText(value));
+  return cleaned.length <= CONSENT_MAX ? cleaned : '';
+};
 
 /**
  * Validates an unlock request. `gated` comes from the Worker's own reading of the request country,
@@ -128,7 +141,7 @@ export const validateUnlock = (raw: unknown, gated: boolean): UnlockValidation =
   if (honeypot) {
     return {
       ok: true,
-      value: { scanId: '', competitors: [], industry: '', city: '', okToCall: false, name: '', email: undefined, phone: undefined, turnstileToken: token, honeypot },
+      value: { scanId: '', competitors: [], industry: '', city: '', okToCall: false, consentText: '', name: '', email: undefined, phone: undefined, turnstileToken: token, honeypot },
     };
   }
 
@@ -184,7 +197,7 @@ export const validateUnlock = (raw: unknown, gated: boolean): UnlockValidation =
   if (Object.keys(fields).length > 0) return { ok: false, fields };
   return {
     ok: true,
-    value: { scanId, competitors, industry, city, okToCall: raw.okToCall === true, name, email, phone, turnstileToken: token, honeypot },
+    value: { scanId, competitors, industry, city, okToCall: raw.okToCall === true, consentText: cleanConsent(raw.consentText), name, email, phone, turnstileToken: token, honeypot },
   };
 };
 

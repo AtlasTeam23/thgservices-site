@@ -157,6 +157,8 @@ export type UnlockRequest = {
   email?: string;
   phone?: string;
   okToCall?: boolean;
+  /** The consent sentence the page showed. Sent with a gated unlock only. */
+  consentText?: string;
 };
 
 export async function unlockReport(req: UnlockRequest, honeypot = ''): Promise<UnlockOutcome> {
@@ -168,6 +170,7 @@ export async function unlockReport(req: UnlockRequest, honeypot = ''): Promise<U
   if (req.email !== undefined) body.email = req.email;
   if (req.phone !== undefined) body.phone = req.phone;
   if (req.okToCall !== undefined) body.okToCall = req.okToCall;
+  if (req.consentText !== undefined) body.consentText = req.consentText;
   if (turnstileToken) body.turnstileToken = turnstileToken;
   body.company_website = honeypot;
 

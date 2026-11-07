@@ -164,9 +164,9 @@ describe('scripts/postbuild.mjs', () => {
       expect(page).not.toMatch(/noindex/i);
     });
 
-    it('is NOT in the sitemap during the hidden launch (it returns with the public links)', () => {
+    it('is listed in the sitemap', () => {
       const sitemap = readFileSync(join(import.meta.dirname, '..', '..', 'public', 'sitemap.xml'), 'utf8');
-      expect(sitemap).not.toContain('website-checker');
+      expect(sitemap).toContain('<loc>https://thgservices.io/website-checker/</loc>');
     });
 
     it("drops the homepage's JSON-LD from the checker page only", () => {

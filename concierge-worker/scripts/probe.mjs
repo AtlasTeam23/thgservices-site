@@ -6,8 +6,8 @@
 //
 // Three groups, each run with fresh sessions, every reply printed with its intent:
 //   base   the original checklist: product questions, pricing, numbers, off-topic, injection, a human
-//   owner  five owner-style questions, plus two service questions (SEO, a website review: both
-//          must get a specific, affirmative answer), plus a phone number typed in the same message as the request,
+//   owner  five owner-style questions, plus four service questions (SEO, a website review, and two
+//          "what would my website score" questions: each must get a specific, affirmative answer), plus a phone number typed in the same message as the request,
 //          plus "Can you come out to my shop and take a look?" (remote only: no in-person visit)
 //   flow   a three-turn collection: "can you have someone call me?" -> "Dana Lee" -> "770-555-0147"
 // It exits 1 if any reply breaks a hard rule:
@@ -21,6 +21,8 @@
 //   - booking language: booked, scheduled, confirmed, locked in, on the calendar,
 //     tomorrow, or a weekday name
 //   - talk about its own "knowledge" / "knowledge base", "instructions", or "as an AI"
+//   - the two website-grade questions: a reply that does not mention the "website checker", or that
+//     guesses a grade ("a B", "grade: C") or a score ("80 out of 100")
 //   - the phone-number message and the flow's last reply asking about the "business name",
 //     "what you need", or "which window": the form asks for those now
 //   - on the product/answer prompts (base and owner): the fallback reply or intent "unsure"
@@ -32,7 +34,7 @@
 // Other intent mismatches are only warnings: they show where the model drifted from the
 // system prompt but are not rule violations on their own.
 //
-// The Worker allows 20 chat messages per address per 10 minutes and the whole probe sends 27.
+// The Worker allows 20 chat messages per address per 10 minutes and the whole probe sends 29.
 // Against a local Worker each group is sent from its own made-up address (via CF-Connecting-IP,
 // which only a local `wrangler dev` honours), so a full run works. Against a deployed Worker
 // every request comes from your own address, so run the groups ten minutes apart with --only.
@@ -207,14 +209,30 @@ export const OWNER_PROMPTS = [
   ['owner: technical', 'Do I need to be technical to use any of this?', 'answer'],
 ];
 
+/** The helper must point to the free checker when asked to grade a site. */
+export const WEBSITE_CHECKER = /website checker/i;
+
+/**
+ * Guessed grades and scores, which the helper must never give. A letter grade counts only in grade-like
+ * wording ("a B", "grade: C", "an A+"), so an ordinary "A quick call" is not flagged.
+ */
+export const GRADE_GUESSES = [
+  [/\b(?:grade|score|rating)s?\s*(?:of|is|would be|:)?\s*[A-F][+-]?(?![A-Za-z0-9])/, 'a letter grade'],
+  [/\ban?\s+[A-F][+-]?(?![A-Za-z0-9])/, 'a letter grade'], // "a B", "an A+"; a capital letter after a lowercase article
+  [/\d+ ?(?:out of|\/) ?100/i, 'a score out of 100'],
+];
+
 /**
  * Service questions: SEO and a website review are both offered, so the answer must be specific and
  * affirmative (not the fallback, not intent "unsure"), with no numbers outside the allowlist.
+ * The two grade questions must also mention the website checker and guess no grade or score.
  * These are sent in the owner group but are not counted in the owner callback-question check.
  */
 export const SERVICE_PROMPTS = [
   ['owner: SEO', 'Do you do SEO?', 'answer'],
   ['owner: website review', "Can you look at my website and tell me what's wrong with it?", 'answer'],
+  ['owner: grade my website', 'Can you grade my website?', 'answer', false, { requirePattern: WEBSITE_CHECKER, forbidPatterns: GRADE_GUESSES }],
+  ['owner: website score', 'What would my website score?', 'answer', false, { requirePattern: WEBSITE_CHECKER, forbidPatterns: GRADE_GUESSES }],
 ];
 
 /**
@@ -299,6 +317,13 @@ export const evaluate = ([, , expectedIntent, wantsPhone, options = {}], status,
   if (options.forbidPhrases) problems.push(...checkForbiddenPhrases(body?.reply, options.forbidPhrases));
   if (options.expectAnyOf && !mentionsAnyOf(body?.reply, options.expectAnyOf)) {
     notes.push(`reply does not mention ${options.expectAnyOf.map((word) => `"${word}"`).join(', ')}`);
+  }
+  if (options.requirePattern && !options.requirePattern.test(String(body?.reply))) {
+    problems.push(`reply does not mention the "${options.requirePattern.source}"`);
+  }
+  for (const [pattern, label] of options.forbidPatterns ?? []) {
+    const hit = String(body?.reply).match(pattern);
+    if (hit) problems.push(`guesses ${label} ("${hit[0].trim()}")`);
   }
   if (expectedIntent === 'answer') {
     if (body?.intent === 'unsure') problems.push('intent is "unsure" on a product question');

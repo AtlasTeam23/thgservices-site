@@ -26,7 +26,7 @@
     "LEAD_TO_EMAIL": "developer@leadquik.com",
     "LEAD_FROM_EMAIL": "THG AI Services <concierge@leadquik.com>",
     // Used only to hash client IPs into Durable Object names. Not a secret.
-    "RATE_SALT": "92fc073eb83ffe453544cd5c7fdcfa7c",
+    "RATE_SALT": "754befd861b9c1e6eccc60be5fe04f7d",
     // `.dev.vars` and the test config override this with "mock".
     "LLM_PROVIDER": "anthropic",
 
@@ -61,11 +61,10 @@
     "VOICE_DAILY_TTS_CHARS": "50000",
 
     // Free website checker (/checker/*). Its secrets are SITE_CHECKER_URL, SITE_CHECKER_SECRET and
-    // CHECKER_LEADQUIK_URL (see README "Website checker"). While this is "false" the routes run with the
-    // honeypot and rate limits only, and a Turnstile token is verified only if the page sends one. It flips
-    // to "true" the day the Turnstile site key is published on the site; then a missing TURNSTILE_SECRET_KEY
-    // makes the routes answer 503 checker_not_ready. Without the var the code treats it as "true".
-    "CHECKER_REQUIRE_TURNSTILE": "false",
+    // CHECKER_LEADQUIK_URL (see README "Website checker"). The Turnstile site key is published on the site and
+    // verification is on: without TURNSTILE_SECRET_KEY (unless the Worker is reached on localhost) the routes
+    // answer 503 checker_not_ready. Without the var the code also treats it as "true".
+    "CHECKER_REQUIRE_TURNSTILE": "true",
     // Scans per Eastern-time day across all visitors.
     "CHECKER_DAILY_SCANS": "1000",
     // Action plans (one model call each) per Eastern-time day, all visitors. A plan is written only when this

@@ -38,8 +38,8 @@ describe('knowledge.md', () => {
     for (const title of [...ORIGINAL, ...ADDED]) expect(titles, title).toContain(title);
   });
 
-  it('stays under the 1,500-word budget', () => {
-    expect(words(KNOWLEDGE)).toBeLessThan(1500); // was 1,400 before the full service list
+  it('stays under the 1,600-word budget', () => {
+    expect(words(KNOWLEDGE)).toBeLessThan(1600); // was 1,500 before the free website checker section, 1,400 before the full service list
   });
 
   it('keeps each added section short enough to read in chat', () => {
@@ -83,6 +83,17 @@ describe('knowledge.md', () => {
     }
     expect(KNOWLEDGE).not.toMatch(/don't list|do not list|not offer|isn't something we/i);
     expect(KNOWLEDGE).not.toMatch(/https?:\/\/[^\s)]*grade/i);
+  });
+
+  it('describes the free website checker and never lets the helper guess a grade', () => {
+    const checker = sections().get('Free website checker') ?? '';
+    expect(checker).toContain('thgservices.io/website-checker/');
+    for (const phrase of ['reads the home page only', 'easy the site is to find', 'turns visitors into customers', 'three grades are free', 'full breakdown is sent after a short form', 'never guesses or estimates', 'offers a call']) {
+      expect(checker, phrase).toContain(phrase);
+    }
+    expect(words(checker)).toBeLessThanOrEqual(200);
+    const claims = sections().get('Things the helper must not claim') ?? '';
+    expect(claims).toContain("- No guesses about a website's grade or what the checker would find.");
   });
 
   it('has no draft markers or notes to the owner left in it', () => {

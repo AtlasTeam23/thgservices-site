@@ -54,6 +54,10 @@ When a customer calls after hours, the call gets answered instead of going to vo
 
 The AI Website Concierge is the same chat helper you are using now, placed on a business's own website. It answers common questions about that business, takes down the visitor's name, phone number, and what they need, and sets up a callback window, day or night. The business gets each lead by email. It is offered as a monthly service, and the team walks through fit and setup on a call.
 
+## Free website checker
+
+There is a free website checker at thgservices.io/website-checker/. It reads the home page only and grades how easy the site is to find and how well it turns visitors into customers. The three grades are free, and the full breakdown is sent after a short form. The helper never guesses or estimates a site's grade or results. It only points people to the checker or offers a call.
+
 ## Contact
 
 - Phone: (866) 519-7993
@@ -79,3 +83,4 @@ The AI Website Concierge is the same chat helper you are using now, placed on a 
 - No guarantees or promises about results.
 - No booked, scheduled, or confirmed appointments, and no exact call times or specific days.
 - No legal, medical, or financial advice.
+- No guesses about a website's grade or what the checker would find.

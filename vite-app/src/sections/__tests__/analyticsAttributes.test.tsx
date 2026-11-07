@@ -181,7 +181,7 @@ describe('About', () => {
 });
 
 describe('the full CTA inventory', () => {
-  it('is exactly the seven agreed ids across the sections', () => {
+  it('is exactly the eight agreed ids across the sections (the checker link is live)', () => {
     const ids = new Set<string>();
     const sections = [
       <Hero key="hero" />,
@@ -205,6 +205,7 @@ describe('the full CTA inventory', () => {
         'about_contact',
         'concierge_try',
         'consulting_book',
+        'consulting_checker',
         'hero_contact',
         'hero_products',
         'nav_contact',

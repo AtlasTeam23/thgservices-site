@@ -1,5 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
+// The switch can go back to false (the hidden launch); this pins that state whatever the real constant is.
+vi.mock('../config', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../config')>()),
+  CHECKER_LINKS_LIVE: false,
+}));
+
 import { CHECKER_LINKS_LIVE } from '../config';
 import Footer from '../../../sections/Footer';
 import Consulting from '../../../sections/Consulting';
@@ -7,7 +13,7 @@ import Navigation from '../../../components/Navigation';
 import { ThemeProvider } from '../../theme';
 
 describe('the hidden launch (CHECKER_LINKS_LIVE = false)', () => {
-  it('ships with the links switched off', () => {
+  it('reads the switch as off', () => {
     expect(CHECKER_LINKS_LIVE).toBe(false);
   });
 

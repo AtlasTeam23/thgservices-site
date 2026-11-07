@@ -43,6 +43,10 @@ export interface LeadInput {
   email: string;
   phone: string;
   okToCall: boolean;
+  /** The consent sentence the page sent, or '' when it sent none. */
+  consentText: string;
+  /** ISO time of the unlock. Only sent with consentText. */
+  consentAt: string;
   industry: string;
   city: string;
   country: string | null;
@@ -63,20 +67,25 @@ export const buildNotes = (input: LeadInput): string => {
     `Industry: ${input.industry}`,
     input.city ? `City: ${input.city}` : '',
     hosts.length > 0 ? `Competitors: ${hosts.join(', ')}` : '',
-    `OK to call or text: ${input.okToCall ? 'yes' : 'no'}`,
+    `Consent to call, text or email: ${input.okToCall ? 'yes (given at submit)' : 'no'}`,
     `Visitor country: ${input.country ?? 'XX'}`,
   ]
     .filter((line) => line !== '')
     .join('\n');
 };
 
-/** The lead intake body. `sms_consent` is never sent: the checkbox answer lives in the notes only. */
+/**
+ * The lead intake body. `sms_consent` is never sent: the consent answer lives in the notes. `consent_text` and
+ * `consent_at` are sent only when the page named the sentence it showed, so a record never claims a wording it did not get.
+ */
 export interface CheckerLeadPayload {
   name: string;
   email: string;
   phone: string;
   service_needed: 'Free website check';
   notes: string;
+  consent_text?: string;
+  consent_at?: string;
 }
 
 export const buildLeadPayload = (input: LeadInput): CheckerLeadPayload => ({
@@ -85,6 +94,7 @@ export const buildLeadPayload = (input: LeadInput): CheckerLeadPayload => ({
   phone: input.phone,
   service_needed: 'Free website check',
   notes: buildNotes(input),
+  ...(input.consentText !== '' ? { consent_text: input.consentText, consent_at: input.consentAt } : {}),
 });
 
 export type CheckerLeadResult = 'ok' | 'failed' | 'skipped';
@@ -140,6 +150,7 @@ export const buildFallbackEmail = (payload: CheckerLeadPayload): LeadEmail => {
     `Phone: ${formatPhone(payload.phone)}`,
     `Email: ${payload.email}`,
     `Service needed: ${payload.service_needed}`,
+    ...(payload.consent_text ? [`Consent sentence shown (${payload.consent_at}): ${payload.consent_text}`] : []),
     '',
     payload.notes,
     '',

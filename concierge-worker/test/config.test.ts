@@ -91,6 +91,10 @@ describe('wrangler.jsonc', () => {
     });
   });
 
+  it('requires Turnstile on the website checker routes', () => {
+    expect(config.vars.CHECKER_REQUIRE_TURNSTILE).toBe('true');
+  });
+
   it('never puts a secret in the committed vars', () => {
     for (const secret of ['LLM_API_KEY', 'RESEND_API_KEY', 'TURNSTILE_SECRET_KEY', 'LEADQUIK_WEBHOOK_URL', 'ELEVENLABS_API_KEY']) {
       expect(config.vars, secret).not.toHaveProperty(secret);

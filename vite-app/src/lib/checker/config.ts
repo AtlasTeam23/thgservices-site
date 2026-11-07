@@ -1,11 +1,11 @@
 import type { Profile } from './types';
 
 /**
- * The hidden launch ships the page with no visible links to it. The public
- * launch flips this one constant to true: the nav, the footer and the
- * "Website upgrades" item then show a link.
+ * The hidden launch shipped the page with no visible links to it. The public
+ * launch flipped this one constant to true: the nav, the footer and the
+ * "Website upgrades" item now show a link. Set it back to false to hide them.
  */
-export const CHECKER_LINKS_LIVE = false;
+export const CHECKER_LINKS_LIVE = true;
 
 export const CHECKER_PATH = '/website-checker/';
 export const CHECKER_LINK_LABEL = 'Free website checker';

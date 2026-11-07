@@ -281,11 +281,17 @@ test('evaluateOwnerGroup allows at most two of the five answers to end with the 
   assert.deepEqual(evaluateOwnerGroup([]), []);
 });
 
-test('the two service prompts expect an affirmative answer: fallback, "unsure" and stray numbers fail', () => {
-  assert.deepEqual(SERVICE_PROMPTS.map(([, prompt]) => prompt), ['Do you do SEO?', "Can you look at my website and tell me what's wrong with it?"]);
+test('the four service prompts expect an affirmative answer: fallback, "unsure" and stray numbers fail', () => {
+  assert.deepEqual(SERVICE_PROMPTS.map(([, prompt]) => prompt), [
+    'Do you do SEO?',
+    "Can you look at my website and tell me what's wrong with it?",
+    'Can you grade my website?',
+    'What would my website score?',
+  ]);
   assert.ok(SERVICE_PROMPTS.every(([, , intent]) => intent === 'answer'));
   assert.ok(!SERVICE_PROMPTS.some(([, prompt]) => OWNER_PROMPTS.some(([, p]) => p === prompt)));
   const [seo, review] = SERVICE_PROMPTS;
+  assert.equal(OWNER_PROMPTS.length + SERVICE_PROMPTS.length + 2 + PROMPTS.length + COLLECTION_FLOW.length, 29); // the README says the probe sends 29
   assert.deepEqual(evaluate(seo, 200, ownerBody('Yes, we do SEO: on-page fixes, local search, your Google Business Profile, and content for the services you sell.')), { problems: [], notes: [] });
   assert.deepEqual(evaluate(review, 200, ownerBody('Yes, we can review your site for search readiness, mobile, speed, tracking, and lead capture, then give you a plain-language fix list.')), { problems: [], notes: [] });
   for (const entry of SERVICE_PROMPTS) {
@@ -293,6 +299,29 @@ test('the two service prompts expect an affirmative answer: fallback, "unsure" a
     assert.ok(evaluate(entry, 200, { ...ownerBody('Not sure.'), intent: 'unsure' }).problems.length >= 1);
     assert.ok(evaluate(entry, 200, ownerBody('Yes, and we have 50 clients who love it.')).problems.length >= 1);
   }
+});
+
+test('the two grade prompts need the website checker and no guessed grade or score', () => {
+  const [, , grade, score] = SERVICE_PROMPTS;
+  const OK = 'We have a free website checker at thgservices.io/website-checker/. It grades how easy your site is to find and how well it turns visitors into customers.';
+  for (const entry of [grade, score]) {
+    assert.deepEqual(evaluate(entry, 200, ownerBody(OK)), { problems: [], notes: [] });
+    assert.ok(evaluate(entry, 200, ownerBody('A quick call with the team can sort that out.')).problems.some((p) => p.includes('website checker')));
+    assert.ok(evaluate(entry, 200, ownerBody(FALLBACK_REPLY)).problems.length >= 1);
+    assert.ok(evaluate(entry, 200, { ...ownerBody(OK), intent: 'unsure' }).problems.length >= 1);
+    for (const guess of [
+      `${OK} I would guess you get a B.`,
+      `${OK} Probably grade: C.`,
+      `${OK} It sounds like an A+.`,
+      `${OK} Your site would score a D.`,
+      `${OK} Around 80 out of 100.`,
+      `${OK} Maybe 70/100.`,
+    ]) {
+      assert.ok(evaluate(entry, 200, ownerBody(guess)).problems.length >= 1, guess);
+    }
+  }
+  // An ordinary capital A at the start of a sentence is not a grade.
+  assert.deepEqual(evaluate(grade, 200, ownerBody(`${OK} A quick call is also fine. Better sites welcome.`)), { problems: [], notes: [] });
 });
 
 // --- remote only: no in-person visit ---------------------------------------------------
