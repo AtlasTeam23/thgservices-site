@@ -34,14 +34,14 @@ const openTryChat = () => openConcierge(TRY_REQUEST);
 const DESKTOP_QUERY = '(min-width: 900px)';
 const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)';
 
-// The clip is cropped to the card's outer border (792 x 948 px), so this box is exactly the card:
+// The clip is cropped to the card's outer border (792 x 990 px), so this box is exactly the card:
 // it fills the button (the card's width) and has the card's corner radius. Its background is the
 // card surface, so nothing shows before the poster paints. The shadow and the hover and focus
 // glow are in the <style> block below, because inline styles cannot answer :hover.
 const clipBoxStyle: React.CSSProperties = {
   display: 'block',
   width: '100%',
-  aspectRatio: '792 / 948',
+  aspectRatio: '792 / 990',
   borderRadius: '16px',
   overflow: 'hidden',
   background: 'var(--cc-bg)',

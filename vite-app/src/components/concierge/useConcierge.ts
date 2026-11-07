@@ -21,7 +21,6 @@ import {
   LEAD_FORM_HEADING,
   LEAD_ONLY,
   OFFER_CHIPS,
-  OFFER_NO,
   OFFER_YES,
   RATE_LIMITED,
   TOO_LONG,
@@ -447,10 +446,6 @@ function createController() {
     track('concierge_quick_reply', isKnownChip(label) ? { chip: label } : undefined);
     if (label === CALLBACK_CHIP || label === OFFER_YES) {
       openCallbackForm(label);
-      return;
-    }
-    if (label === OFFER_NO) {
-      set({ chips: [] });
       return;
     }
     await send(label, opts);

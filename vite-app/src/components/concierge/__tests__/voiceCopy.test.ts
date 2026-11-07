@@ -5,7 +5,7 @@ import * as copy from '../voice/copy';
 // voice-related is pulled into the always-loaded main bundle.
 describe('voice copy', () => {
   it('has the strings for the speaker toggle and the read-aloud line', () => {
-    expect(copy.VOICE_SPEAK_TOGGLE).toBe('Spoken replies');
+    expect(copy.VOICE_SPEAK_TOGGLE).toBe('Sound');
     expect(copy.VOICE_SPEAK_TOGGLE_TITLE).toBe('Read replies aloud');
     expect(copy.VOICE_STOP_SPEAKING).toBe('Stop reading aloud');
     expect(copy.VOICE_DISCLOSURE).toBe('Replies are read aloud. Use the speaker button to turn sound off.');

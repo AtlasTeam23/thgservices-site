@@ -18,7 +18,7 @@ describe('concierge copy (contract section 2.7)', () => {
       'Try the AI Concierge',
       'Request a callback',
     ]);
-    expect(copy.OFFER_CHIPS).toEqual(['Yes, call me', 'No thanks']);
+    expect(copy.OFFER_CHIPS).toEqual(['Yes, call me']);
     expect(copy.CALLBACK_INTRO).toBe(
       'Happy to set that up. Fill in a few details and someone from our team will reach out during the window you pick.'
     );

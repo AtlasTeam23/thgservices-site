@@ -345,20 +345,6 @@ describe('useConcierge: responses', () => {
     expect(trackMock).toHaveBeenCalledWith('concierge_lead_form_shown');
   });
 
-  it('"No thanks" just clears the chips', async () => {
-    postChatMock.mockResolvedValue(ok('Want a call?', { offerCallback: true }));
-    const { result } = setup();
-    await open(result);
-    await send(result, 'quote please');
-    const before = result.current.messages.length;
-    await act(async () => {
-      await result.current.chip('No thanks');
-    });
-    expect(result.current.chips).toEqual([]);
-    expect(result.current.showLeadForm).toBe(false);
-    expect(result.current.messages).toHaveLength(before);
-  });
-
   it('renders a handoff reply with a call link', async () => {
     postChatMock.mockResolvedValue(ok('Call (866) 519-7993.', { intent: 'handoff' }));
     const { result } = setup();

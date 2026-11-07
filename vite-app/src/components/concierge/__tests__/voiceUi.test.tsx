@@ -452,15 +452,17 @@ describe('ChatPanel voice: the speaker toggle', () => {
     stubMatchMedia(['pointer: coarse']);
     window.sessionStorage.setItem(VOICE_PREFS_KEY, JSON.stringify({ speak: false, disclosed: false }));
     await renderPanel();
-    const toggle = screen.getByRole('button', { name: 'Spoken replies' });
+    const toggle = screen.getByRole('button', { name: 'Sound' });
     expect(toggle).toHaveTextContent('Sound off');
+    // Label in name (WCAG 2.5.3): the accessible name is contained in the visible words.
+    expect('Sound off'.toLowerCase()).toContain(toggle.getAttribute('aria-label')!.toLowerCase());
     expect(toggle).toHaveAttribute('aria-pressed', 'false');
     expect(toggle.querySelector('.thg-cc-speak-label')).toBeVisible();
 
     await user.click(toggle);
     // The very same button: its name did not change, so the state is announced once (by aria-pressed).
-    expect(screen.getByRole('button', { name: 'Spoken replies' })).toBe(toggle);
-    expect(toggle).toHaveAccessibleName('Spoken replies');
+    expect(screen.getByRole('button', { name: 'Sound' })).toBe(toggle);
+    expect(toggle).toHaveAccessibleName('Sound');
     expect(toggle).toHaveTextContent('Sound on');
     expect(toggle).toHaveAttribute('aria-pressed', 'true');
     // The words are for the eye; a screen reader gets the name and the pressed state, not both.
@@ -471,9 +473,9 @@ describe('ChatPanel voice: the speaker toggle', () => {
     const user = userEvent.setup();
     window.sessionStorage.setItem(VOICE_PREFS_KEY, JSON.stringify({ speak: false, disclosed: false }));
     await renderPanel();
-    const toggle = screen.getByRole('button', { name: 'Spoken replies' });
+    const toggle = screen.getByRole('button', { name: 'Sound' });
     await user.click(toggle);
-    expect(toggle).toHaveAccessibleName('Spoken replies');
+    expect(toggle).toHaveAccessibleName('Sound');
     expect(toggle).toHaveAttribute('aria-pressed', 'true');
   });
 

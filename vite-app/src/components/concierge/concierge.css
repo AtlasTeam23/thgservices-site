@@ -453,6 +453,8 @@
   font-weight: 400;
   line-height: 1.4;
   cursor: pointer;
+  /* The whole row is the tap target for the checkbox, so it is never shorter than 44px. */
+  min-height: 44px;
 }
 
 .thg-cc-check input {
@@ -582,6 +584,15 @@
 
 .thg-cc-footnote {
   margin: 0;
+}
+
+/* Touch screens: the Privacy link is a 16px-tall line of text; give it a 44px target. */
+@media (pointer: coarse) {
+  .thg-cc-footnote .thg-cc-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
 }
 
 /* ---------- Phones (portrait and landscape): full screen ---------- */

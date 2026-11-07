@@ -19,7 +19,7 @@ export const CHIPS = [
   'Try the AI Concierge',
   'Request a callback',
 ] as const;
-export const OFFER_CHIPS = ['Yes, call me', 'No thanks'] as const;
+export const OFFER_CHIPS = ['Yes, call me'] as const;
 
 /**
  * Messages other parts of the site may open the chat with. They are not shown as
@@ -40,7 +40,6 @@ export const isKnownChip = (label: string): boolean =>
 /** The chip that opens the lead form instead of sending text. */
 export const CALLBACK_CHIP = 'Request a callback';
 export const OFFER_YES = 'Yes, call me';
-export const OFFER_NO = 'No thanks';
 
 export const CALLBACK_INTRO =
   'Happy to set that up. Fill in a few details and someone from our team will reach out during the window you pick.';
