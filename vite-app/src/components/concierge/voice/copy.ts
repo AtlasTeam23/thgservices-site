@@ -4,8 +4,8 @@
 // shared with the always-loaded bubble, so anything added there lands in the main
 // bundle. This file is only imported from the lazy panel chunk.
 
-/** The header toggle's name. Fixed: its state is announced once, by aria-pressed. */
-export const VOICE_SPEAK_TOGGLE = 'Spoken replies';
+/** The header toggle's name. Fixed: its state is announced once, by aria-pressed. It is the word the touch label starts with ("Sound on" / "Sound off"), so voice control can say what it sees (WCAG 2.5.3). */
+export const VOICE_SPEAK_TOGGLE = 'Sound';
 /** Its tooltip. */
 export const VOICE_SPEAK_TOGGLE_TITLE = 'Read replies aloud';
 export const VOICE_STOP_SPEAKING = 'Stop reading aloud';

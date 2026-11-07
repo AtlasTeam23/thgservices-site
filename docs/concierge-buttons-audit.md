@@ -14,7 +14,7 @@ chatting" is a different control (it closes the form and returns to the chat) an
 | Control | Component | Visible label | Accessible name | Does | Keyboard / focus | Touch size | Test |
 |---|---|---|---|---|---|---|---|
 | Chat bubble | `ChatBubble.tsx` | "Questions? Chat with us" (shown on hover/focus at desktop) | same text | Opens or closes the chat; `aria-expanded`, `aria-haspopup="dialog"` | Tab; 3 px focus ring | 56x56 | Yes (ChatBubble.test) |
-| Sound toggle | `SpeakToggle.tsx` | Icon; "Sound on / Sound off" on touch | "Spoken replies" with `aria-pressed` | Turns read-aloud on or off. Only shown when the Worker reports a server voice | Tab; 2 px ring | 44 tall (101 wide with label on touch, 44 wide at desktop) | Yes (voiceUi) |
+| Sound toggle | `SpeakToggle.tsx` | Icon; "Sound on / Sound off" on touch | "Sound" with `aria-pressed` | Turns read-aloud on or off. Only shown when the Worker reports a server voice | Tab; 2 px ring | 44 tall (101 wide with label on touch, 44 wide at desktop) | Yes (voiceUi) |
 | Stop reading (equalizer) | `Equalizer.tsx` | Animated bars | "Stop reading aloud" | Stops the spoken reply; only present while speaking | Tab; 2 px ring | 44x44 | Yes (voiceGreeting) |
 | Call (header) | `ChatPanel.tsx` | Phone icon | "Call (866) 519-7993" | `tel:` link; only shown on short screens (keyboard up) | Tab when shown; 2 px ring | 44x44 | Partly (footer variant tested) |
 | Close | `ChatPanel.tsx` | X icon | "Close chat" | Closes; Escape does the same; focus returns to the bubble | Tab; 2 px ring | 44x44 | Yes (ChatPanel, useFocusTrap) |
@@ -82,7 +82,7 @@ The read-aloud limit text itself is a `role="status"` line (not a control).
 
 ## Seen and deliberately not changed
 
-- **Sound toggle name vs. visible text.** On touch the button reads "Sound on / Sound off" but its accessible name is "Spoken replies" (state in `aria-pressed`). Voice-control users who say "click Sound off" may not match. Fixing it means either changing the name copy or dropping `aria-pressed`; that is a copy and semantics decision, so it is left for the owner.
+- **Sound toggle name vs. visible text (fixed).** On touch the button reads "Sound on / Sound off" but its accessible name was "Spoken replies", which fails WCAG 2.5.3 (label in name) for voice-control users. The name is now "Sound", the word the visible label starts with; `aria-pressed` still carries on/off, the touch label stays, and desktop stays icon-only (tooltip unchanged).
 - **Privacy link width** is 41 px on touch (height is 44). It is an inline link in a sentence, which WCAG 2.2 exempts; widening it would need padding that shifts the footnote text.
 - **Consent checkbox box** is 20x20; the label row around it is the 44 px target, which is the usual pattern.
 - **Desktop sizes** read 43 to 44 px in the run because the browser pane scales the emulated viewport; the CSS is 44 px.
