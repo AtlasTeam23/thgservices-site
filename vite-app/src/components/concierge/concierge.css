@@ -586,6 +586,15 @@
   margin: 0;
 }
 
+/* Touch screens: the Privacy link is a 16px-tall line of text; give it a 44px target. */
+@media (pointer: coarse) {
+  .thg-cc-footnote .thg-cc-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+}
+
 /* ---------- Phones (portrait and landscape): full screen ---------- */
 
 /* Keep in step with PHONE_QUERY in ChatPanel.tsx. A phone on its side is wider

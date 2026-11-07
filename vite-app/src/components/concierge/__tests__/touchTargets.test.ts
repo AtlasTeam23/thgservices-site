@@ -15,4 +15,12 @@ describe('touch targets', () => {
   it('keeps the consent checkbox row at least 44px tall', () => {
     expect(rule('.thg-cc-field label.thg-cc-check')).toMatch(/min-height:\s*44px/);
   });
+
+  it('gives the footer Privacy link a 44px target on touch screens', () => {
+    const at = css.indexOf('@media (pointer: coarse)');
+    expect(at).toBeGreaterThanOrEqual(0);
+    const block = css.slice(at, css.indexOf('\n}\n', at));
+    expect(block).toContain('.thg-cc-footnote .thg-cc-link');
+    expect(block).toMatch(/min-height:\s*44px/);
+  });
 });
