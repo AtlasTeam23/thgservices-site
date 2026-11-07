@@ -120,7 +120,7 @@ describe('mock provider: a name', () => {
     expect(result.intent).toBe('answer');
   });
 
-  it.each(['yes call me', 'what do you do', 'ok sure please', 'how much is it', 'sounds good thanks'])(
+  it.each(['yes call me', 'No thanks', 'what do you do', 'ok sure please', 'how much is it', 'sounds good thanks'])(
     'does not take %j for a name even right after the helper asked',
     async (text) => {
       const result = await reply([user('call me'), assistant('Happy to set that up. What is your name?'), user(text)]);
