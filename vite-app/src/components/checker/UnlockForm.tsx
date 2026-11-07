@@ -142,7 +142,7 @@ export default function UnlockForm({ gated, busy, serverFields, error, onSubmit 
       {error ? <p className="ck-error" role="alert">{error}</p> : null}
 
       <p className="ck-muted" id={`${id}-consent`}>
-        {copy.UNLOCK_CONSENT} <a href={copy.PRIVACY_HREF}>{copy.PRIVACY_LINK_TEXT}</a>.
+        {copy.CHECKER_CONSENT_TEXT} <a href={copy.PRIVACY_HREF}>{copy.PRIVACY_LINK_TEXT}</a>.
       </p>
       <button type="submit" className="ck-btn ck-btn--primary ck-btn--block" disabled={busy} aria-describedby={`${id}-consent`}>
         {busy ? <Loader2 size={18} className="ck-spin" aria-hidden="true" /> : <Unlock size={18} aria-hidden="true" />}

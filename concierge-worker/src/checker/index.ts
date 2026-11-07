@@ -142,6 +142,7 @@ const handleUnlock = async (request: Request, env: Env, ctx: ExecutionContext, d
   const validation = validateUnlock(body.value, gated);
   if (!validation.ok) return validationFailed(validation.fields);
   const visitor = validation.value;
+  const unlockedAt = new Date().toISOString();
 
   if (visitor.honeypot) {
     return json({ ok: true, report_token: fakeToken(), report: null, plan: null, emailed: false });
@@ -231,6 +232,8 @@ const handleUnlock = async (request: Request, env: Env, ctx: ExecutionContext, d
         email: visitor.email,
         phone: visitor.phone,
         okToCall: visitor.okToCall,
+        consentText: visitor.consentText,
+        consentAt: unlockedAt,
         industry: visitor.industry,
         city: visitor.city,
         country,

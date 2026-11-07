@@ -260,7 +260,9 @@ export function useCheckerFlow(token: string | null, clearToken: () => void) {
           industry: industryLabel(values.industry),
           city: values.city.trim() || undefined,
           competitors,
-          ...(form ? { name: form.name, email: form.email, phone: form.phone, okToCall: form.okToCall } : {}),
+          ...(form
+            ? { name: form.name, email: form.email, phone: form.phone, okToCall: form.okToCall, consentText: copy.CHECKER_CONSENT_TEXT }
+            : {}),
         },
         honeypot
       );

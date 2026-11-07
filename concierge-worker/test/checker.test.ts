@@ -17,6 +17,7 @@ const GRADER_URL = 'https://grader.test/functions/check';
 const GRADER_SECRET = 'grader-shared-secret-placeholder';
 const LEAD_URL = 'https://leads.test/hook?token=lead-token-placeholder';
 const TOKEN = 'tok_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789_-abc';
+const CONSENT = 'By tapping Show my breakdown you agree that THG AI Services may call you, including with an automated AI assistant, and text or email you about your website results. You can opt out at any time.';
 const TURNSTILE_SECRET = '1x0000000000000000000000000000000AA';
 
 const HOST = 'client-site.example';
@@ -190,6 +191,7 @@ const gatedBody = (extra: Record<string, unknown> = {}) => ({
   email: 'jane@example.com',
   phone: '(770) 555-1234',
   okToCall: true,
+  consentText: CONSENT,
   ...extra,
 });
 
@@ -595,12 +597,14 @@ describe('POST /checker/unlock for a gated visitor', () => {
     expect(net.lead()).toHaveLength(1);
     expect(net.lead()[0]!.url).toBe(LEAD_URL);
     const lead = net.lead()[0]!.json;
-    expect(Object.keys(lead).sort()).toEqual(['email', 'name', 'notes', 'phone', 'service_needed']);
+    expect(Object.keys(lead).sort()).toEqual(['consent_at', 'consent_text', 'email', 'name', 'notes', 'phone', 'service_needed']);
     expect(lead).toEqual({
       name: 'Jane Doe',
       email: 'jane@example.com',
       phone: '7705551234',
       service_needed: 'Free website check',
+      consent_text: CONSENT,
+      consent_at: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/),
       notes: [
         `Website check: ${HOST}`,
         'Overall 71 C. SEO 90 A. Conversion 51 F.',
@@ -629,6 +633,33 @@ describe('POST /checker/unlock for a gated visitor', () => {
     expect(mail.html).toContain(`href="https://thgservices.io/website-checker/?r=${TOKEN}"`);
     expect(mail.html).toContain('bgcolor="#ffffff"');
     expect(mail.html).not.toMatch(/gradient|background-image/i);
+  });
+
+  it('sends consent_text and consent_at with the lead, and the sentence is sanitized and kept to 400 characters', async () => {
+    const net = stubNetwork();
+    await unlock(gatedBody({ consentText: `<b>${CONSENT}</b>\n  extra   words` }));
+    const lead = net.lead()[0]!.json;
+    expect(lead.consent_text).toBe(`${CONSENT} extra words`);
+    expect(lead.consent_at).toEqual(expect.any(String));
+    expect(Number.isNaN(Date.parse(String(lead.consent_at)))).toBe(false);
+  });
+
+  it('omits consent_text and consent_at when the page sent no sentence (an older page), and still sends the lead', async () => {
+    const net = stubNetwork();
+    const res = await unlock(gatedBody({ consentText: undefined }));
+    expect(res.status).toBe(200);
+    expect(net.lead()).toHaveLength(1);
+    const lead = net.lead()[0]!.json;
+    expect(lead).not.toHaveProperty('consent_text');
+    expect(lead).not.toHaveProperty('consent_at');
+    expect(String(lead.notes)).toContain('Consent to call, text or email: yes (given at submit)');
+  });
+
+  it('drops a consent sentence over 400 characters rather than cutting it short', async () => {
+    const net = stubNetwork();
+    await unlock(gatedBody({ consentText: 'x'.repeat(401) }));
+    expect(net.lead()[0]!.json).not.toHaveProperty('consent_text');
+    expect(net.lead()).toHaveLength(1);
   });
 
   it('records consent: no and a missing city, and an unknown country as XX', async () => {

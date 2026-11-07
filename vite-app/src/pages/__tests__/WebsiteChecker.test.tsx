@@ -10,7 +10,7 @@ vi.mock('../../components/concierge/turnstile', () => ({ getToken: () => Promise
 import WebsiteChecker from '../WebsiteChecker';
 import { ThemeProvider } from '../../lib/theme';
 import { onConciergeOpen } from '../../components/concierge/events';
-import { FAILURE, READ_LIMITED_BANNER, RATE_LIMITED, DAILY_CAP } from '../../lib/checker/copy';
+import { CHECKER_CONSENT_TEXT, FAILURE, READ_LIMITED_BANNER, RATE_LIMITED, DAILY_CAP } from '../../lib/checker/copy';
 import { INDUSTRIES } from '../../lib/checker/config';
 import { bodiesFor, competitorEntry, json, makeFetch, reportBody, scanBody, scanId } from './checkerFixtures';
 
@@ -294,10 +294,13 @@ describe('WebsiteChecker page', () => {
       await user.type(screen.getByLabelText('Phone'), '5');
       expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
       expect(screen.queryByLabelText('OK to call or text me about my results')).not.toBeInTheDocument();
-      const consent = screen.getByText(/By tapping Show my breakdown you agree that THG AI Services may call, text or email you about your website results\. You can opt out any time\./);
+      expect(CHECKER_CONSENT_TEXT).toBe(
+        'By tapping Show my breakdown you agree that THG AI Services may call you, including with an automated AI assistant, and text or email you about your website results. You can opt out at any time.',
+      );
+      const consent = screen.getByText(new RegExp(CHECKER_CONSENT_TEXT.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
       const button = screen.getByRole('button', { name: 'Show my breakdown' });
       expect(consent.nextElementSibling).toBe(button);
-      expect(button).toHaveAccessibleDescription(/may call, text or email you/);
+      expect(button).toHaveAccessibleDescription(CHECKER_CONSENT_TEXT + ' Privacy policy.');
       expect(screen.getByRole('link', { name: 'Privacy policy' })).toHaveAttribute('href', '/privacy.html#website-checker');
     });
 
@@ -328,6 +331,7 @@ describe('WebsiteChecker page', () => {
           email: 'jane@owner.example',
           phone: '(555) 123-4567',
           okToCall: true,
+          consentText: CHECKER_CONSENT_TEXT,
           company_website: '',
         },
       ]);
